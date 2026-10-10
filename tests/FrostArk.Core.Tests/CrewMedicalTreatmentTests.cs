@@ -124,6 +124,37 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void UnknownMedicineCannotBeSubstitutedForAnApprovedTreatment()
+        {
+            var start = Create();
+            var outcome = new WorldCommandBus().Execute(start,
+                new TreatCrewWoundCommand(EntityId.Parse("command:unknown-kit"),
+                    Patient, EntityId.Parse("item:experimental-drug"), 0));
+            Assert.That(outcome.Failure, Is.EqualTo(CommandFailure.UnknownTreatment));
+            Assert.That(outcome.State, Is.SameAs(start));
+            Assert.That(outcome.Events, Is.Empty);
+        }
+
+        [Test]
+        public void InvalidChecksummedPolicyCannotCreateOverpoweredHealing()
+        {
+            var state = Create();
+            var timeline = new SimulationScheduler(new WorldClock(state.Minute),
+                Array.Empty<IWorldMinuteSystem>(), seed: 13);
+            var encoded = SaveCodec.Encode(SaveGameDto.Capture(state, timeline));
+            // v11 trailing protocol: item ID, version, potency, minimum skill.
+            // Make min-skill > 1000 and recompute the accidental-corruption SHA.
+            Array.Copy(BitConverter.GetBytes(1001), 0,
+                encoded, encoded.Length - 32 - 4, sizeof(int));
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                Array.Copy(hash.ComputeHash(encoded, 0, encoded.Length - 32),
+                    0, encoded, encoded.Length - 32, 32);
+            var invalid = SaveCodec.TryDecode(encoded);
+            Assert.That(invalid.Success, Is.False);
+            Assert.That(invalid.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void RejectDuplicateInvalidAndUnrealisticMedicalPolicyDefinitions()
         {
             var valid = new MedicalTreatmentProtocol(Kit, 200, 400);
