@@ -14,3 +14,14 @@ This compiles the linked C# and executes the NUnit contract tests without Unity,
 **Verification boundary:** .NET test success is G1, not Unity G2. An actual authorized Unity compile/import is needed separately before engine integration can be called verified. The initial environment establishing this PR did **not** provide a .NET SDK or NuGet network connectivity, so the .NET commands above remain **NOT RUN** until executed on a compatible runner. No GitHub Actions or ShellWarden required. All expected numeric vectors are fixed in `CoreContractTests.cs`.
 
 This foundation provides a valid clock value type, stable opaque IDs and a version-sensitive hash primitive. World scheduler, command bus, save DTOs, and actual seeded ecosystem belong to subsequent issues #16–#18.
+
+## Optional offline G0 structural preflight
+
+Python 3.10+ can verify the Unity/.NET shared-source wiring, Unity `.meta` files and GUIDs, project references, and pinned NUnit dependencies without Unity or .NET:
+
+```bash
+python tools/validate_core_structure.py
+python -m unittest discover -s tests/validation -p 'test_*.py' -v
+```
+
+The checker has seven independent Python fixture tests (including an observed red/green cycle for nested Unity folder metadata). G0 PASS is **not** C# compilation, a successful NUnit run, or a Unity import. Actual `dotnet test` and Unity engine verification remain separate gates before merge.
