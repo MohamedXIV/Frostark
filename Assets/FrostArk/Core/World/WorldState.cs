@@ -155,6 +155,17 @@ namespace FrostArk.Core.World
             InventoryState inventory, CrewState crewDuty, EntityId commandId) =>
             CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory, crewDuty, layout);
 
+        internal WorldState WithMarketTrade(EconomyState next, InventoryState inventory,
+            long credits, EntityId commandId)
+        {
+            if (credits < 0 || !HasSupply(EntityId.Parse("supply:credits")))
+                throw new ArgumentException("Trade requires existing wallet with nonnegative balance.");
+            var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
+            supplies["supply:credits"] = credits;
+            return CopyWithCommand(commandId.Value, supplies, _crewStations,
+                inventory: inventory, economy: next);
+        }
+
         internal WorldState WithWorkshopStart(EconomyState next, InventoryState inventory,
             EntityId commandId) => CopyWithCommand(commandId.Value, _supplies,
                 _crewStations, inventory: inventory, economy: next);

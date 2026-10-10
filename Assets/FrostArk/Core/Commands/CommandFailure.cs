@@ -30,6 +30,10 @@ namespace FrostArk.Core.Commands
         InvalidRoute = 25,
         NavigationUnavailable = 26,
         CannotRerouteMidLeg = 27,
-        WorkshopUnavailable = 28
+        WorkshopUnavailable = 28,
+        UnknownMarket = 29,
+        MarketOutOfStock = 30,
+        InsufficientCurrency = 31,
+        MerchantCannotAfford = 32
     }
 }

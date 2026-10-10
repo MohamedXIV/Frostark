@@ -161,4 +161,34 @@ namespace FrostArk.Core.Commands
             Id = id; JobId = jobId; RecipeId = recipeId; ExpectedRevision = expectedRevision;
         }
     }
+
+    public sealed class BuyMarketItemCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId MarketId { get; }
+        public EntityId ItemId { get; }
+        public long Quantity { get; }
+        public long ExpectedRevision { get; }
+        public BuyMarketItemCommand(EntityId id, EntityId marketId, EntityId itemId,
+            long quantity, long expectedRevision)
+        {
+            Id = id; MarketId = marketId; ItemId = itemId;
+            Quantity = quantity; ExpectedRevision = expectedRevision;
+        }
+    }
+
+    public sealed class SellMarketItemCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId MarketId { get; }
+        public EntityId ItemId { get; }
+        public long Quantity { get; }
+        public long ExpectedRevision { get; }
+        public SellMarketItemCommand(EntityId id, EntityId marketId, EntityId itemId,
+            long quantity, long expectedRevision)
+        {
+            Id = id; MarketId = marketId; ItemId = itemId;
+            Quantity = quantity; ExpectedRevision = expectedRevision;
+        }
+    }
 }
