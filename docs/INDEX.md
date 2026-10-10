@@ -13,6 +13,7 @@
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
 - [R2 crew duty and repair queue ADR](engineering/crew-duty-contract.md)
 - [R2 ship modules, paid repairs and save v6 Core ADR](engineering/ship-modules-contract.md)
+- [R4 navigation routes, ice/weather, heat-first fuel and save v7 Core ADR](engineering/navigation-core-contract.md)
 - [Saving, content and procedural generation](engineering/save-content.md)
 - [Platforms, rendering, controls and art](engineering/platform-art.md)
 - [Testing and autonomous development](engineering/validation.md)
