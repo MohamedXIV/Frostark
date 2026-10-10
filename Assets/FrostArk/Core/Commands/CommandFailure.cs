@@ -41,6 +41,9 @@ namespace FrostArk.Core.Commands
         UnknownTreatment = 36,
         MedicalStaffUnavailable = 37,
         PatientUnavailable = 38,
-        PatientNotWounded = 39
+        PatientNotWounded = 39,
+        UnknownSite = 40,
+        SiteAlreadyLooted = 41,
+        SiteFullyDamaged = 42
     }
 }

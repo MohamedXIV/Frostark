@@ -318,6 +318,37 @@ namespace FrostArk.Core.Commands
                     treatment.CrewId, treatment.TreatmentItemId, recovered));
             }
 
+            if (command is LootSiteCommand loot)
+            {
+                var site = state.SiteProgress.Get(loot.SiteId);
+                if (site == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownSite);
+                if (site.IsLooted)
+                    return CommandResult.Rejected(state, CommandFailure.SiteAlreadyLooted);
+                var next = state.WithSiteChange(
+                    state.SiteProgress.MarkLooted(loot.SiteId), command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.SiteLooted,
+                    loot.SiteId, site.IslandId));
+            }
+
+            if (command is DamageSiteCommand damage)
+            {
+                if (damage.DamagePermille <= 0 || damage.DamagePermille > 1000)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                var site = state.SiteProgress.Get(damage.SiteId);
+                if (site == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownSite);
+                if (site.DamagePermille == 1000)
+                    return CommandResult.Rejected(state, CommandFailure.SiteFullyDamaged);
+                var next = state.WithSiteChange(
+                    state.SiteProgress.ApplyDamage(damage.SiteId, damage.DamagePermille),
+                    command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.SiteDamaged,
+                    damage.SiteId, site.IslandId, damage.DamagePermille));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
         }
 

@@ -218,4 +218,29 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+
+    public sealed class LootSiteCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId SiteId { get; }
+        public long ExpectedRevision { get; }
+        public LootSiteCommand(EntityId id, EntityId siteId, long expectedRevision)
+        {
+            Id = id; SiteId = siteId; ExpectedRevision = expectedRevision;
+        }
+    }
+
+    public sealed class DamageSiteCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId SiteId { get; }
+        public int DamagePermille { get; }
+        public long ExpectedRevision { get; }
+        public DamageSiteCommand(EntityId id, EntityId siteId, int damagePermille,
+            long expectedRevision)
+        {
+            Id = id; SiteId = siteId; DamagePermille = damagePermille;
+            ExpectedRevision = expectedRevision;
+        }
+    }
 }
