@@ -97,6 +97,29 @@ namespace FrostArk.Core.Commands
         { Id = id; ModuleId = moduleId; ExpectedRevision = expectedRevision; }
     }
 
+    public sealed class PlanShipRouteCommand : IGameCommand
+    {
+        private readonly EntityId[] _legs;
+        public EntityId Id { get; }
+        public long ExpectedRevision { get; }
+        public System.Collections.Generic.IReadOnlyList<EntityId> LegIds => System.Array.AsReadOnly(_legs);
+        public PlanShipRouteCommand(EntityId id, System.Collections.Generic.IReadOnlyList<EntityId> legIds,
+            long expectedRevision)
+        {
+            Id = id; ExpectedRevision = expectedRevision;
+            _legs = legIds == null ? System.Array.Empty<EntityId>() :
+                new System.Collections.Generic.List<EntityId>(legIds).ToArray();
+        }
+    }
+
+    public sealed class CancelShipRouteCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public long ExpectedRevision { get; }
+        public CancelShipRouteCommand(EntityId id, long expectedRevision)
+        { Id = id; ExpectedRevision = expectedRevision; }
+    }
+
     public sealed class CollectSalvageCommand : IGameCommand
     {
         public EntityId Id { get; }

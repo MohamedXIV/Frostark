@@ -19,7 +19,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 6;
+        public const ushort CurrentVersion = 7;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -93,6 +93,7 @@ namespace FrostArk.Core.Save
                     WriteThermal(writer, state.Thermal);
                     WriteCrew(writer, state.CrewDuty);
                     WriteLayout(writer, state.Layout);
+                    WriteNavigation(writer, state.Navigation);
                 }
                 payload = stream.ToArray();
             }
@@ -149,7 +150,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -162,7 +163,7 @@ namespace FrostArk.Core.Save
                     }
                 }
             }
-            catch (Exception ex) when (ex is IOException || ex is ArgumentException ||
+            catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is ArgumentException ||
                                         ex is OverflowException || ex is DecoderFallbackException)
             {
                 return SaveDecodeResult.Failed(SaveDecodeError.InvalidData);
@@ -218,8 +219,9 @@ namespace FrostArk.Core.Save
             var thermal = version >= 4 ? ReadThermal(reader) : ShipThermalState.Empty;
             var crewDuty = version >= 5 ? ReadCrew(reader) : CrewState.Empty;
             var layout = version >= 6 ? ReadLayout(reader) : ShipLayoutState.Empty;
+            var navigation = version >= 7 ? ReadNavigation(reader) : ShipNavigationState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout);
+                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
         }
 

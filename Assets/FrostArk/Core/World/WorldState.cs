@@ -24,6 +24,7 @@ namespace FrostArk.Core.World
         public ShipThermalState Thermal { get; }
         public CrewState CrewDuty { get; }
         public ShipLayoutState Layout { get; }
+        public ShipNavigationState Navigation { get; }
 
         public WorldMinute Minute { get; }
         public long Revision { get; }
@@ -31,7 +32,8 @@ namespace FrostArk.Core.World
         private WorldState(WorldMinute minute, long revision,
             Dictionary<string, long> supplies, HashSet<string> crewIds,
             Dictionary<string, string> crewStations, HashSet<string> processedCommands,
-            InventoryState inventory, ShipThermalState thermal, CrewState crewDuty, ShipLayoutState layout)
+            InventoryState inventory, ShipThermalState thermal, CrewState crewDuty, ShipLayoutState layout,
+            ShipNavigationState navigation)
         {
             Minute = minute;
             Revision = revision;
@@ -43,12 +45,13 @@ namespace FrostArk.Core.World
             Thermal = thermal ?? throw new ArgumentNullException(nameof(thermal));
             CrewDuty = crewDuty ?? throw new ArgumentNullException(nameof(crewDuty));
             Layout = layout ?? throw new ArgumentNullException(nameof(layout));
+            Navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
         }
 
         public static WorldState Create(WorldMinute minute,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             InventoryState inventory = null, ShipThermalState thermal = null,
-            CrewState? crewDuty = null, ShipLayoutState? layout = null)
+            CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -83,7 +86,8 @@ namespace FrostArk.Core.World
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty,
-                thermal ?? ShipThermalState.Empty, duty, shipLayout);
+                thermal ?? ShipThermalState.Empty, duty, shipLayout,
+                navigation ?? ShipNavigationState.Empty);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);
@@ -100,14 +104,14 @@ namespace FrostArk.Core.World
 
         private WorldState CopyWithCommand(string commandId,
             Dictionary<string, long> supplies, Dictionary<string, string> crewStations,
-            InventoryState inventory = null, CrewState? crewDuty = null, ShipLayoutState? layout = null)
+            InventoryState inventory = null, CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null)
         {
             long nextRevision = checked(Revision + 1);
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
             commands.Add(commandId);
             return new WorldState(Minute, nextRevision, supplies,
                 _crewIds, crewStations, commands, inventory ?? Inventory, Thermal,
-                crewDuty ?? CrewDuty, layout ?? Layout);
+                crewDuty ?? CrewDuty, layout ?? Layout, navigation ?? Navigation);
         }
 
         internal WorldState WithWithdrawal(EntityId supplyId, long amount, EntityId commandId)
@@ -146,6 +150,10 @@ namespace FrostArk.Core.World
             InventoryState inventory, CrewState crewDuty, EntityId commandId) =>
             CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory, crewDuty, layout);
 
+        internal WorldState WithNavigationCommand(ShipNavigationState navigation, EntityId commandId) =>
+            CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                navigation: navigation);
+
         // Crew phase runs before Heat and does not advance world time itself.
         // The heat adapter commits the same minute once after all crew effects.
         internal WorldState WithCrewTick(WorldMinute minute, CrewState nextCrew)
@@ -160,7 +168,7 @@ namespace FrostArk.Core.World
                 if (nextCrew.GetRepair(job.Id) == null)
                     updatedLayout = updatedLayout.CompleteRepair(job.Id);
             return new WorldState(Minute, Revision, _supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, updatedLayout);
+                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, updatedLayout, Navigation);
         }
 
         /// <summary>
@@ -185,7 +193,23 @@ namespace FrostArk.Core.World
             if (tick.FuelConsumed > 0)
                 supplies[fuelId.Value] = checked(amount - tick.FuelConsumed);
             return new WorldState(minute, Revision, supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, tick.State, CrewDuty, Layout);
+                _crewStations, _processedCommands, Inventory, tick.State, CrewDuty, Layout, Navigation);
+        }
+
+        /// <summary>Travel phase uses the minute already committed by Heat.</summary>
+        internal WorldState WithTravelTick(WorldMinute minute, NavigationTickResult tick)
+        {
+            if (tick == null) throw new ArgumentNullException(nameof(tick));
+            if (minute != Minute)
+                throw new InvalidOperationException("Travel must follow the authoritative Heat phase.");
+            var fuelId = EntityId.Parse("supply:fuel");
+            var remaining = GetSupply(fuelId);
+            if (tick.FuelConsumed <= 0 || tick.FuelConsumed > remaining)
+                throw new InvalidOperationException("Travel requires a positive, available fuel payment.");
+            var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
+            supplies[fuelId.Value] = checked(remaining - tick.FuelConsumed);
+            return new WorldState(Minute, Revision, supplies, _crewIds, _crewStations,
+                _processedCommands, Inventory, Thermal, CrewDuty, Layout, tick.State);
         }
 
         /// <summary>
@@ -196,7 +220,7 @@ namespace FrostArk.Core.World
         {
             if (minute < Minute)
                 throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
-            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal, CrewDuty, Layout);
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal, CrewDuty, Layout, Navigation);
         }
 
         internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
@@ -218,11 +242,11 @@ namespace FrostArk.Core.World
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
             IEnumerable<EntityId> processed, InventoryState inventory = null,
-            ShipThermalState thermal = null, CrewState? crewDuty = null, ShipLayoutState? layout = null)
+            ShipThermalState thermal = null, CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
-            var baseline = Create(minute, supplies, crew, crewDuty: crewDuty, layout: layout);
+            var baseline = Create(minute, supplies, crew, crewDuty: crewDuty, layout: layout, navigation: navigation);
             var stations = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var pair in assignments ?? throw new ArgumentNullException(nameof(assignments)))
             {
@@ -241,7 +265,8 @@ namespace FrostArk.Core.World
                 throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
             return new WorldState(minute, revision, baseline._supplies,
                 baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty,
-                thermal ?? ShipThermalState.Empty, baseline.CrewDuty, baseline.Layout);
+                thermal ?? ShipThermalState.Empty, baseline.CrewDuty, baseline.Layout,
+                baseline.Navigation);
         }
 
         /// <summary>
@@ -283,6 +308,7 @@ namespace FrostArk.Core.World
             Add("crew-duty");
             Add(CrewDuty.Fingerprint().ToString(CultureInfo.InvariantCulture));
             Add("ship-layout"); Add(Layout.Fingerprint().ToString(CultureInfo.InvariantCulture));
+            Add("navigation"); Add(Navigation.Fingerprint().ToString(CultureInfo.InvariantCulture));
             return StableHash32.Of(canonical.ToString());
         }
     }
