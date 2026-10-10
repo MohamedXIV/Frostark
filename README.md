@@ -19,8 +19,8 @@ The player inhabits a real protagonist, pilots a growing vessel and commands a s
 
 ## Documentation
 
-Start with [documentation index](docs/INDEX.md), [game vision](docs/design/vision.md), [technical architecture](docs/engineering/architecture.md), and [roadmap](docs/production/roadmap.md). See [AGENTS.md](AGENTS.md) before contributing. Design decisions still open are logged explicitly, not guessed into code.
+Start with [documentation index](docs/INDEX.md), [game vision](docs/design/vision.md), [technical architecture](docs/engineering/architecture.md), [roadmap](docs/production/roadmap.md), and [GitHub backlog](docs/production/backlog.md). See [AGENTS.md](AGENTS.md) before contributing. Design decisions still open are logged explicitly, not guessed into code.
 
 ## Current state
 
-An initial Unity URP template is present; no FrostArk gameplay implementation is claimed. Documentation, execution roadmap, and issue backlog are being established. The Unity template's `Assets/TutorialInfo` is disposable starter guidance, not game content.
+An initial Unity URP template is present; no FrostArk gameplay implementation is claimed. Documentation, execution roadmap, and issue backlog are established in PR #1 and Issues #2–#43. GitHub Projects board setup remains tracked in Issue #43. The Unity template's `Assets/TutorialInfo` is disposable starter guidance, not game content.

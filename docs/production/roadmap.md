@@ -1,6 +1,6 @@
 # FrostArk full-game roadmap (dependency-oriented)
 
-**Version:** foundation baseline (2026-10-10). This is a complete production architecture plan, **not a promise of dates**. All epics are production systems; slices provide early integration feedback without disposable code. Exact GitHub Issues link to these epics and are the execution source of truth when created.
+**Version:** foundation baseline (2026-10-10). This is a complete production architecture plan, **not a promise of dates**. All epics are production systems; slices provide early integration feedback without disposable code. GitHub Issues [#2–#43](https://github.com/MohamedXIV/Frostark/issues) now link to these epics and are the execution source of truth; see [live issue map](backlog.md).
 
 ## Lifecycle
 
@@ -54,7 +54,7 @@ Single-player first; no multiplayer. Do not demand deep RTS squads, physically a
 
 ## Ready-now sequence
 
-1. Agree baseline and establish issue graph (this docs PR + parent epics).
+1. Review and merge baseline documentation PR #1; track GitHub Projects creation explicitly in #43.
 2. Create core assembly and .NET tests, baseline benchmark and deterministic clock.
 3. Install DI selectively after assembly architecture exists; add save schema.
 4. Unity import/compile/build runner contract (authorized) and first scene bridge.

@@ -17,6 +17,8 @@
 
 ## Production
 - [Dependency-ordered roadmap](production/roadmap.md)
+- [Live issue/epic backlog map](production/backlog.md)
+- [Superpowers R0 foundation execution plan](superpowers/plans/2026-10-10-frostark-r0-foundation.md)
 - [Decision log and open questions](production/decisions.md)
 
 ### Reading order for an implementation agent
