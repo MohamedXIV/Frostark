@@ -196,6 +196,23 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void LegacyV7SnapshotWithoutCreditsMigratesWithIdenticalWorld()
+        {
+            var original = MakeSnapshot();
+            var current = SaveCodec.Encode(original);
+            Assert.That(current[8], Is.EqualTo(8));
+            // The new v8 tail is exactly one credited-inflow entry count,
+            // zero for an old world. Strip it to form the original v7 bytes.
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 4);
+            var decoded = SaveCodec.TryDecode(old);
+            Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
+            Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
+            Assert.That(decoded.Value.State.Fingerprint(),
+                Is.EqualTo(original.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(decoded.Value), Is.EqualTo(current));
+        }
+
+        [Test]
         public void InvalidHeaderAndOversizedDataFailWithoutThrowing()
         {
             var bytes = SaveCodec.Encode(MakeSnapshot());

@@ -87,6 +87,28 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ChecksummedInvalidCreditEntryIsNotAValidSave()
+        {
+            var produced = Held().TryExchangeShip(
+                new[] { new KeyValuePair<EntityId, long>(Scrap, 3) },
+                new[] { new KeyValuePair<EntityId, long>(Heater, 1) }).State;
+            var world = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(), inventory: produced);
+            var timer = new SimulationScheduler(new WorldClock(world.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var blob = SaveCodec.Encode(SaveGameDto.Capture(world, timer));
+            // Last v8 payload field is the credited heater quantity.
+            Array.Copy(BitConverter.GetBytes(0L), 0, blob, blob.Length - 32 - 8, 8);
+            using (var hash = System.Security.Cryptography.SHA256.Create())
+                Array.Copy(hash.ComputeHash(blob, 0, blob.Length - 32),
+                    0, blob, blob.Length - 32, 32);
+
+            var rejected = SaveCodec.TryDecode(blob);
+            Assert.That(rejected.Success, Is.False);
+            Assert.That(rejected.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void GearAccessRequiresPossessionOfActualItem()
         {
             var gear = new GearProtection(Heater, 900, 800);
