@@ -79,6 +79,8 @@ namespace FrostArk.Core.Inventory
         public bool IsCollected(EntityId pickupId) =>
             pickupId.IsValid && _collected.Contains(pickupId.Value);
 
+        public bool HasItem(EntityId id) => _catalog.Get(id) != null;
+
         public long GetAmount(InventoryContainer container, EntityId itemId)
         {
             if (!itemId.IsValid) return 0;
