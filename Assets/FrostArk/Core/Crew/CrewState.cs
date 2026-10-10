@@ -33,7 +33,7 @@ namespace FrostArk.Core.Crew
         public static CrewState Empty => Create(Array.Empty<CrewMember>());
 
         public static CrewState Create(IEnumerable<CrewMember> members,
-            IEnumerable<RepairJob> jobs = null)
+            IEnumerable<RepairJob>? jobs = null)
         {
             if (members == null) throw new ArgumentNullException(nameof(members));
             var crew = members.ToArray();
@@ -53,10 +53,10 @@ namespace FrostArk.Core.Crew
             return new CrewState(crew, queue);
         }
 
-        public CrewMember Get(EntityId id) =>
+        public CrewMember? Get(EntityId id) =>
             id.IsValid ? Array.Find(_members, x => x.Id == id) : null;
 
-        public RepairJob GetRepair(EntityId id) =>
+        public RepairJob? GetRepair(EntityId id) =>
             id.IsValid ? Array.Find(_jobs, x => x.Id == id) : null;
 
         public CrewState SetAway(EntityId id, bool away)
@@ -80,7 +80,7 @@ namespace FrostArk.Core.Crew
             var occupied = new HashSet<string>(StringComparer.Ordinal);
             foreach (var role in Roles)
             {
-                CrewMember best = null;
+                CrewMember? best = null;
                 int bestScore = 0;
                 // Primary specialists are preferred to backups for each role.
                 foreach (bool primary in new[] { true, false })
