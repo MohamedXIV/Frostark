@@ -104,6 +104,61 @@ namespace FrostArk.Core.World
             return CopyWithCommand(commandId.Value, _supplies, stations);
         }
 
+
+        /// <summary>
+        /// Explicit world-minute projection; commands remain revision controlled.
+        /// No existing snapshot is mutated by advancing the authoritative clock.
+        /// </summary>
+        public WorldState AtMinute(WorldMinute minute)
+        {
+            if (minute < Minute)
+                throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands);
+        }
+
+        internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
+            _supplies.OrderBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => new SupplyStock(EntityId.Parse(p.Key), p.Value)).ToArray();
+
+        internal IReadOnlyList<EntityId> SnapshotCrew() =>
+            _crewIds.OrderBy(s => s, StringComparer.Ordinal).Select(EntityId.Parse).ToArray();
+
+        internal IReadOnlyList<KeyValuePair<EntityId, EntityId>> SnapshotAssignments() =>
+            _crewStations.OrderBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => new KeyValuePair<EntityId, EntityId>(
+                    EntityId.Parse(p.Key), EntityId.Parse(p.Value))).ToArray();
+
+        internal IReadOnlyList<EntityId> SnapshotProcessedCommands() =>
+            _processedCommands.OrderBy(s => s, StringComparer.Ordinal).Select(EntityId.Parse).ToArray();
+
+        internal static WorldState RestoreSnapshot(WorldMinute minute, long revision,
+            IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
+            IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
+            IEnumerable<EntityId> processed)
+        {
+            if (revision < 0)
+                throw new ArgumentOutOfRangeException(nameof(revision));
+            var baseline = Create(minute, supplies, crew);
+            var stations = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var pair in assignments ?? throw new ArgumentNullException(nameof(assignments)))
+            {
+                if (!baseline.HasCrew(pair.Key) || !pair.Value.IsValid ||
+                    !stations.TryAdd(pair.Key.Value, pair.Value.Value))
+                    throw new ArgumentException("Invalid or duplicate crew assignment.", nameof(assignments));
+            }
+
+            var commands = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var id in processed ?? throw new ArgumentNullException(nameof(processed)))
+            {
+                if (!id.IsValid || !commands.Add(id.Value))
+                    throw new ArgumentException("Duplicate or invalid command provenance.", nameof(processed));
+            }
+            if (commands.Count != revision)
+                throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
+            return new WorldState(minute, revision, baseline._supplies,
+                baseline._crewIds, stations, commands);
+        }
+
         /// <summary>
         /// Stable FNV-1a replay checkpoint, NOT a cryptographic signature or a
         /// persistence substitute. Length prefixes avoid ambiguous delimiters.
