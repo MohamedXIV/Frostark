@@ -180,6 +180,26 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void CostsConsumeOnlyRealShipHoldStock()
+        {
+            var inventory = InventoryState.Create(
+                new ItemCatalog(new[] { new ItemDefinition(Parts, 1, 100, 100) }),
+                new[] { new SalvagePickup(EntityId.Parse("pickup:unloaded"), Parts, 10) },
+                100000, 10, 100000, 10);
+            var collected = inventory.TryCollect(EntityId.Parse("pickup:unloaded"));
+            Assert.That(collected.Success, Is.True);
+            var denied = collected.State.TryConsumeShip(Parts, 3);
+            Assert.That(denied.Success, Is.False);
+            Assert.That(denied.State, Is.SameAs(collected.State));
+            var moved = collected.State.TryUnload(Parts, 10);
+            Assert.That(moved.Success, Is.True);
+            var paid = moved.State.TryConsumeShip(Parts, 3);
+            Assert.That(paid.Success, Is.True);
+            Assert.That(paid.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(7));
+            Assert.That(moved.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(10));
+        }
+
+        [Test]
         public void V5SaveMigratesToEmptyLayoutWithoutInventingShipModules()
         {
             var state = WorldState.Create(WorldMinute.Zero,
