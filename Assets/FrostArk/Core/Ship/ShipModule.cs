@@ -33,8 +33,10 @@ namespace FrostArk.Core.Ship
                 throw new ArgumentOutOfRangeException(nameof(kind));
             if (width < 1 || width > 64 || height < 1 || height > 64)
                 throw new ArgumentOutOfRangeException(nameof(width));
-            if (buildCost <= 0 || repairCost <= 0)
-                throw new ArgumentOutOfRangeException(nameof(buildCost));
+            if (buildCost <= 0 || buildCost > 1_000_000 ||
+                repairCost <= 0 || repairCost > 1_000_000)
+                throw new ArgumentOutOfRangeException(nameof(buildCost),
+                    "Module material cost must be within 1..1,000,000 units.");
             Id = id; Kind = kind; Width = width; Height = height;
             PartId = partId; BuildCost = buildCost; RepairCost = repairCost;
         }
