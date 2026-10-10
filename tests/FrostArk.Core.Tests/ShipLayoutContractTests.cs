@@ -62,7 +62,7 @@ namespace FrostArk.Core.Tests
                 new ShipModule(EntityId.Parse("module:a"), Type, Room, 0, 0)
             };
             var left = ShipLayoutState.Create(new[] { Slot() }, types, modules);
-            var right = ShipLayoutState.Create(new[] { Slot() }, types.Reverse(), modules.Reverse());
+            var right = ShipLayoutState.Create(new[] { Slot() }, types.AsEnumerable().Reverse(), modules.AsEnumerable().Reverse());
             Assert.That(left.Fingerprint(), Is.EqualTo(right.Fingerprint()));
             Assert.That(left.Modules.Select(m => m.Id.Value), Is.Ordered);
         }
