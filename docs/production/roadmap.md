@@ -56,7 +56,7 @@ Single-player first; no multiplayer. Do not demand deep RTS squads, physically a
 
 1. Review and merge baseline documentation PR #1; track GitHub Projects creation explicitly in #43.
 2. Create core assembly and .NET tests, baseline benchmark and deterministic clock.
-3. Install DI selectively after assembly architecture exists; add save schema.
+3. Use bootstrap-validated VContainer 1.19.0 and Addressables 2.11.2; integrate scoped DI after assembly architecture exists, then add save schema. See the local bootstrap handoff for validation and unresolved runner gates.
 4. Unity import/compile/build runner contract (authorized) and first scene bridge.
 5. First playable coastal slice; add subsequent cross-system survival and combat behaviors.
 

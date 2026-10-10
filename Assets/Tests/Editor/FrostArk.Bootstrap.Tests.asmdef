@@ -1,0 +1,7 @@
+{
+  "name": "FrostArk.Bootstrap.Tests",
+  "references": ["FrostArk.Bootstrap.Editor", "VContainer", "Unity.Addressables", "Unity.ResourceManager", "Unity.Addressables.Editor"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": false
+}

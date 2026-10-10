@@ -1,0 +1,6 @@
+{
+  "name": "FrostArk.Bootstrap.Editor",
+  "references": ["Unity.Addressables.Editor", "Unity.Addressables", "Unity.ResourceManager"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}

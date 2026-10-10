@@ -9,7 +9,7 @@ Applies to AI agents and contributors across the repository. Read `docs/INDEX.md
 3. Preserve the hierarchy: desktop → mobile → web → PC handheld → console. Avoid a feature that silently breaks an earlier target.
 4. The user's local Unity project may contain unpushed work. Never silently reset, delete, or reconfigure local files. `Assets/TutorialInfo` is known removable starter content; clean it only as a deliberate separate commit.
 5. **No GitHub Actions** unless a necessity is demonstrated and the user approves the cost/benefit. Prefer .NET test runners, agent cloud environment, an approved headless Unity runner, and manual playtest evidence.
-6. Never assume ShellWarden grants Unity execution. As of foundation planning, its bootstrap policy blocks Unity executables. Treat actual engine checks as **not run** until evidence exists.
+6. Never assume ShellWarden grants Unity execution. The 2026-10-10 bootstrap verified local Unity CLI/headless import and two package tests, but the installed ShellWarden broker still permits only git. See `docs/engineering/local-bootstrap-handoff.md`; new engine checks remain **not run** until execution evidence exists for that change.
 
 ## Engineering style
 
