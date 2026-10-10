@@ -1,0 +1,17 @@
+{
+  "name": "FrostArk.Unity",
+  "rootNamespace": "FrostArk.Unity",
+  "references": [
+    "FrostArk.Core",
+    "VContainer"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}
