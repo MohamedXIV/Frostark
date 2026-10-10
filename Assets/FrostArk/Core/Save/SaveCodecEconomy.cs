@@ -43,6 +43,21 @@ namespace FrostArk.Core.Save
                 WriteId(writer, job.StationId);
                 writer.Write(job.DueAt.Value);
             }
+
+            WriteCount(writer, economy.Markets.Count);
+            foreach (var market in economy.Markets)
+            {
+                WriteId(writer, market.Id);
+                writer.Write(market.Credits);
+                WriteCount(writer, market.Offers.Count);
+                foreach (var offer in market.Offers)
+                {
+                    WriteId(writer, offer.ItemId);
+                    writer.Write(offer.Stock);
+                    writer.Write(offer.AskPrice);
+                    writer.Write(offer.BidPrice);
+                }
+            }
         }
 
         private static EconomyState ReadEconomy(BinaryReader reader)
@@ -83,7 +98,18 @@ namespace FrostArk.Core.Save
                     throw new InvalidDataException("Unknown or mismatched prepaid workshop job.");
                 jobs.Add(new WorkshopJob(id, recipe, due));
             }
-            return EconomyState.Create(catalog, stations, jobs);
+            var markets = new List<MarketState>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+            {
+                var marketId = ReadId(reader);
+                long cash = reader.ReadInt64();
+                var listings = new List<MarketListing>();
+                for (int j = 0, offers = ReadCount(reader); j < offers; j++)
+                    listings.Add(new MarketListing(ReadId(reader), reader.ReadInt64(),
+                        reader.ReadInt64(), reader.ReadInt64()));
+                markets.Add(new MarketState(marketId, cash, listings));
+            }
+            return EconomyState.Create(catalog, stations, jobs, markets);
         }
     }
 }

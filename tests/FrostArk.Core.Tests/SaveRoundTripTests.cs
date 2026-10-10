@@ -153,7 +153,7 @@ namespace FrostArk.Core.Tests
             // v5 adds 8 bytes for an empty crew roster, v4 adds 28 bytes for
             // an empty thermal graph, v3 adds 44
             // for an empty inventory, and v2 adds 4 for overrides.
-            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 113);
+            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 117);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -169,7 +169,7 @@ namespace FrostArk.Core.Tests
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
             Assert.That(v4[8], Is.EqualTo(9));
-            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 109);
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 113);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -186,7 +186,7 @@ namespace FrostArk.Core.Tests
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
             Assert.That(v4[8], Is.EqualTo(9));
-            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 65);
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 69);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
@@ -203,7 +203,7 @@ namespace FrostArk.Core.Tests
             Assert.That(current[8], Is.EqualTo(9));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
-            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 16);
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 20);
             var decoded = SaveCodec.TryDecode(old);
             Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
             Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
