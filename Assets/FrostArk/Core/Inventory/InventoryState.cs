@@ -20,6 +20,9 @@ namespace FrostArk.Core.Inventory
         private readonly HashSet<string> _collected;
         private readonly Dictionary<string, long> _pack;
         private readonly Dictionary<string, long> _ship;
+        // Cumulative minted items from trusted crafting/buy operations. The
+        // salvage-only validator must not reject legitimate provenance.
+        private readonly Dictionary<string, long> _credited;
 
         public long PackMaxWeightGrams { get; }
         public int PackMaxSlots { get; }
@@ -29,13 +32,15 @@ namespace FrostArk.Core.Inventory
         private InventoryState(ItemCatalog catalog,
             Dictionary<string, SalvagePickup> pickups, HashSet<string> collected,
             Dictionary<string, long> pack, Dictionary<string, long> ship,
-            long packWeight, int packSlots, long shipWeight, int shipSlots)
+            long packWeight, int packSlots, long shipWeight, int shipSlots,
+            Dictionary<string, long> credited = null)
         {
             _catalog = catalog;
             _pickups = pickups;
             _collected = collected;
             _pack = pack;
             _ship = ship;
+            _credited = credited ?? new Dictionary<string, long>(StringComparer.Ordinal);
             PackMaxWeightGrams = packWeight;
             PackMaxSlots = packSlots;
             ShipMaxWeightGrams = shipWeight;
@@ -73,6 +78,8 @@ namespace FrostArk.Core.Inventory
 
         public bool IsCollected(EntityId pickupId) =>
             pickupId.IsValid && _collected.Contains(pickupId.Value);
+
+        public bool HasItem(EntityId id) => _catalog.Get(id) != null;
 
         public long GetAmount(InventoryContainer container, EntityId itemId)
         {
@@ -113,7 +120,7 @@ namespace FrostArk.Core.Inventory
             var collected = new HashSet<string>(_collected, StringComparer.Ordinal);
             collected.Add(pickup.Id.Value);
             return Accepted(new InventoryState(_catalog, _pickups, collected, pack, _ship,
-                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots, _credited));
         }
 
         public InventoryTransactionResult TryUnload(EntityId itemId, long quantity)
@@ -134,7 +141,7 @@ namespace FrostArk.Core.Inventory
             if (left == 0) pack.Remove(itemId.Value);
             else pack[itemId.Value] = left;
             return Accepted(new InventoryState(_catalog, _pickups, _collected, pack, ship,
-                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots, _credited));
         }
 
         /// <summary>
@@ -154,7 +161,7 @@ namespace FrostArk.Core.Inventory
             if (quantity == available) nextPack.Remove(itemId.Value);
             else nextPack[itemId.Value] = available - quantity;
             return Accepted(new InventoryState(_catalog, _pickups, _collected, nextPack, _ship,
-                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots, _credited));
         }
 
         public InventoryTransactionResult TryConsumeShip(EntityId itemId, long quantity)
@@ -168,7 +175,7 @@ namespace FrostArk.Core.Inventory
             if (quantity == available) next.Remove(itemId.Value);
             else next[itemId.Value] = available - quantity;
             return Accepted(new InventoryState(_catalog, _pickups, _collected, _pack, next,
-                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots, _credited));
         }
 
         private InventoryError CheckLimit(Dictionary<string, long> stock, long maxWeight, int maxSlots)
@@ -213,7 +220,9 @@ namespace FrostArk.Core.Inventory
             IEnumerable<SalvagePickup> pickups, IEnumerable<EntityId> collected,
             IEnumerable<KeyValuePair<EntityId, long>> pack,
             IEnumerable<KeyValuePair<EntityId, long>> ship,
-            long packWeightGrams, int packSlots, long shipWeightGrams, int shipSlots)
+            long packWeightGrams, int packSlots, long shipWeightGrams, int shipSlots,
+            IEnumerable<KeyValuePair<EntityId, long>> credited = null,
+            bool deferInflowValidation = false)
         {
             var fresh = Create(catalog, pickups, packWeightGrams, packSlots,
                 shipWeightGrams, shipSlots);
@@ -253,21 +262,52 @@ namespace FrostArk.Core.Inventory
                     (collectedTotals.TryGetValue(pickup.ItemId.Value, out var amount) ? amount : 0) +
                     pickup.Quantity);
             }
+            var creditMap = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var entry in credited ?? Array.Empty<KeyValuePair<EntityId, long>>())
+            {
+                if (!entry.Key.IsValid || entry.Value <= 0 ||
+                    catalog.Get(entry.Key) == null ||
+                    !creditMap.TryAdd(entry.Key.Value, entry.Value))
+                    throw new ArgumentException("Duplicate, invalid or unknown credited item.");
+            }
+
+            // Stock may be sourced from consumed salvage, or legitimate minted
+            // crafting/trading inflows. Both ledgers are monotonic provenance,
+            // never a replacement for capacity and stock checks.
+            if (!deferInflowValidation)
             foreach (var row in packState)
             {
-                var allocated = checked(row.Value + (shipState.TryGetValue(row.Key, out var shipQty) ? shipQty : 0));
-                if (!collectedTotals.TryGetValue(row.Key, out var total) || allocated > total)
-                    throw new ArgumentException("Loaded inventory exceeds collected pickup total.");
+                long claimed = checked(row.Value + (shipState.TryGetValue(row.Key,
+                    out var shipQty) ? shipQty : 0L));
+                long available = checked((collectedTotals.TryGetValue(row.Key,
+                    out var salvaged) ? salvaged : 0L) +
+                    (creditMap.TryGetValue(row.Key, out var generated) ? generated : 0L));
+                if (claimed > available)
+                    throw new ArgumentException("Loaded inventory exceeds verified inflows.");
             }
+            if (!deferInflowValidation)
             foreach (var row in shipState)
             {
                 if (packState.ContainsKey(row.Key)) continue;
-                if (!collectedTotals.TryGetValue(row.Key, out var total) || row.Value > total)
-                    throw new ArgumentException("Loaded ship stock exceeds collected pickup total.");
+                long available = checked((collectedTotals.TryGetValue(row.Key,
+                    out var salvaged) ? salvaged : 0L) +
+                    (creditMap.TryGetValue(row.Key, out var generated) ? generated : 0L));
+                if (row.Value > available)
+                    throw new ArgumentException("Loaded ship stock exceeds verified inflows.");
             }
-
             return new InventoryState(catalog, fresh._pickups, consumed, packState, shipState,
-                packWeightGrams, packSlots, shipWeightGrams, shipSlots);
+                packWeightGrams, packSlots, shipWeightGrams, shipSlots, creditMap);
+        }
+
+        internal InventoryState WithCredited(
+            IEnumerable<KeyValuePair<EntityId, long>> incoming)
+        {
+            return RestoreSnapshot(new ItemCatalog(SnapshotDefinitions()),
+                SnapshotPickups(), SnapshotCollected(),
+                SnapshotStock(InventoryContainer.Pack),
+                SnapshotStock(InventoryContainer.ShipHold),
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams,
+                ShipMaxSlots, incoming);
         }
 
         /// <summary>Stable replay fingerprint, not a save format or security signature.</summary>
@@ -305,8 +345,82 @@ namespace FrostArk.Core.Inventory
                     Add(stack.Value.ToString(CultureInfo.InvariantCulture));
                 }
             }
+            foreach (var entry in SnapshotCredited())
+            {
+                Add("credit"); Add(entry.Key.Value);
+                Add(entry.Value.ToString(CultureInfo.InvariantCulture));
+            }
             return StableHash32.Of(canonical.ToString());
         }
+
+
+        /// <summary>
+        /// Pure atomic exchange primitive. The return value cannot mutate
+        /// WorldState by itself: only a validated command may commit it.
+        /// Generated inputs are added to a monotonically persisted inflow
+        /// ledger for future save validation.
+        /// </summary>
+        public InventoryTransactionResult TryExchangeShip(
+            IEnumerable<KeyValuePair<EntityId, long>> spend,
+            IEnumerable<KeyValuePair<EntityId, long>> grant)
+        {
+            if (spend == null) throw new ArgumentNullException(nameof(spend));
+            if (grant == null) throw new ArgumentNullException(nameof(grant));
+            var removed = spend.ToArray();
+            var added = grant.ToArray();
+            if (removed.Length == 0 && added.Length == 0)
+                return Reject(InventoryError.InvalidQuantity);
+
+            bool Validate(KeyValuePair<EntityId, long>[] rows)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var row in rows)
+                {
+                    if (!row.Key.IsValid || row.Value <= 0)
+                        return false;
+                    if (!seen.Add(row.Key.Value)) return false;
+                }
+                return true;
+            }
+            if (!Validate(removed) || !Validate(added))
+                return Reject(InventoryError.InvalidQuantity);
+            foreach (var row in removed.Concat(added))
+                if (_catalog.Get(row.Key) == null)
+                    return Reject(InventoryError.UnknownItem);
+
+            var ship = new Dictionary<string, long>(_ship, StringComparer.Ordinal);
+            foreach (var row in removed)
+            {
+                if (!ship.TryGetValue(row.Key.Value, out var quantity) ||
+                    quantity < row.Value)
+                    return Reject(InventoryError.InsufficientStock);
+                if (quantity == row.Value) ship.Remove(row.Key.Value);
+                else ship[row.Key.Value] = quantity - row.Value;
+            }
+            foreach (var row in added)
+            {
+                ship[row.Key.Value] = checked((ship.TryGetValue(row.Key.Value,
+                    out var quantity) ? quantity : 0L) + row.Value);
+            }
+            var limit = CheckLimit(ship, ShipMaxWeightGrams, ShipMaxSlots);
+            if (limit != InventoryError.None) return Reject(limit);
+
+            var credited = new Dictionary<string, long>(_credited, StringComparer.Ordinal);
+            foreach (var row in added)
+            {
+                credited[row.Key.Value] = checked((credited.TryGetValue(row.Key.Value,
+                    out var old) ? old : 0L) + row.Value);
+            }
+
+            return Accepted(new InventoryState(_catalog, _pickups, _collected,
+                _pack, ship, PackMaxWeightGrams, PackMaxSlots,
+                ShipMaxWeightGrams, ShipMaxSlots, credited));
+        }
+
+        public IReadOnlyList<KeyValuePair<EntityId, long>> SnapshotCredited() =>
+            Array.AsReadOnly(_credited.OrderBy(p => p.Key, StringComparer.Ordinal)
+                .Select(p => new KeyValuePair<EntityId, long>(
+                    EntityId.Parse(p.Key), p.Value)).ToArray());
 
         // Canonical enumeration for the future v3 SaveCodec expansion.
         internal IReadOnlyList<ItemDefinition> SnapshotDefinitions() => _catalog.Snapshot();

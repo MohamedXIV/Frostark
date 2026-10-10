@@ -48,9 +48,10 @@ namespace FrostArk.Core.Save
                     writer.Write(stack.Value);
                 }
             }
+
         }
 
-        private static InventoryState ReadInventory(BinaryReader reader)
+        private static InventoryState ReadInventory(BinaryReader reader, bool withCredited)
         {
             long packWeight = reader.ReadInt64();
             int packSlots = reader.ReadInt32();
@@ -82,9 +83,32 @@ namespace FrostArk.Core.Save
             var pack = ReadStock();
             var ship = ReadStock();
             return InventoryState.RestoreSnapshot(catalog, pickups, collected, pack, ship,
-                packWeight, packSlots, shipWeight, shipSlots);
+                packWeight, packSlots, shipWeight, shipSlots,
+                deferInflowValidation: withCredited);
         }
 
+        /// <summary>v8-only append AFTER the complete v7 navigation record.</summary>
+        private static void WriteCreditedInventory(BinaryWriter writer,
+            InventoryState inventory)
+        {
+            var credited = inventory.SnapshotCredited();
+            WriteCount(writer, credited.Count);
+            foreach (var entry in credited)
+            {
+                WriteId(writer, entry.Key);
+                writer.Write(entry.Value);
+            }
+        }
+
+        private static InventoryState ReadCreditedInventory(BinaryReader reader,
+            InventoryState draft)
+        {
+            var credited = new List<KeyValuePair<EntityId, long>>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                credited.Add(new KeyValuePair<EntityId, long>(
+                    ReadId(reader), reader.ReadInt64()));
+            return draft.WithCredited(credited);
+        }
 
         private static void WriteThermal(BinaryWriter writer, ShipThermalState state)
         {

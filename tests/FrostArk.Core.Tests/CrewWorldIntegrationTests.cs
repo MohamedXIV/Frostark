@@ -164,7 +164,7 @@ namespace FrostArk.Core.Tests
                 new SimulationScheduler(new WorldClock(world.Minute),
                     Array.Empty<IWorldMinuteSystem>()));
             var current = SaveCodec.Encode(snapshot);
-            int payloadLength = BitConverter.ToInt32(current, 10) - 21;
+            int payloadLength = BitConverter.ToInt32(current, 10) - 41;
             var legacy = new byte[14 + payloadLength + 32];
             Array.Copy(current, legacy, 14 + payloadLength);
             legacy[8] = 4;

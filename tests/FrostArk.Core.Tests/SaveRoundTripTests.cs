@@ -153,7 +153,7 @@ namespace FrostArk.Core.Tests
             // v5 adds 8 bytes for an empty crew roster, v4 adds 28 bytes for
             // an empty thermal graph, v3 adds 44
             // for an empty inventory, and v2 adds 4 for overrides.
-            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 97);
+            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 117);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -168,8 +168,8 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
-            Assert.That(v4[8], Is.EqualTo(7));
-            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 93);
+            Assert.That(v4[8], Is.EqualTo(9));
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 113);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -185,14 +185,49 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
-            Assert.That(v4[8], Is.EqualTo(7));
-            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 49);
+            Assert.That(v4[8], Is.EqualTo(9));
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 69);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
             Assert.That(result.Value.State.Fingerprint(),
                 Is.EqualTo(current.State.Fingerprint()));
             Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(result.Value)).Success, Is.True);
+        }
+
+        [Test]
+        public void LegacyV7SnapshotWithoutCreditsMigratesWithIdenticalWorld()
+        {
+            var original = MakeSnapshot();
+            var current = SaveCodec.Encode(original);
+            Assert.That(current[8], Is.EqualTo(9));
+            // The new v8 tail is exactly one credited-inflow entry count,
+            // zero for an old world. Strip it to form the original v7 bytes.
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 20);
+            var decoded = SaveCodec.TryDecode(old);
+            Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
+            Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
+            Assert.That(decoded.Value.State.Fingerprint(),
+                Is.EqualTo(original.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(decoded.Value), Is.EqualTo(current));
+        }
+
+        [Test]
+        public void LegacyV8WithoutWorkshopOrMarketsMigratesToEmptyEconomy()
+        {
+            var current = MakeSnapshot();
+            var v9 = SaveCodec.Encode(current);
+            Assert.That(v9[8], Is.EqualTo(9));
+            // V9 added 4 empty collection counts for recipes, stations,
+            // pending prepaid jobs and finite merchants.
+            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 16);
+            var restored = SaveCodec.TryDecode(v8);
+            Assert.That(restored.Success, Is.True, restored.Error.ToString());
+            Assert.That(restored.Value.State.Economy.Jobs, Is.Empty);
+            Assert.That(restored.Value.State.Economy.Markets, Is.Empty);
+            Assert.That(restored.Value.State.Fingerprint(),
+                Is.EqualTo(current.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(restored.Value), Is.EqualTo(v9));
         }
 
         [Test]

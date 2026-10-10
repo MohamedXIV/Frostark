@@ -16,7 +16,10 @@ namespace FrostArk.Core.Events
         ShipModuleDamaged = 8,
         ShipModuleRepairStarted = 9,
         ShipRoutePlanned = 10,
-        ShipRouteCancelled = 11
+        ShipRouteCancelled = 11,
+        WorkshopStarted = 12,
+        MarketBought = 13,
+        MarketSold = 14
     }
 
     /// <summary>

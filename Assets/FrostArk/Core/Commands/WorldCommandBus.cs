@@ -1,6 +1,8 @@
 using System;
 using FrostArk.Core.Events;
 using FrostArk.Core.Inventory;
+using System.Linq;
+using System.Collections.Generic;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Commands
@@ -185,6 +187,87 @@ namespace FrostArk.Core.Commands
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
                     state.Minute, next.Revision, WorldEventKind.SalvageUnloaded,
                     unload.ItemId, quantity: unload.Quantity));
+            }
+
+            if (command is StartWorkshopJobCommand workshop)
+            {
+                var recipe = state.Economy.Recipes.Get(workshop.RecipeId);
+                if (recipe == null || !state.Economy.CanStart(workshop.JobId, workshop.RecipeId))
+                    return CommandResult.Rejected(state, CommandFailure.WorkshopUnavailable);
+                if (recipe.FuelUnitsPerBatch > 0 &&
+                    state.GetSupply(EntityId.Parse("supply:fuel")) < recipe.FuelUnitsPerBatch)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientSupply);
+                foreach (var output in recipe.Outputs)
+                    if (!state.Inventory.HasItem(output.ItemId))
+                        return CommandResult.Rejected(state, CommandFailure.UnknownItem);
+
+                var payment = state.Inventory.TryExchangeShip(
+                    recipe.Inputs.Select(x => new KeyValuePair<EntityId, long>(x.ItemId, x.Quantity)),
+                    System.Array.Empty<KeyValuePair<EntityId, long>>());
+                if (!payment.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(payment.Error));
+                var economy = state.Economy.Start(workshop.JobId, workshop.RecipeId, state.Minute);
+                var next = state.WithWorkshopStart(economy, payment.State,
+                    recipe.FuelUnitsPerBatch, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.WorkshopStarted, workshop.JobId, workshop.RecipeId));
+            }
+
+            if (command is BuyMarketItemCommand buy)
+            {
+                var market = state.Economy.GetMarket(buy.MarketId);
+                var offer = market?.Get(buy.ItemId);
+                if (offer == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownMarket);
+                if (buy.Quantity <= 0 || buy.Quantity > long.MaxValue / offer.AskPrice)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                if (offer.Stock < buy.Quantity)
+                    return CommandResult.Rejected(state, CommandFailure.MarketOutOfStock);
+                long amount = buy.Quantity * offer.AskPrice;
+                var walletId = EntityId.Parse("supply:credits");
+                if (!state.HasSupply(walletId) || state.GetSupply(walletId) < amount)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientCurrency);
+                if (market.Credits > long.MaxValue - amount)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                var outcome = state.Inventory.TryExchangeShip(
+                    System.Array.Empty<KeyValuePair<EntityId, long>>(),
+                    new[] { new KeyValuePair<EntityId, long>(buy.ItemId, buy.Quantity) });
+                if (!outcome.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(outcome.Error));
+                var merchant = market.BuyFrom(buy.Quantity, buy.ItemId, amount);
+                var next = state.WithMarketTrade(state.Economy.WithMarket(merchant),
+                    outcome.State, state.GetSupply(walletId) - amount, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.MarketBought,
+                    buy.ItemId, buy.MarketId, buy.Quantity));
+            }
+            if (command is SellMarketItemCommand sell)
+            {
+                var market = state.Economy.GetMarket(sell.MarketId);
+                var offer = market?.Get(sell.ItemId);
+                if (offer == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownMarket);
+                if (sell.Quantity <= 0 || sell.Quantity > long.MaxValue / offer.BidPrice ||
+                    sell.Quantity > long.MaxValue - offer.Stock)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                long payout = sell.Quantity * offer.BidPrice;
+                if (market.Credits < payout)
+                    return CommandResult.Rejected(state, CommandFailure.MerchantCannotAfford);
+                var walletId = EntityId.Parse("supply:credits");
+                long credits = state.GetSupply(walletId);
+                if (!state.HasSupply(walletId) || credits > long.MaxValue - payout)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                var outcome = state.Inventory.TryExchangeShip(
+                    new[] { new KeyValuePair<EntityId, long>(sell.ItemId, sell.Quantity) },
+                    System.Array.Empty<KeyValuePair<EntityId, long>>());
+                if (!outcome.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(outcome.Error));
+                var merchant = market.SellTo(sell.Quantity, sell.ItemId, payout);
+                var next = state.WithMarketTrade(state.Economy.WithMarket(merchant),
+                    outcome.State, credits + payout, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.MarketSold,
+                    sell.ItemId, sell.MarketId, sell.Quantity));
             }
 
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
