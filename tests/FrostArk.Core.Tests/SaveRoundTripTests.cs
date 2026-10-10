@@ -231,6 +231,23 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void LegacyV9WithoutCombatMigratesToEmptyWeaponsAndZeroTacticalTick()
+        {
+            var original = MakeSnapshot();
+            var v10 = SaveCodec.Encode(original);
+            Assert.That(v10[8], Is.EqualTo(10));
+            // V10 appends one int64 tactical tick plus one empty weapon count.
+            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 12);
+            var recovered = SaveCodec.TryDecode(v9);
+            Assert.That(recovered.Success, Is.True, recovered.Error.ToString());
+            Assert.That(recovered.Value.State.Combat.Tick, Is.Zero);
+            Assert.That(recovered.Value.State.Combat.Weapons, Is.Empty);
+            Assert.That(recovered.Value.State.Fingerprint(),
+                Is.EqualTo(original.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(recovered.Value), Is.EqualTo(v10));
+        }
+
+        [Test]
         public void InvalidHeaderAndOversizedDataFailWithoutThrowing()
         {
             var bytes = SaveCodec.Encode(MakeSnapshot());
