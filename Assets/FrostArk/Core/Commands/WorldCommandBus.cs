@@ -270,6 +270,26 @@ namespace FrostArk.Core.Commands
                     sell.ItemId, sell.MarketId, sell.Quantity));
             }
 
+            if (command is FireWeaponCommand fire)
+            {
+                var weapon = state.Combat.Get(fire.WeaponId);
+                if (weapon == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownWeapon);
+                if (state.Inventory.GetAmount(InventoryContainer.Pack, fire.WeaponId) <= 0)
+                    return CommandResult.Rejected(state, CommandFailure.WeaponNotCarried);
+                if (state.Combat.Tick < weapon.NextReadyTick)
+                    return CommandResult.Rejected(state, CommandFailure.WeaponCoolingDown);
+
+                var paid = state.Inventory.TryConsumePack(weapon.Definition.AmmoItemId,
+                    weapon.Definition.AmmoPerShot);
+                if (!paid.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(paid.Error));
+                var next = state.WithWeaponShot(fire.WeaponId, paid.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.WeaponFired,
+                    fire.WeaponId, weapon.Definition.AmmoItemId, weapon.Definition.AmmoPerShot));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
         }
 

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using FrostArk.Core.Crew;
+using FrostArk.Core.Combat;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.Economy;
 using FrostArk.Core.Ship;
@@ -27,6 +28,7 @@ namespace FrostArk.Core.World
         public ShipLayoutState Layout { get; }
         public ShipNavigationState Navigation { get; }
         public EconomyState Economy { get; }
+        public CombatState Combat { get; }
 
         public WorldMinute Minute { get; }
         public long Revision { get; }
@@ -35,7 +37,7 @@ namespace FrostArk.Core.World
             Dictionary<string, long> supplies, HashSet<string> crewIds,
             Dictionary<string, string> crewStations, HashSet<string> processedCommands,
             InventoryState inventory, ShipThermalState thermal, CrewState crewDuty, ShipLayoutState layout,
-            ShipNavigationState navigation, EconomyState economy)
+            ShipNavigationState navigation, EconomyState economy, CombatState combat)
         {
             Minute = minute;
             Revision = revision;
@@ -49,12 +51,13 @@ namespace FrostArk.Core.World
             Layout = layout ?? throw new ArgumentNullException(nameof(layout));
             Navigation = navigation ?? throw new ArgumentNullException(nameof(navigation));
             Economy = economy ?? throw new ArgumentNullException(nameof(economy));
+            Combat = combat ?? throw new ArgumentNullException(nameof(combat));
         }
 
         public static WorldState Create(WorldMinute minute,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             InventoryState inventory = null, ShipThermalState thermal = null,
-            CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null, EconomyState? economy = null)
+            CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null, EconomyState? economy = null, CombatState? combat = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -86,11 +89,20 @@ namespace FrostArk.Core.World
                     throw new ArgumentException(
                         "A reserved ship module requires a persistent paid repair job.", nameof(layout));
 
+            var equipped = combat ?? CombatState.Empty;
+            foreach (var weapon in equipped.Weapons)
+            {
+                if (!(inventory ?? InventoryState.Empty).HasItem(weapon.Definition.Id) ||
+                    !(inventory ?? InventoryState.Empty).HasItem(weapon.Definition.AmmoItemId))
+                    throw new ArgumentException("Weapons and ammunition require authored item definitions.",
+                        nameof(combat));
+            }
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty,
                 thermal ?? ShipThermalState.Empty, duty, shipLayout,
-                navigation ?? ShipNavigationState.Empty, economy ?? EconomyState.Empty);
+                navigation ?? ShipNavigationState.Empty, economy ?? EconomyState.Empty,
+                equipped);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);
@@ -108,7 +120,7 @@ namespace FrostArk.Core.World
         private WorldState CopyWithCommand(string commandId,
             Dictionary<string, long> supplies, Dictionary<string, string> crewStations,
             InventoryState inventory = null, CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null,
-            EconomyState? economy = null)
+            EconomyState? economy = null, CombatState? combat = null)
         {
             long nextRevision = checked(Revision + 1);
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
@@ -116,7 +128,7 @@ namespace FrostArk.Core.World
             return new WorldState(Minute, nextRevision, supplies,
                 _crewIds, crewStations, commands, inventory ?? Inventory, Thermal,
                 crewDuty ?? CrewDuty, layout ?? Layout, navigation ?? Navigation,
-                economy ?? Economy);
+                economy ?? Economy, combat ?? Combat);
         }
 
         internal WorldState WithWithdrawal(EntityId supplyId, long amount, EntityId commandId)
@@ -166,6 +178,25 @@ namespace FrostArk.Core.World
                 inventory: inventory, economy: next);
         }
 
+        /// <summary>Trusted session fixed-combat-tick projection; not a player command
+        /// and not a second world calendar. Hits are NOT resolved here.</summary>
+        public WorldState AtCombatTick(long tick)
+        {
+            var next = Combat.AtTick(tick);
+            if (ReferenceEquals(next, Combat)) return this;
+            return new WorldState(Minute, Revision, _supplies, _crewIds,
+                _crewStations, _processedCommands, Inventory, Thermal, CrewDuty,
+                Layout, Navigation, Economy, next);
+        }
+
+        internal WorldState WithWeaponShot(EntityId weaponId, InventoryState paidAmmo,
+            EntityId commandId)
+        {
+            if (paidAmmo == null) throw new ArgumentNullException(nameof(paidAmmo));
+            return CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                inventory: paidAmmo, combat: Combat.Fired(weaponId));
+        }
+
         internal WorldState WithWorkshopStart(EconomyState next, InventoryState inventory,
             long fuelUsed, EntityId commandId)
         {
@@ -192,7 +223,7 @@ namespace FrostArk.Core.World
                 throw new InvalidOperationException("Workshop time and WorldClock diverged.");
             return new WorldState(minute, Revision, _supplies, _crewIds,
                 _crewStations, _processedCommands, inventory, Thermal, CrewDuty, Layout,
-                Navigation, next);
+                Navigation, next, Combat);
         }
 
         internal WorldState WithNavigationCommand(ShipNavigationState navigation, EntityId commandId) =>
@@ -213,7 +244,7 @@ namespace FrostArk.Core.World
                 if (nextCrew.GetRepair(job.Id) == null)
                     updatedLayout = updatedLayout.CompleteRepair(job.Id);
             return new WorldState(Minute, Revision, _supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, updatedLayout, Navigation, Economy);
+                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, updatedLayout, Navigation, Economy, Combat);
         }
 
         /// <summary>
@@ -238,7 +269,7 @@ namespace FrostArk.Core.World
             if (tick.FuelConsumed > 0)
                 supplies[fuelId.Value] = checked(amount - tick.FuelConsumed);
             return new WorldState(minute, Revision, supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, tick.State, CrewDuty, Layout, Navigation, Economy);
+                _crewStations, _processedCommands, Inventory, tick.State, CrewDuty, Layout, Navigation, Economy, Combat);
         }
 
         /// <summary>Travel phase uses the minute already committed by Heat.</summary>
@@ -254,7 +285,7 @@ namespace FrostArk.Core.World
             var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
             supplies[fuelId.Value] = checked(remaining - tick.FuelConsumed);
             return new WorldState(Minute, Revision, supplies, _crewIds, _crewStations,
-                _processedCommands, Inventory, Thermal, CrewDuty, Layout, tick.State, Economy);
+                _processedCommands, Inventory, Thermal, CrewDuty, Layout, tick.State, Economy, Combat);
         }
 
         /// <summary>
@@ -265,7 +296,7 @@ namespace FrostArk.Core.World
         {
             if (minute < Minute)
                 throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
-            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal, CrewDuty, Layout, Navigation, Economy);
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal, CrewDuty, Layout, Navigation, Economy, Combat);
         }
 
         internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
@@ -288,12 +319,12 @@ namespace FrostArk.Core.World
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
             IEnumerable<EntityId> processed, InventoryState inventory = null,
             ShipThermalState thermal = null, CrewState? crewDuty = null, ShipLayoutState? layout = null, ShipNavigationState? navigation = null,
-            EconomyState? economy = null)
+            EconomyState? economy = null, CombatState? combat = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
-            var baseline = Create(minute, supplies, crew, crewDuty: crewDuty, layout: layout, navigation: navigation,
-                economy: economy);
+            var baseline = Create(minute, supplies, crew, inventory: inventory, crewDuty: crewDuty, layout: layout, navigation: navigation,
+                economy: economy, combat: combat);
             var stations = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var pair in assignments ?? throw new ArgumentNullException(nameof(assignments)))
             {
@@ -313,7 +344,7 @@ namespace FrostArk.Core.World
             return new WorldState(minute, revision, baseline._supplies,
                 baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty,
                 thermal ?? ShipThermalState.Empty, baseline.CrewDuty, baseline.Layout,
-                baseline.Navigation, baseline.Economy);
+                baseline.Navigation, baseline.Economy, baseline.Combat);
         }
 
         /// <summary>
@@ -357,6 +388,7 @@ namespace FrostArk.Core.World
             Add("ship-layout"); Add(Layout.Fingerprint().ToString(CultureInfo.InvariantCulture));
             Add("navigation"); Add(Navigation.Fingerprint().ToString(CultureInfo.InvariantCulture));
             Add("economy"); Add(Economy.Fingerprint().ToString(CultureInfo.InvariantCulture));
+            Add("combat"); Add(Combat.Fingerprint().ToString(CultureInfo.InvariantCulture));
             return StableHash32.Of(canonical.ToString());
         }
     }

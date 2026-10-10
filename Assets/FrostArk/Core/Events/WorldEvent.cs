@@ -19,7 +19,8 @@ namespace FrostArk.Core.Events
         ShipRouteCancelled = 11,
         WorkshopStarted = 12,
         MarketBought = 13,
-        MarketSold = 14
+        MarketSold = 14,
+        WeaponFired = 15
     }
 
     /// <summary>
