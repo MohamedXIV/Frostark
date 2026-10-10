@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using FrostArk.Core.Time;
+using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.Ship;
 using FrostArk.Core.World;
@@ -16,9 +17,9 @@ namespace FrostArk.Core.Save
     /// accidental-corruption check; it provides NO authenticity/security.
     /// No engine or host filesystem APIs are required by the codec.
     /// </summary>
-    public static class SaveCodec
+    public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 4;
+        public const ushort CurrentVersion = 5;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -90,6 +91,7 @@ namespace FrostArk.Core.Save
 
                     WriteInventory(writer, state.Inventory);
                     WriteThermal(writer, state.Thermal);
+                    WriteCrew(writer, state.CrewDuty);
                 }
                 payload = stream.ToArray();
             }
@@ -146,7 +148,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -213,193 +215,12 @@ namespace FrostArk.Core.Save
 
             var inventory = version >= 3 ? ReadInventory(reader) : InventoryState.Empty;
             var thermal = version >= 4 ? ReadThermal(reader) : ShipThermalState.Empty;
+            var crewDuty = version >= 5 ? ReadCrew(reader) : CrewState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory, thermal);
+                supplies, crew, assignments, processed, inventory, thermal, crewDuty);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
         }
 
 
-        private static void WriteInventory(BinaryWriter writer, InventoryState inventory)
-        {
-            writer.Write(inventory.PackMaxWeightGrams);
-            writer.Write(inventory.PackMaxSlots);
-            writer.Write(inventory.ShipMaxWeightGrams);
-            writer.Write(inventory.ShipMaxSlots);
-
-            var definitions = inventory.SnapshotDefinitions();
-            WriteCount(writer, definitions.Count);
-            foreach (var item in definitions)
-            {
-                WriteId(writer, item.Id);
-                writer.Write(item.ContentVersion);
-                writer.Write(item.UnitWeightGrams);
-                writer.Write(item.MaxStackSize);
-            }
-
-            var pickups = inventory.SnapshotPickups();
-            WriteCount(writer, pickups.Count);
-            foreach (var pickup in pickups)
-            {
-                WriteId(writer, pickup.Id);
-                WriteId(writer, pickup.ItemId);
-                writer.Write(pickup.Quantity);
-            }
-
-            var collected = inventory.SnapshotCollected();
-            WriteCount(writer, collected.Count);
-            foreach (var id in collected) WriteId(writer, id);
-
-            foreach (var location in new[] { InventoryContainer.Pack, InventoryContainer.ShipHold })
-            {
-                var stock = inventory.SnapshotStock(location);
-                WriteCount(writer, stock.Count);
-                foreach (var stack in stock)
-                {
-                    WriteId(writer, stack.Key);
-                    writer.Write(stack.Value);
-                }
-            }
-        }
-
-        private static InventoryState ReadInventory(BinaryReader reader)
-        {
-            long packWeight = reader.ReadInt64();
-            int packSlots = reader.ReadInt32();
-            long shipWeight = reader.ReadInt64();
-            int shipSlots = reader.ReadInt32();
-
-            var definitions = new List<ItemDefinition>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
-                definitions.Add(new ItemDefinition(ReadId(reader), reader.ReadInt32(),
-                    reader.ReadInt64(), reader.ReadInt32()));
-            var catalog = new ItemCatalog(definitions);
-
-            var pickups = new List<SalvagePickup>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
-                pickups.Add(new SalvagePickup(ReadId(reader), ReadId(reader), reader.ReadInt64()));
-
-            var collected = new List<EntityId>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
-                collected.Add(ReadId(reader));
-
-            List<KeyValuePair<EntityId, long>> ReadStock()
-            {
-                var values = new List<KeyValuePair<EntityId, long>>();
-                for (int i = 0, count = ReadCount(reader); i < count; i++)
-                    values.Add(new KeyValuePair<EntityId, long>(ReadId(reader), reader.ReadInt64()));
-                return values;
-            }
-
-            var pack = ReadStock();
-            var ship = ReadStock();
-            return InventoryState.RestoreSnapshot(catalog, pickups, collected, pack, ship,
-                packWeight, packSlots, shipWeight, shipSlots);
-        }
-
-
-        private static void WriteThermal(BinaryWriter writer, ShipThermalState state)
-        {
-            var rooms = state.Rooms;
-            WriteCount(writer, rooms.Count);
-            foreach (var room in rooms)
-            {
-                WriteId(writer, room.Id);
-                writer.Write(room.HeatCapacity);
-                writer.Write(room.Energy);
-                writer.Write(room.ExteriorConductance);
-                writer.Write(room.InsulationPermille);
-                writer.Write(room.IntegrityPermille);
-                writer.Write(room.ColdExposureMinutes);
-            }
-
-            var connections = state.Connections;
-            WriteCount(writer, connections.Count);
-            foreach (var connection in connections)
-            {
-                WriteId(writer, connection.A);
-                WriteId(writer, connection.B);
-                writer.Write(connection.Conductance);
-            }
-
-            // Disabled boiler is encoded as zero-length name + zero rates.
-            WriteText(writer, state.Boiler.RoomId.Value ?? "");
-            writer.Write(state.Boiler.FuelUnitsPerMinute);
-            writer.Write(state.Boiler.EnergyPerFuelUnit);
-        }
-
-        private static ShipThermalState ReadThermal(BinaryReader reader)
-        {
-            var rooms = new List<ThermalCompartment>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
-                rooms.Add(new ThermalCompartment(ReadId(reader), reader.ReadInt64(),
-                    reader.ReadInt64(), reader.ReadInt32(), reader.ReadInt32(),
-                    reader.ReadInt32(), reader.ReadInt32()));
-
-            var links = new List<ThermalConnection>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
-                links.Add(new ThermalConnection(ReadId(reader), ReadId(reader), reader.ReadInt32()));
-
-            string boilerName = ReadText(reader);
-            long burn = reader.ReadInt64();
-            long heatYield = reader.ReadInt64();
-            var boiler = new BoilerConfiguration(
-                boilerName.Length == 0 ? default : EntityId.Parse(boilerName),
-                burn, heatYield);
-            return ShipThermalState.Create(rooms, links, boiler);
-        }
-
-        private static void WriteCount(BinaryWriter writer, int count)
-        {
-            if (count < 0 || count > MaxEntryCount)
-                throw new ArgumentOutOfRangeException(nameof(count));
-            writer.Write(count);
-        }
-
-        private static int ReadCount(BinaryReader reader)
-        {
-            int count = reader.ReadInt32();
-            if (count < 0 || count > MaxEntryCount)
-                throw new InvalidDataException("Unreasonable collection length.");
-            return count;
-        }
-
-        private static void WriteId(BinaryWriter writer, EntityId id)
-        {
-            if (!id.IsValid)
-                throw new ArgumentException("A save identity cannot be empty.");
-            WriteText(writer, id.Value);
-        }
-
-        private static EntityId ReadId(BinaryReader reader) => EntityId.Parse(ReadText(reader));
-
-        private static void WriteText(BinaryWriter writer, string value)
-        {
-            if (value == null) throw new ArgumentNullException(nameof(value));
-            byte[] utf8 = Utf8.GetBytes(value);
-            if (utf8.Length > MaxStringBytes)
-                throw new ArgumentException("Save text is too long.");
-            writer.Write(utf8.Length);
-            writer.Write(utf8);
-        }
-
-        private static string ReadText(BinaryReader reader)
-        {
-            int bytes = reader.ReadInt32();
-            if (bytes < 0 || bytes > MaxStringBytes)
-                throw new InvalidDataException("Unreasonable UTF-8 string size.");
-            byte[] utf8 = reader.ReadBytes(bytes);
-            if (utf8.Length != bytes)
-                throw new EndOfStreamException("Truncated UTF-8 string.");
-            return Utf8.GetString(utf8);
-        }
-
-        private static bool ByteArraysEqual(byte[] left, byte[] right)
-        {
-            if (left.Length != right.Length) return false;
-            int difference = 0;
-            for (int i = 0; i < left.Length; i++)
-                difference |= left[i] ^ right[i];
-            return difference == 0;
-        }
     }
 }
