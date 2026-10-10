@@ -1,5 +1,6 @@
 using System;
 using FrostArk.Core.World;
+using FrostArk.Core.Inventory;
 
 namespace FrostArk.Core.Economy
 {
@@ -46,6 +47,18 @@ namespace FrostArk.Core.Economy
 
     public static class GearAccess
     {
+        /// <summary>Protection applies only when the specific authored gear item is held.</summary>
+        public static bool CanEnterCarrying(InventoryState inventory,
+            InventoryContainer container, GearProtection gear,
+            EnvironmentalHazard hazard)
+        {
+            if (inventory == null) throw new ArgumentNullException(nameof(inventory));
+            if (hazard == null) throw new ArgumentNullException(nameof(hazard));
+            if (gear == null || inventory.GetAmount(container, gear.GearId) == 0)
+                return CanEnter(null, hazard);
+            return CanEnter(gear, hazard);
+        }
+
         public static bool CanEnter(GearProtection gear, EnvironmentalHazard hazard)
         {
             if (hazard == null) throw new ArgumentNullException(nameof(hazard));
