@@ -149,4 +149,16 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+    public sealed class StartWorkshopJobCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId JobId { get; }
+        public EntityId RecipeId { get; }
+        public long ExpectedRevision { get; }
+        public StartWorkshopJobCommand(EntityId id, EntityId jobId,
+            EntityId recipeId, long expectedRevision)
+        {
+            Id = id; JobId = jobId; RecipeId = recipeId; ExpectedRevision = expectedRevision;
+        }
+    }
 }

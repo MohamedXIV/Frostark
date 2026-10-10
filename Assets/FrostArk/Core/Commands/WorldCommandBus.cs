@@ -1,6 +1,8 @@
 using System;
 using FrostArk.Core.Events;
 using FrostArk.Core.Inventory;
+using System.Linq;
+using System.Collections.Generic;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Commands
@@ -185,6 +187,26 @@ namespace FrostArk.Core.Commands
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
                     state.Minute, next.Revision, WorldEventKind.SalvageUnloaded,
                     unload.ItemId, quantity: unload.Quantity));
+            }
+
+            if (command is StartWorkshopJobCommand workshop)
+            {
+                var recipe = state.Economy.Recipes.Get(workshop.RecipeId);
+                if (recipe == null || !state.Economy.CanStart(workshop.JobId, workshop.RecipeId))
+                    return CommandResult.Rejected(state, CommandFailure.WorkshopUnavailable);
+                foreach (var output in recipe.Outputs)
+                    if (!state.Inventory.HasItem(output.ItemId))
+                        return CommandResult.Rejected(state, CommandFailure.UnknownItem);
+
+                var payment = state.Inventory.TryExchangeShip(
+                    recipe.Inputs.Select(x => new KeyValuePair<EntityId, long>(x.ItemId, x.Quantity)),
+                    System.Array.Empty<KeyValuePair<EntityId, long>>());
+                if (!payment.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(payment.Error));
+                var economy = state.Economy.Start(workshop.JobId, workshop.RecipeId, state.Minute);
+                var next = state.WithWorkshopStart(economy, payment.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.WorkshopStarted, workshop.JobId, workshop.RecipeId));
             }
 
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
