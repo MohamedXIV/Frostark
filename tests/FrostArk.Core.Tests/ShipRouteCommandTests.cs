@@ -66,6 +66,27 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void MidLegRerouteAndCancelRejectWithoutTeleport()
+        {
+            var route = Start().Navigation.PlanRoute(new[] { AB, BC })
+                .Step(1000, 100).State;
+            Assert.That(route.ProgressUnits, Is.GreaterThan(0));
+            var current = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(), navigation: route);
+            var bus = new WorldCommandBus();
+            var change = bus.Execute(current, new PlanShipRouteCommand(
+                EntityId.Parse("cmd:mid-reroute"), new[] { AC }, current.Revision));
+            var cancel = bus.Execute(current, new CancelShipRouteCommand(
+                EntityId.Parse("cmd:mid-cancel"), current.Revision));
+            foreach (var attempt in new[] { change, cancel })
+            {
+                Assert.That(attempt.Failure, Is.EqualTo(CommandFailure.CannotRerouteMidLeg));
+                Assert.That(attempt.State, Is.SameAs(current));
+                Assert.That(attempt.Events, Is.Empty);
+            }
+        }
+
+        [Test]
         public void RouteReplacementAndCancellationAtWaypointWork()
         {
             var world = Start();

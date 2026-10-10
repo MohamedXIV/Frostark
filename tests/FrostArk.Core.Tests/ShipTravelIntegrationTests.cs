@@ -121,6 +121,28 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void DestroyedHullCannotBurnMoreFuelOrKeepAdvancing()
+        {
+            var nav = ShipNavigationState.Create(
+                new[] { new SeaWaypoint(A, 0, 0), new SeaWaypoint(B, 40, 0) },
+                new[] { new SeaLeg(Ice, A, B, 40, 900, 0, 700) },
+                A, new NavigationTuning(10, 1, 700, 0, 400, 1000, 0), 1);
+            var world = WorldState.Create(WorldMinute.Zero,
+                new[] { new SupplyStock(Fuel, 100) }, Array.Empty<EntityId>(), navigation: nav);
+            world = new WorldCommandBus().Execute(world, new PlanShipRouteCommand(
+                EntityId.Parse("cmd:hull-route"), new[] { Ice }, world.Revision)).State;
+            var one = Bind(() => world, s => world = s);
+            one.Advance(1);
+            Assert.That(world.Navigation.HullIntegrityPermille, Is.Zero);
+            long remaining = world.GetSupply(Fuel);
+            int progress = world.Navigation.ProgressUnits;
+            one.Advance(20);
+            Assert.That(world.Navigation.ProgressUnits, Is.EqualTo(progress));
+            Assert.That(world.GetSupply(Fuel), Is.EqualTo(remaining));
+            Assert.That(world.Navigation.CurrentWaypoint, Is.EqualTo(A));
+        }
+
+        [Test]
         public void TravelCannotAdvanceWorldClock()
         {
             var state = Begin(true);
