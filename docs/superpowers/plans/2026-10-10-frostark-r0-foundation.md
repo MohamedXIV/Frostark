@@ -8,7 +8,7 @@
 
 **Tech Stack:** Unity 6000.6.0f1 + C# + URP, standalone .NET test project using a Unity-compatible subset, Unity Test Framework, optionally VContainer after compatibility check.
 
-**Spec:** [architecture](../../engineering/architecture.md), [time](../../engineering/time-simulation.md), [save content](../../engineering/save-content.md), and [QA gates](../../engineering/validation.md). [Issues F02–A05](../backlog.md) own delivery.
+**Spec:** [architecture](../../engineering/architecture.md), [time](../../engineering/time-simulation.md), [save content](../../engineering/save-content.md), and [QA gates](../../engineering/validation.md). [Issues F02–A05](../../production/backlog.md) own delivery.
 
 ## Global Constraints
 
