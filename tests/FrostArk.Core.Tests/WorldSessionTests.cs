@@ -2,6 +2,9 @@ using System;
 using System.Collections.Generic;
 using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
+using FrostArk.Core.Economy;
+using FrostArk.Core.Inventory;
+using FrostArk.Core.Ship;
 using FrostArk.Core.Save;
 using FrostArk.Core.Time;
 using FrostArk.Core.World;
@@ -165,6 +168,123 @@ namespace FrostArk.Core.Tests
                 Assert.That(resumed.Capture().State.Fingerprint(),
                     Is.EqualTo(continuous.Capture().State.Fingerprint()));
                 Assert.That(resumed.Capture().State.GetSupply(Fuel), Is.EqualTo(390));
+            }
+        }
+
+
+        [Test]
+        public void SessionWorkshopAfterSleepInterruptionAndRestoreDeliversPaidOutputOnlyOnce()
+        {
+            var scrap = EntityId.Parse("item:scrap");
+            var stove = EntityId.Parse("item:stove");
+            var pickup = EntityId.Parse("pickup:shore");
+            var recipeId = EntityId.Parse("recipe:stove");
+            var station = EntityId.Parse("station:bench");
+            var inventory = InventoryState.Create(new ItemCatalog(new[]
+            {
+                new ItemDefinition(scrap, 1, 100, 10),
+                new ItemDefinition(stove, 1, 2000, 1)
+            }), new[] { new SalvagePickup(pickup, scrap, 8) },
+                20000, 10, 20000, 4);
+            inventory = inventory.TryCollect(pickup).State.TryUnload(scrap, 8).State;
+            var recipe = new WorkshopRecipe(recipeId, 1, station, 60,
+                new[] { new RecipeStack(scrap, 3) },
+                new[] { new RecipeStack(stove, 1) });
+            var economy = EconomyState.Create(new WorkshopCatalog(new[] { recipe }),
+                new[] { station });
+            var initial = WorldState.Create(new WorldMinute(120),
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(),
+                inventory: inventory, economy: economy);
+            var jobId = EntityId.Parse("job:stove-01");
+            var commandId = EntityId.Parse("cmd:craft");
+
+            using (var session = new WorldSession(initial, seed: 42))
+            {
+                var accepted = session.Submit(new StartWorkshopJobCommand(
+                    commandId, jobId, recipeId, session.Revision));
+                Assert.That(accepted.Success, Is.True);
+                Assert.That(session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, scrap), Is.EqualTo(5),
+                    "Materials must be paid when the job starts, not again on resume.");
+
+                session.Schedule(new ScheduledWorldEvent(EntityId.Parse("event:raid"),
+                    new WorldMinute(160), "raiders", interruptsSleep: true));
+                var interrupted = session.AdvanceUntil(new WorldMinute(220),
+                    new SleepInterruptionPolicy());
+                Assert.That(interrupted.WasInterrupted, Is.True);
+                Assert.That(session.Minute.Value, Is.EqualTo(160));
+                Assert.That(session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, stove), Is.Zero);
+
+                var bytes = SaveCodec.Encode(session.Capture());
+                var loaded = SaveCodec.TryDecode(bytes);
+                Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
+
+                using (var restored = WorldSession.Restore(loaded.Value))
+                {
+                    var repeated = restored.Submit(new StartWorkshopJobCommand(
+                        commandId, jobId, recipeId, restored.Revision));
+                    Assert.That(repeated.Failure, Is.EqualTo(CommandFailure.DuplicateCommand));
+                    restored.Advance(20);
+                    session.Advance(20);
+                    var finished = restored.Capture().State;
+                    Assert.That(finished.Economy.Jobs, Is.Empty);
+                    Assert.That(finished.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, stove), Is.EqualTo(1));
+                    Assert.That(finished.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, scrap), Is.EqualTo(5));
+                    Assert.That(SaveCodec.Encode(restored.Capture()),
+                        Is.EqualTo(SaveCodec.Encode(session.Capture())),
+                        "Interrupted resume must match uninterrupted session bytes.");
+                    restored.Advance(10);
+                    Assert.That(restored.Capture().State.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, stove), Is.EqualTo(1));
+                }
+            }
+        }
+
+        [Test]
+        public void SessionHeatRunsBeforeShipTravelAndPreventsMovementWithoutFuel()
+        {
+            var boiler = EntityId.Parse("room:boiler");
+            var portA = EntityId.Parse("port:a");
+            var portB = EntityId.Parse("port:b");
+            var leg = EntityId.Parse("route:open");
+            var thermal = ShipThermalState.Create(
+                new[] { new ThermalCompartment(boiler, 1000, 20_000_000, 0, 1000, 1000) },
+                Array.Empty<ThermalConnection>(),
+                new BoilerConfiguration(boiler, 1, 10000));
+            var navigation = ShipNavigationState.Create(
+                new[] { new SeaWaypoint(portA, 0, 0), new SeaWaypoint(portB, 40, 0) },
+                new[] { new SeaLeg(leg, portA, portB, 40, 0, 0, 1000) },
+                portA, new NavigationTuning(10, 1, 700, 0, 400, 10, 0), 1000);
+            var world = WorldState.Create(WorldMinute.Zero,
+                new[] { new SupplyStock(Fuel, 1) }, Array.Empty<EntityId>(),
+                thermal: thermal, navigation: navigation);
+
+            Assert.Throws<ArgumentException>(() => new WorldSession(world),
+                "A real thermal ship must not silently assume zero-degree weather.");
+            using (var session = new WorldSession(world, ambientMilliC: _ => 20_000))
+            {
+                Assert.That(session.Submit(new PlanShipRouteCommand(
+                    EntityId.Parse("cmd:route"), new[] { leg }, session.Revision)).Success,
+                    Is.True);
+                session.Advance(1);
+                Assert.That(session.Minute.Value, Is.EqualTo(1));
+                Assert.That(session.Capture().State.GetSupply(Fuel), Is.Zero);
+                Assert.That(session.Capture().State.Navigation.ProgressUnits, Is.Zero);
+                Assert.That(session.Capture().State.Navigation.CurrentWaypoint, Is.EqualTo(portA));
+                var loaded = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+                Assert.That(loaded.Success, Is.True);
+                Assert.Throws<ArgumentException>(() => WorldSession.Restore(loaded.Value),
+                    "Restoring an authored thermal ship needs a weather dependency too.");
+                using (var resumed = WorldSession.Restore(loaded.Value,
+                    ambientMilliC: _ => 20_000))
+                {
+                    resumed.Advance(5);
+                    Assert.That(resumed.Capture().State.Navigation.ProgressUnits, Is.Zero);
+                    Assert.That(resumed.Capture().State.GetSupply(Fuel), Is.Zero);
+                }
             }
         }
 
