@@ -47,7 +47,9 @@ namespace FrostArk.Core.Tests
             Assert.That(a.Fingerprint(), Is.EqualTo(b.Fingerprint()));
             Assert.That(a.Thermal.Get(Cabin).Energy,
                 Is.EqualTo(b.Thermal.Get(Cabin).Energy));
-            Assert.That(a.Revision, Is.EqualTo(120));
+            // Simulation minutes are not player commands: do not grow the
+            // processed-command ledger by 120 entries.
+            Assert.That(a.Revision, Is.Zero);
             Assert.That(a.Minute.Value, Is.EqualTo(1440));
         }
 
@@ -65,7 +67,7 @@ namespace FrostArk.Core.Tests
             Assert.That(result.EndedAt.Value, Is.EqualTo(1635));
             Assert.That(state.Minute, Is.EqualTo(result.EndedAt));
             Assert.That(state.GetSupply(Fuel), Is.EqualTo(85));
-            Assert.That(state.Revision, Is.EqualTo(315));
+            Assert.That(state.Revision, Is.Zero);
             Assert.That(state.Thermal.Get(Cabin).ColdExposureMinutes, Is.GreaterThanOrEqualTo(0));
         }
 
@@ -108,7 +110,7 @@ namespace FrostArk.Core.Tests
 
             Assert.That(state.GetSupply(Fuel), Is.Zero);
             Assert.That(state.Thermal.TotalEnergy, Is.LessThan(originalEnergy));
-            Assert.That(state.Revision, Is.EqualTo(1));
+            Assert.That(state.Revision, Is.Zero);
         }
     }
 }
