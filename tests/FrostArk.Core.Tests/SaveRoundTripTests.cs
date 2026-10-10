@@ -149,10 +149,10 @@ namespace FrostArk.Core.Tests
             var current = MakeSnapshot();
             var withoutOverrides = SaveGameDto.Capture(current.State,
                 current.CreateScheduler(Array.Empty<IWorldMinuteSystem>()));
-            byte[] v3 = SaveCodec.Encode(withoutOverrides);
-            // Empty v3 inventory adds 24 capacity bytes and 5 empty counts
-            // (20 bytes), v2 overrides adds one final 4-byte count.
-            byte[] legacy = DowngradeEmptyInventory(v3, version: 1, removedBytes: 48);
+            byte[] v4 = SaveCodec.Encode(withoutOverrides);
+            // v4 adds 28 bytes for an empty thermal graph, v3 adds 44
+            // for an empty inventory, and v2 adds 4 for overrides.
+            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 76);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -166,9 +166,9 @@ namespace FrostArk.Core.Tests
         public void LegacyV2WithoutInventoryMigratesToEmptyInventory()
         {
             var original = MakeSnapshot();
-            byte[] v3 = SaveCodec.Encode(original);
-            Assert.That(v3[8], Is.EqualTo(3));
-            byte[] v2 = DowngradeEmptyInventory(v3, version: 2, removedBytes: 44);
+            byte[] v4 = SaveCodec.Encode(original);
+            Assert.That(v4[8], Is.EqualTo(4));
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 72);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -177,6 +177,21 @@ namespace FrostArk.Core.Tests
             Assert.That(loaded.Value.State.Inventory.GetUsedWeightGrams(
                 FrostArk.Core.Inventory.InventoryContainer.ShipHold), Is.Zero);
             Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(loaded.Value)).Success, Is.True);
+        }
+
+        [Test]
+        public void LegacyV3InventoryMigratesWithoutInventingThermalState()
+        {
+            var current = MakeSnapshot();
+            var v4 = SaveCodec.Encode(current);
+            Assert.That(v4[8], Is.EqualTo(4));
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 28);
+            var result = SaveCodec.TryDecode(v3);
+            Assert.That(result.Success, Is.True, result.Error.ToString());
+            Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
+            Assert.That(result.Value.State.Fingerprint(),
+                Is.EqualTo(current.State.Fingerprint()));
+            Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(result.Value)).Success, Is.True);
         }
 
         [Test]
