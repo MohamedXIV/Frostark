@@ -7,6 +7,7 @@ using System.Text;
 using FrostArk.Core.Time;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Economy;
 using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 
@@ -19,7 +20,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 8;
+        public const ushort CurrentVersion = 9;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -95,6 +96,7 @@ namespace FrostArk.Core.Save
                     WriteLayout(writer, state.Layout);
                     WriteNavigation(writer, state.Navigation);
                     WriteCreditedInventory(writer, state.Inventory);
+                    WriteEconomy(writer, state.Economy);
                 }
                 payload = stream.ToArray();
             }
@@ -151,7 +153,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -222,8 +224,9 @@ namespace FrostArk.Core.Save
             var layout = version >= 6 ? ReadLayout(reader) : ShipLayoutState.Empty;
             var navigation = version >= 7 ? ReadNavigation(reader) : ShipNavigationState.Empty;
             if (version >= 8) inventory = ReadCreditedInventory(reader, inventory);
+            var economy = version >= 9 ? ReadEconomy(reader) : EconomyState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation);
+                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
         }
 
