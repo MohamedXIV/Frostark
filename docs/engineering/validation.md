@@ -37,7 +37,7 @@ Unity project was created in `F:\UnityProjects\Frostark`, version 6000.6.0f1; Gi
 - Prefer connected GitHub operations for remote writes; RepoPilot Dev for GitHub Project visibility and exact-head coordination.
 - Use `dotnet` in agent environment for pure-C# tests; install correct SDK after validating Unity compatibility.
 - Headless Unity `-batchmode -nographics` only on authorized runner; plan module installation/activation carefully. Unity Pipeline package present in manifest is experimental, **optional**.
-- GitHub Actions is **opt-in only if necessary** and justified; do not create workflows by default.
+- The user explicitly authorized GitHub Actions for this public FrostArk repository on 2026-10-10. Use narrowly scoped, read-only hosted G0/G1 workflows when appropriate; limit unnecessary builds and verify logs/counts. G2 Unity is still separately unverified unless the actual Editor runs.
 - Track LFS binary assets and integrity; never commit `Library/` or `Temp/`.
 
 ## Regression portfolio to build
