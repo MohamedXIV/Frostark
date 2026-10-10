@@ -27,6 +27,16 @@ class VisualBenchmarkContractTests(unittest.TestCase):
             self.assertTrue(0 < profile["orthographicSize"] <= 20)
             self.assertTrue(0 <= profile["fogDensity"] <= 0.1)
 
+    def test_generator_requires_unique_id_per_manifest_profile(self):
+        profiles = self.spec()["profiles"]
+        self.assertEqual(len({p["id"] for p in profiles}), len(profiles))
+        source = GENERATOR.read_text(encoding="utf-8")
+        # G0 source contract only; must not be presented as Unity execution.
+        self.assertIn(
+            "spec.profiles.Select(p => p.id).Distinct().Count() != spec.profiles.Length",
+            source,
+        )
+
     def test_stable_texturing_and_representative_silhouettes(self):
         spec = self.spec()
         self.assertEqual(spec["textureFilter"], "Point")
