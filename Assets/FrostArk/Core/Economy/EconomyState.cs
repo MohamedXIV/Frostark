@@ -63,22 +63,29 @@ namespace FrostArk.Core.Economy
         private readonly EntityId[] _stations;
         private readonly WorkshopJob[] _jobs;
         private readonly WorkshopCatalog _recipes;
+        private readonly MarketState[] _markets;
         public WorkshopCatalog Recipes => _recipes;
         public IReadOnlyList<EntityId> Stations => Array.AsReadOnly(_stations);
         public IReadOnlyList<WorkshopJob> Jobs => Array.AsReadOnly(_jobs);
+        public IReadOnlyList<MarketState> Markets => Array.AsReadOnly(_markets);
+        public MarketState GetMarket(EntityId id) => id.IsValid ?
+            Array.Find(_markets, x => x.Id == id) : null;
 
-        private EconomyState(WorkshopCatalog recipes, EntityId[] stations, WorkshopJob[] jobs)
+        private EconomyState(WorkshopCatalog recipes, EntityId[] stations, WorkshopJob[] jobs,
+            MarketState[] markets)
         {
             _recipes = recipes;
             _stations = stations;
             _jobs = jobs;
+            _markets = markets;
         }
 
         public static EconomyState Empty => Create(
             new WorkshopCatalog(Array.Empty<WorkshopRecipe>()), Array.Empty<EntityId>());
 
         public static EconomyState Create(WorkshopCatalog recipes, IEnumerable<EntityId> stations,
-            IEnumerable<WorkshopJob> jobs = null)
+            IEnumerable<WorkshopJob> jobs = null,
+            IEnumerable<MarketState> markets = null)
         {
             if (recipes == null) throw new ArgumentNullException(nameof(recipes));
             if (stations == null) throw new ArgumentNullException(nameof(stations));
@@ -102,8 +109,14 @@ namespace FrostArk.Core.Economy
                         .SequenceEqual(job.Outputs.Select(x => (x.ItemId, x.Quantity))))
                     throw new ArgumentException("Pending job does not match an authored recipe and station.", nameof(jobs));
             }
+            var marketArray = (markets ?? Array.Empty<MarketState>()).ToArray();
+            if (marketArray.Any(x => x == null) ||
+                marketArray.Select(x => x.Id.Value).Distinct(StringComparer.Ordinal).Count()
+                    != marketArray.Length)
+                throw new ArgumentException("Null or duplicate merchant ID.", nameof(markets));
             return new EconomyState(recipes, stationArray,
-                queue.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray());
+                queue.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray(),
+                marketArray.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray());
         }
 
         public bool CanStart(EntityId jobId, EntityId recipeId)
@@ -120,7 +133,7 @@ namespace FrostArk.Core.Economy
             var recipe = Recipes.Get(recipeId);
             var job = new WorkshopJob(jobId, recipe,
                 new WorldMinute(checked(current.Value + recipe.MinutesPerBatch)));
-            return Create(Recipes, _stations, _jobs.Concat(new[] { job }));
+            return Create(Recipes, _stations, _jobs.Concat(new[] { job }), _markets);
         }
 
         public WorkshopMinuteResult CompleteDue(WorldMinute now, InventoryState inventory)
@@ -143,7 +156,15 @@ namespace FrostArk.Core.Economy
                 else
                     working = outcome.State;
             }
-            return new WorkshopMinuteResult(Create(Recipes, _stations, remaining), working);
+            return new WorkshopMinuteResult(Create(Recipes, _stations, remaining, _markets), working);
+        }
+
+        internal EconomyState WithMarket(MarketState next)
+        {
+            if (next == null || GetMarket(next.Id) == null)
+                throw new ArgumentException("Unknown market.", nameof(next));
+            return Create(Recipes, _stations, _jobs,
+                _markets.Select(x => x.Id == next.Id ? next : x));
         }
 
         public uint Fingerprint()
@@ -175,6 +196,18 @@ namespace FrostArk.Core.Economy
                 Add(job.RecipeVersion.ToString(CultureInfo.InvariantCulture));
                 Add(job.StationId.Value);
                 Add(job.DueAt.Value.ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var market in _markets)
+            {
+                Add("market"); Add(market.Id.Value);
+                Add(market.Credits.ToString(CultureInfo.InvariantCulture));
+                foreach (var offer in market.Offers)
+                {
+                    Add(offer.ItemId.Value);
+                    Add(offer.Stock.ToString(CultureInfo.InvariantCulture));
+                    Add(offer.AskPrice.ToString(CultureInfo.InvariantCulture));
+                    Add(offer.BidPrice.ToString(CultureInfo.InvariantCulture));
+                }
             }
             return StableHash32.Of(sb.ToString());
         }
