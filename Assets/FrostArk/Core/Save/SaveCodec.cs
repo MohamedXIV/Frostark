@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using FrostArk.Core.Time;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Save
@@ -16,7 +17,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static class SaveCodec
     {
-        public const ushort CurrentVersion = 2;
+        public const ushort CurrentVersion = 3;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -85,6 +86,8 @@ namespace FrostArk.Core.Save
                         WriteId(writer, item.Id);
                         WriteText(writer, item.Value);
                     }
+
+                    WriteInventory(writer, state.Inventory);
                 }
                 payload = stream.ToArray();
             }
@@ -141,7 +144,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -202,13 +205,92 @@ namespace FrostArk.Core.Save
             var overrides = new List<ProceduralOverride>();
             // Version 1 is the same schema minus the final override map.
             // Version 2 migration must NOT fabricate procedural changes.
-            if (version == CurrentVersion)
+            if (version >= 2)
                 for (int i = 0, count = ReadCount(reader); i < count; i++)
                     overrides.Add(new ProceduralOverride(ReadId(reader), ReadText(reader)));
 
+            var inventory = version >= 3 ? ReadInventory(reader) : InventoryState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed);
+                supplies, crew, assignments, processed, inventory);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
+        }
+
+
+        private static void WriteInventory(BinaryWriter writer, InventoryState inventory)
+        {
+            writer.Write(inventory.PackMaxWeightGrams);
+            writer.Write(inventory.PackMaxSlots);
+            writer.Write(inventory.ShipMaxWeightGrams);
+            writer.Write(inventory.ShipMaxSlots);
+
+            var definitions = inventory.SnapshotDefinitions();
+            WriteCount(writer, definitions.Count);
+            foreach (var item in definitions)
+            {
+                WriteId(writer, item.Id);
+                writer.Write(item.ContentVersion);
+                writer.Write(item.UnitWeightGrams);
+                writer.Write(item.MaxStackSize);
+            }
+
+            var pickups = inventory.SnapshotPickups();
+            WriteCount(writer, pickups.Count);
+            foreach (var pickup in pickups)
+            {
+                WriteId(writer, pickup.Id);
+                WriteId(writer, pickup.ItemId);
+                writer.Write(pickup.Quantity);
+            }
+
+            var collected = inventory.SnapshotCollected();
+            WriteCount(writer, collected.Count);
+            foreach (var id in collected) WriteId(writer, id);
+
+            foreach (var location in new[] { InventoryContainer.Pack, InventoryContainer.ShipHold })
+            {
+                var stock = inventory.SnapshotStock(location);
+                WriteCount(writer, stock.Count);
+                foreach (var stack in stock)
+                {
+                    WriteId(writer, stack.Key);
+                    writer.Write(stack.Value);
+                }
+            }
+        }
+
+        private static InventoryState ReadInventory(BinaryReader reader)
+        {
+            long packWeight = reader.ReadInt64();
+            int packSlots = reader.ReadInt32();
+            long shipWeight = reader.ReadInt64();
+            int shipSlots = reader.ReadInt32();
+
+            var definitions = new List<ItemDefinition>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                definitions.Add(new ItemDefinition(ReadId(reader), reader.ReadInt32(),
+                    reader.ReadInt64(), reader.ReadInt32()));
+            var catalog = new ItemCatalog(definitions);
+
+            var pickups = new List<SalvagePickup>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                pickups.Add(new SalvagePickup(ReadId(reader), ReadId(reader), reader.ReadInt64()));
+
+            var collected = new List<EntityId>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                collected.Add(ReadId(reader));
+
+            List<KeyValuePair<EntityId, long>> ReadStock()
+            {
+                var values = new List<KeyValuePair<EntityId, long>>();
+                for (int i = 0, count = ReadCount(reader); i < count; i++)
+                    values.Add(new KeyValuePair<EntityId, long>(ReadId(reader), reader.ReadInt64()));
+                return values;
+            }
+
+            var pack = ReadStock();
+            var ship = ReadStock();
+            return InventoryState.RestoreSnapshot(catalog, pickups, collected, pack, ship,
+                packWeight, packSlots, shipWeight, shipSlots);
         }
 
         private static void WriteCount(BinaryWriter writer, int count)
