@@ -99,6 +99,41 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ChangingSeedMovesSitesButNeverChangesTheirPersistentIds()
+        {
+            var a = IslandGenerator.Generate(Island, 7, Zone(), 20);
+            var b = IslandGenerator.Generate(Island, 314, Zone(), 20);
+            Assert.That(a.Nodes.Select(x => x.Id.Value),
+                Is.EqualTo(b.Nodes.Select(x => x.Id.Value)));
+            Assert.That(a.Nodes.Zip(b.Nodes, (x, y) => x.X != y.X || x.Y != y.Y)
+                .Any(x => x), Is.True);
+        }
+
+        [Test]
+        public void UnreachableOptionalSiteIsRejectedEvenIfExtractionIsSafe()
+        {
+            var land = new IslandNode(EntityId.Parse("site:land"), 0, 0, IslandNodeKind.Landing);
+            var exit = new IslandNode(EntityId.Parse("site:exit"), 10, 0, IslandNodeKind.Extraction);
+            var crate = new IslandNode(EntityId.Parse("site:crate"), 20, 0, IslandNodeKind.Salvage);
+            Assert.Throws<ArgumentException>(() => IslandLayout.Create(Island, Zone(),
+                new[] { land, exit, crate },
+                new[] { new IslandEdge(land.Id, exit.Id, isSafe: true) }));
+        }
+
+        [Test]
+        public void AuthoredLayoutCollectionsCannotBeMutatedFromCallers()
+        {
+            var original = IslandGenerator.Generate(Island, 7, Zone(), 10);
+            var before = original.Fingerprint();
+            var exposed = original.Nodes as System.Collections.Generic.IList<IslandNode>;
+            Assert.That(exposed, Is.Not.Null);
+            Assert.Throws<NotSupportedException>(() => exposed[0] =
+                new IslandNode(EntityId.Parse("site:injected"), 1, 1, IslandNodeKind.Salvage));
+            Assert.That(original.Fingerprint(), Is.EqualTo(before));
+            Assert.That(original.CanReachExtraction(safeOnly: true), Is.True);
+        }
+
+        [Test]
         public void InvalidProfilesAndUnboundedRequestsCannotBeMaterialized()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new WorldZoneProfile(
