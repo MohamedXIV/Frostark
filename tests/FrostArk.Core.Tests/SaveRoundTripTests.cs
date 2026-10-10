@@ -143,7 +143,13 @@ namespace FrostArk.Core.Tests
         [Test]
         public void LegacyV1WithoutOverridesMigratesToEmptyOverrideCatalog()
         {
-            byte[] v2 = SaveCodec.Encode(MakeSnapshot());
+            // A legitimate v1 payload ends immediately after reserved event IDs.
+            // Build an otherwise-current snapshot with zero overrides, then
+            // remove only the trailing v2 empty-overrides count.
+            var current = MakeSnapshot();
+            var withoutOverrides = SaveGameDto.Capture(current.State,
+                current.CreateScheduler(Array.Empty<IWorldMinuteSystem>()));
+            byte[] v2 = SaveCodec.Encode(withoutOverrides);
             var legacy = new byte[v2.Length - 4];
             Array.Copy(v2, legacy, 14 + (BitConverter.ToInt32(v2, 10) - 4));
             legacy[8] = 1; legacy[9] = 0;
