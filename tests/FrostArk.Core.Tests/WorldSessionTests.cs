@@ -131,6 +131,44 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void SessionThermalAdvanceConsumesRealFuelAndReplaysAfterRestore()
+        {
+            var boiler = EntityId.Parse("room:boiler");
+            var cabin = EntityId.Parse("room:cabin");
+            var thermal = FrostArk.Core.Ship.ShipThermalState.Create(new[]
+            {
+                new FrostArk.Core.Ship.ThermalCompartment(boiler, 1000, 20_000_000, 2000, 900, 1000),
+                new FrostArk.Core.Ship.ThermalCompartment(cabin, 1000, 20_000_000, 7000, 400, 800)
+            }, new[] { new FrostArk.Core.Ship.ThermalConnection(boiler, cabin, 200) },
+                new FrostArk.Core.Ship.BoilerConfiguration(boiler, 1, 3000));
+            var world = WorldState.Create(new WorldMinute(1320),
+                new[] { new SupplyStock(Fuel, 400) }, Array.Empty<EntityId>(),
+                thermal: thermal);
+
+            byte[] halfway;
+            using (var session = new WorldSession(world, ambientMilliC: _ => -30_000))
+            {
+                session.Advance(5);
+                Assert.That(session.Capture().State.GetSupply(Fuel), Is.EqualTo(395),
+                    "Time must not advance without burning real canonical ship fuel.");
+                halfway = SaveCodec.Encode(session.Capture());
+            }
+
+            var decoded = SaveCodec.TryDecode(halfway);
+            Assert.That(decoded.Success, Is.True);
+            using (var resumed = WorldSession.Restore(decoded.Value,
+                ambientMilliC: _ => -30_000))
+            using (var continuous = new WorldSession(world, ambientMilliC: _ => -30_000))
+            {
+                resumed.Advance(5);
+                continuous.Advance(10);
+                Assert.That(resumed.Capture().State.Fingerprint(),
+                    Is.EqualTo(continuous.Capture().State.Fingerprint()));
+                Assert.That(resumed.Capture().State.GetSupply(Fuel), Is.EqualTo(390));
+            }
+        }
+
+        [Test]
         public void DisposeRejectsUseAndReleasesSubscriptions()
         {
             var session = MakeSession();
