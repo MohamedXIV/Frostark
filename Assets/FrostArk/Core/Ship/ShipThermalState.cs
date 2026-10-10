@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
+using System.Text;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Ship
@@ -117,6 +119,36 @@ namespace FrostArk.Core.Ship
                     throw new ArgumentException("Missing room or duplicate edge.", nameof(edges));
             }
             return new ShipThermalState(array, links, boiler);
+        }
+
+        /// <summary>Canonical replay fingerprint of all room state and links.</summary>
+        public uint Fingerprint()
+        {
+            var data = new StringBuilder();
+            void Add(string part)
+            {
+                data.Append(part.Length.ToString(CultureInfo.InvariantCulture))
+                    .Append(':').Append(part);
+            }
+            foreach (var room in _rooms)
+            {
+                Add(room.Id.Value);
+                Add(room.HeatCapacity.ToString(CultureInfo.InvariantCulture));
+                Add(room.Energy.ToString(CultureInfo.InvariantCulture));
+                Add(room.ExteriorConductance.ToString(CultureInfo.InvariantCulture));
+                Add(room.InsulationPermille.ToString(CultureInfo.InvariantCulture));
+                Add(room.IntegrityPermille.ToString(CultureInfo.InvariantCulture));
+                Add(room.ColdExposureMinutes.ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var edge in _edges)
+            {
+                Add("edge"); Add(edge.A.Value); Add(edge.B.Value);
+                Add(edge.Conductance.ToString(CultureInfo.InvariantCulture));
+            }
+            Add("boiler"); Add(Boiler.RoomId.Value ?? "");
+            Add(Boiler.FuelUnitsPerMinute.ToString(CultureInfo.InvariantCulture));
+            Add(Boiler.EnergyPerFuelUnit.ToString(CultureInfo.InvariantCulture));
+            return StableHash32.Of(data.ToString());
         }
 
         public ThermalCompartment Get(EntityId id)
