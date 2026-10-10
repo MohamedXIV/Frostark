@@ -221,7 +221,7 @@ namespace FrostArk.Core.Inventory
             }
             foreach (var row in packState)
             {
-                var allocated = row.Value + (shipState.TryGetValue(row.Key, out var shipQty) ? shipQty : 0);
+                var allocated = checked(row.Value + (shipState.TryGetValue(row.Key, out var shipQty) ? shipQty : 0));
                 if (!collectedTotals.TryGetValue(row.Key, out var total) || allocated > total)
                     throw new ArgumentException("Loaded inventory exceeds collected pickup total.");
             }
