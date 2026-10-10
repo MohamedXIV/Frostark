@@ -156,6 +156,15 @@ namespace FrostArk.VisualBenchmark.Editor
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null)
                 throw new InvalidOperationException("G3 capture requires a graphics-capable Unity Editor.");
             var spec = LoadSpec();
+            // Additive scenes share a renderer with other loaded scenes. Refuse
+            // contaminated captures rather than toggling user scene objects.
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var loaded = SceneManager.GetSceneAt(i);
+                if (loaded.isLoaded && loaded.GetRootGameObjects().Length > 0)
+                    throw new InvalidOperationException(
+                        "Open an empty Editor scene before benchmark capture; other scene objects would contaminate the images.");
+            }
             Directory.CreateDirectory(CaptureFolder);
             foreach (var profile in spec.profiles)
             {
@@ -218,7 +227,10 @@ namespace FrostArk.VisualBenchmark.Editor
             if (spec == null || spec.schemaVersion != 1 || spec.vertexSnapping ||
                 spec.textureFilter != "Point" || spec.texturePixels < 8 ||
                 spec.tileWorldUnits <= 0 || spec.profiles == null ||
-                spec.profiles.Length != 2 ||
+                spec.profiles.Length != 4 ||
+                spec.profiles.Select(p => p.pitchDegrees).Distinct().Count() != 2 ||
+                spec.profiles.Select(p => p.fogDensity).Distinct().Count() != 2 ||
+                spec.profiles.Select(p => p.pitchDegrees + "/" + p.fogDensity).Distinct().Count() != 4 ||
                 spec.profiles.Select(p => p.id).Distinct().Count() != 2 ||
                 spec.profiles.Any(p => p.pitchDegrees < 20 || p.pitchDegrees > 75 ||
                     p.orthographicSize <= 0 || p.fogDensity < 0 || p.fogDensity > 0.1f))

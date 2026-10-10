@@ -18,9 +18,10 @@ class VisualBenchmarkContractTests(unittest.TestCase):
         spec = self.spec()
         self.assertEqual(spec["schemaVersion"], 1)
         profiles = spec["profiles"]
-        self.assertEqual([p["id"] for p in profiles], ["fixed_isometric", "steep_tilt"])
-        self.assertNotEqual(profiles[0]["pitchDegrees"], profiles[1]["pitchDegrees"])
-        self.assertNotEqual(profiles[0]["fogDensity"], profiles[1]["fogDensity"])
+        self.assertEqual(len(profiles), 4)
+        self.assertEqual(len({p["id"] for p in profiles}), 4)
+        self.assertEqual({(p["pitchDegrees"], p["fogDensity"]) for p in profiles},
+                         {(35, 0.008), (35, 0.03), (60, 0.008), (60, 0.03)})
         for profile in profiles:
             self.assertTrue(20 <= profile["pitchDegrees"] <= 75)
             self.assertTrue(0 < profile["orthographicSize"] <= 20)
@@ -53,6 +54,7 @@ class VisualBenchmarkContractTests(unittest.TestCase):
                       "EncodeToPNG", "Logs/visual-benchmark"):
             self.assertIn(token, source, token)
         self.assertNotIn("ScreenCapture.CaptureScreenshot", source)
+        self.assertIn("loaded.GetRootGameObjects().Length > 0", source)
 
     def test_unity_asset_metadata_and_editor_only_assembly(self):
         import re
