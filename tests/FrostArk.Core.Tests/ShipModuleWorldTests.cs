@@ -159,8 +159,9 @@ namespace FrostArk.Core.Tests
                     baseWorld.Revision)).State;
             var rogueJob = CrewState.Create(damaged.CrewDuty.Members,
                 new[] { new RepairJob(Engine, 1) });
-            var forged = WorldState.Create(damaged.Minute, damaged.SnapshotSupplies(),
-                damaged.SnapshotCrew(), inventory: damaged.Inventory,
+            var forged = WorldState.Create(damaged.Minute,
+                new[] { new SupplyStock(Fuel, damaged.GetSupply(Fuel)) },
+                new[] { Engineer, Repairer }, inventory: damaged.Inventory,
                 thermal: damaged.Thermal, crewDuty: rogueJob, layout: damaged.Layout);
             var tick = forged;
             Bind(() => tick, x => tick = x).Advance(1);
