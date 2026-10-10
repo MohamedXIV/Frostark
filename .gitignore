@@ -121,3 +121,7 @@ InitTestScene*.unity*
 **/[Bb]in/
 **/[Oo]bj/
 **/TestResults/
+
+# Python G0 verifier's generated caches (never commit).
+**/__pycache__/
+*.py[cod]
