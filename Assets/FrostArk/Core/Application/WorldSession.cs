@@ -17,6 +17,7 @@ namespace FrostArk.Core.Application
         private WorldState _state;
         private readonly SimulationScheduler _scheduler;
         private readonly WorldCommandBus _commands = new WorldCommandBus();
+        private readonly IReadOnlyList<ProceduralOverride> _overrides;
         private bool _disposed;
 
         public event Action<WorldSessionChange> Changed;
@@ -31,12 +32,15 @@ namespace FrostArk.Core.Application
             _state = state ?? throw new ArgumentNullException(nameof(state));
             _scheduler = new SimulationScheduler(new WorldClock(state.Minute),
                 systems ?? Array.Empty<IWorldMinuteSystem>(), seed);
+            _overrides = Array.Empty<ProceduralOverride>();
         }
 
-        private WorldSession(WorldState state, SimulationScheduler scheduler)
+        private WorldSession(WorldState state, SimulationScheduler scheduler,
+            IReadOnlyList<ProceduralOverride> overrides)
         {
             _state = state;
             _scheduler = scheduler;
+            _overrides = overrides;
         }
 
         public long Revision { get { Guard(); return _state.Revision; } }
@@ -83,7 +87,7 @@ namespace FrostArk.Core.Application
         public SaveGameDto Capture()
         {
             Guard();
-            return SaveGameDto.Capture(_state, _scheduler);
+            return SaveGameDto.Capture(_state, _scheduler, _overrides);
         }
 
         public static WorldSession Restore(SaveGameDto snapshot,
@@ -92,7 +96,8 @@ namespace FrostArk.Core.Application
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             var scheduler = snapshot.CreateScheduler(systems ?? Array.Empty<IWorldMinuteSystem>());
-            return new WorldSession(snapshot.State, scheduler);
+            return new WorldSession(snapshot.State, scheduler,
+                new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly());
         }
 
         private WorldAdvanceResult CommitAdvance(WorldAdvanceResult result)

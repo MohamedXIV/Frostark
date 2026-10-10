@@ -13,7 +13,9 @@ namespace FrostArk.Unity
     {
         protected override void Configure(IContainerBuilder builder)
         {
-            builder.Register<WorldSession>(Lifetime.Scoped);
+            // Explicit constructor selection: WorldSession also supports restoring
+            // from an existing WorldState, which is not a DI dependency.
+            builder.Register(_ => new WorldSession(), Lifetime.Scoped);
             builder.RegisterComponentInHierarchy<WorldSessionPresenter>();
         }
     }
