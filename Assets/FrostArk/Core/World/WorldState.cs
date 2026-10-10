@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.Ship;
 
@@ -21,6 +22,7 @@ namespace FrostArk.Core.World
         private readonly HashSet<string> _processedCommands;
         public InventoryState Inventory { get; }
         public ShipThermalState Thermal { get; }
+        public CrewState CrewDuty { get; }
 
         public WorldMinute Minute { get; }
         public long Revision { get; }
@@ -28,7 +30,7 @@ namespace FrostArk.Core.World
         private WorldState(WorldMinute minute, long revision,
             Dictionary<string, long> supplies, HashSet<string> crewIds,
             Dictionary<string, string> crewStations, HashSet<string> processedCommands,
-            InventoryState inventory, ShipThermalState thermal)
+            InventoryState inventory, ShipThermalState thermal, CrewState crewDuty)
         {
             Minute = minute;
             Revision = revision;
@@ -38,11 +40,13 @@ namespace FrostArk.Core.World
             _processedCommands = processedCommands;
             Inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             Thermal = thermal ?? throw new ArgumentNullException(nameof(thermal));
+            CrewDuty = crewDuty ?? throw new ArgumentNullException(nameof(crewDuty));
         }
 
         public static WorldState Create(WorldMinute minute,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
-            InventoryState inventory = null, ShipThermalState thermal = null)
+            InventoryState inventory = null, ShipThermalState thermal = null,
+            CrewState crewDuty = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -64,9 +68,15 @@ namespace FrostArk.Core.World
                     throw new ArgumentException("Crew identities must be valid and unique.", nameof(crew));
             }
 
+            var duty = crewDuty ?? CrewState.Empty;
+            foreach (var member in duty.Members)
+                if (!crews.Contains(member.Id.Value))
+                    throw new ArgumentException("Authored crew member is absent from world registry.", nameof(crewDuty));
+
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
-                new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty, thermal ?? ShipThermalState.Empty);
+                new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty,
+                thermal ?? ShipThermalState.Empty, duty);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);
@@ -83,13 +93,14 @@ namespace FrostArk.Core.World
 
         private WorldState CopyWithCommand(string commandId,
             Dictionary<string, long> supplies, Dictionary<string, string> crewStations,
-            InventoryState inventory = null)
+            InventoryState inventory = null, CrewState crewDuty = null)
         {
             long nextRevision = checked(Revision + 1);
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
             commands.Add(commandId);
             return new WorldState(Minute, nextRevision, supplies,
-                _crewIds, crewStations, commands, inventory ?? Inventory, Thermal);
+                _crewIds, crewStations, commands, inventory ?? Inventory, Thermal,
+                crewDuty ?? CrewDuty);
         }
 
         internal WorldState WithWithdrawal(EntityId supplyId, long amount, EntityId commandId)
@@ -120,6 +131,21 @@ namespace FrostArk.Core.World
             return CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory);
         }
 
+        internal WorldState WithCrewAway(EntityId crewId, bool away, EntityId commandId) =>
+            CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                crewDuty: CrewDuty.SetAway(crewId, away));
+
+        // Crew phase runs before Heat and does not advance world time itself.
+        // The heat adapter commits the same minute once after all crew effects.
+        internal WorldState WithCrewTick(WorldMinute minute, CrewState nextCrew)
+        {
+            if (nextCrew == null) throw new ArgumentNullException(nameof(nextCrew));
+            if (minute.Value != checked(Minute.Value + 1))
+                throw new ArgumentOutOfRangeException(nameof(minute));
+            return new WorldState(Minute, Revision, _supplies, _crewIds,
+                _crewStations, _processedCommands, Inventory, Thermal, nextCrew);
+        }
+
         /// <summary>
         /// Commit one *simulation* minute without manufacturing a command ID or
         /// incrementing a player-command revision. Existing command/replay
@@ -142,7 +168,7 @@ namespace FrostArk.Core.World
             if (tick.FuelConsumed > 0)
                 supplies[fuelId.Value] = checked(amount - tick.FuelConsumed);
             return new WorldState(minute, Revision, supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, tick.State);
+                _crewStations, _processedCommands, Inventory, tick.State, CrewDuty);
         }
 
         /// <summary>
@@ -153,7 +179,7 @@ namespace FrostArk.Core.World
         {
             if (minute < Minute)
                 throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
-            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal);
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal, CrewDuty);
         }
 
         internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
@@ -175,11 +201,11 @@ namespace FrostArk.Core.World
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
             IEnumerable<EntityId> processed, InventoryState inventory = null,
-            ShipThermalState thermal = null)
+            ShipThermalState thermal = null, CrewState crewDuty = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
-            var baseline = Create(minute, supplies, crew);
+            var baseline = Create(minute, supplies, crew, crewDuty: crewDuty);
             var stations = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var pair in assignments ?? throw new ArgumentNullException(nameof(assignments)))
             {
@@ -198,7 +224,7 @@ namespace FrostArk.Core.World
                 throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
             return new WorldState(minute, revision, baseline._supplies,
                 baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty,
-                thermal ?? ShipThermalState.Empty);
+                thermal ?? ShipThermalState.Empty, baseline.CrewDuty);
         }
 
         /// <summary>
@@ -237,6 +263,8 @@ namespace FrostArk.Core.World
             Add(Thermal.Fingerprint().ToString(CultureInfo.InvariantCulture));
             Add("inventory");
             Add(Inventory.Fingerprint().ToString(CultureInfo.InvariantCulture));
+            Add("crew-duty");
+            Add(CrewDuty.Fingerprint().ToString(CultureInfo.InvariantCulture));
             return StableHash32.Of(canonical.ToString());
         }
     }
