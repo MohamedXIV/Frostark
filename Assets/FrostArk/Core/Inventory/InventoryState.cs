@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
+using System.Text;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Inventory
@@ -165,6 +167,45 @@ namespace FrostArk.Core.Inventory
 
         private static InventoryTransactionResult Accepted(InventoryState next) =>
             new InventoryTransactionResult(next, InventoryError.None);
+
+
+        /// <summary>Stable replay fingerprint, not a save format or security signature.</summary>
+        public uint Fingerprint()
+        {
+            var canonical = new StringBuilder();
+            void Add(string value)
+            {
+                canonical.Append(value.Length.ToString(CultureInfo.InvariantCulture))
+                    .Append(':').Append(value);
+            }
+            Add(PackMaxWeightGrams.ToString(CultureInfo.InvariantCulture));
+            Add(PackMaxSlots.ToString(CultureInfo.InvariantCulture));
+            Add(ShipMaxWeightGrams.ToString(CultureInfo.InvariantCulture));
+            Add(ShipMaxSlots.ToString(CultureInfo.InvariantCulture));
+            foreach (var item in SnapshotDefinitions())
+            {
+                Add("item"); Add(item.Id.Value);
+                Add(item.ContentVersion.ToString(CultureInfo.InvariantCulture));
+                Add(item.UnitWeightGrams.ToString(CultureInfo.InvariantCulture));
+                Add(item.MaxStackSize.ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var pickup in SnapshotPickups())
+            {
+                Add("pickup"); Add(pickup.Id.Value); Add(pickup.ItemId.Value);
+                Add(pickup.Quantity.ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var id in SnapshotCollected()) { Add("collected"); Add(id.Value); }
+            foreach (var loc in new[] { InventoryContainer.Pack, InventoryContainer.ShipHold })
+            {
+                Add(loc.ToString());
+                foreach (var stack in SnapshotStock(loc))
+                {
+                    Add(stack.Key.Value);
+                    Add(stack.Value.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+            return StableHash32.Of(canonical.ToString());
+        }
 
         // Canonical enumeration for the future v3 SaveCodec expansion.
         internal IReadOnlyList<ItemDefinition> SnapshotDefinitions() => _catalog.Snapshot();
