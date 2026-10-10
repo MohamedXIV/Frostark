@@ -55,7 +55,7 @@ namespace FrostArk.Core.Tests
             var points = new[] { new SeaWaypoint(B, 10, 0), new SeaWaypoint(A, 0, 0) };
             var legs = new[] { new SeaLeg(AB, A, B, 10, 0, 0, 1000) };
             var left = ShipNavigationState.Create(points, legs, A, Tuning(), 800);
-            var right = ShipNavigationState.Create(points.Reverse(), legs.Reverse(), A, Tuning(), 800);
+            var right = ShipNavigationState.Create(points.AsEnumerable().Reverse(), legs.AsEnumerable().Reverse(), A, Tuning(), 800);
             Assert.That(left.Fingerprint(), Is.EqualTo(right.Fingerprint()));
         }
 
