@@ -229,6 +229,41 @@ namespace FrostArk.Core.Tests
             Assert.That(store.Commits, Is.EqualTo(1));
         }
 
+
+        [Test]
+        public void RecalculatedChecksumCannotAuthorizeDuplicateOverrideIds()
+        {
+            byte[] encoded = SaveCodec.Encode(MakeSnapshot());
+            byte[] marker = System.Text.Encoding.UTF8.GetBytes("site:ice-2");
+            int position = -1;
+            for (int index = 0; index <= encoded.Length - marker.Length - 32; index++)
+            {
+                bool match = true;
+                for (int j = 0; j < marker.Length; j++)
+                    if (encoded[index + j] != marker[j]) { match = false; break; }
+                if (match) { position = index; break; }
+            }
+
+            Assert.That(position, Is.GreaterThanOrEqualTo(0));
+            encoded[position + marker.Length - 1] = (byte)'1';
+            RecalculateChecksum(encoded);
+
+            var result = SaveCodec.TryDecode(encoded);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+            Assert.That(result.Value, Is.Null);
+        }
+
+        [Test]
+        public void StateAndTimelineMinuteMustMatchAtCapture()
+        {
+            var snapshot = MakeSnapshot();
+            var ahead = new SimulationScheduler(new WorldClock(new WorldMinute(1321)),
+                Array.Empty<IWorldMinuteSystem>());
+            Assert.Throws<ArgumentException>(() => SaveGameDto.Capture(snapshot.State, ahead));
+            Assert.That(snapshot.State.Minute.Value, Is.EqualTo(1320));
+        }
+
         private static void RecalculateChecksum(byte[] bytes)
         {
             using (var sha = SHA256.Create())
