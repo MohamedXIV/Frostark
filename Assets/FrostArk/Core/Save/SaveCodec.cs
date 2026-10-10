@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using FrostArk.Core.Time;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Save
@@ -17,7 +18,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static class SaveCodec
     {
-        public const ushort CurrentVersion = 3;
+        public const ushort CurrentVersion = 4;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -88,6 +89,7 @@ namespace FrostArk.Core.Save
                     }
 
                     WriteInventory(writer, state.Inventory);
+                    WriteThermal(writer, state.Thermal);
                 }
                 payload = stream.ToArray();
             }
@@ -144,7 +146,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -210,8 +212,9 @@ namespace FrostArk.Core.Save
                     overrides.Add(new ProceduralOverride(ReadId(reader), ReadText(reader)));
 
             var inventory = version >= 3 ? ReadInventory(reader) : InventoryState.Empty;
+            var thermal = version >= 4 ? ReadThermal(reader) : ShipThermalState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory);
+                supplies, crew, assignments, processed, inventory, thermal);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
         }
 
@@ -291,6 +294,58 @@ namespace FrostArk.Core.Save
             var ship = ReadStock();
             return InventoryState.RestoreSnapshot(catalog, pickups, collected, pack, ship,
                 packWeight, packSlots, shipWeight, shipSlots);
+        }
+
+
+        private static void WriteThermal(BinaryWriter writer, ShipThermalState state)
+        {
+            var rooms = state.Rooms;
+            WriteCount(writer, rooms.Count);
+            foreach (var room in rooms)
+            {
+                WriteId(writer, room.Id);
+                writer.Write(room.HeatCapacity);
+                writer.Write(room.Energy);
+                writer.Write(room.ExteriorConductance);
+                writer.Write(room.InsulationPermille);
+                writer.Write(room.IntegrityPermille);
+                writer.Write(room.ColdExposureMinutes);
+            }
+
+            var connections = state.Connections;
+            WriteCount(writer, connections.Count);
+            foreach (var connection in connections)
+            {
+                WriteId(writer, connection.A);
+                WriteId(writer, connection.B);
+                writer.Write(connection.Conductance);
+            }
+
+            // Disabled boiler is encoded as zero-length name + zero rates.
+            WriteText(writer, state.Boiler.RoomId.Value ?? "");
+            writer.Write(state.Boiler.FuelUnitsPerMinute);
+            writer.Write(state.Boiler.EnergyPerFuelUnit);
+        }
+
+        private static ShipThermalState ReadThermal(BinaryReader reader)
+        {
+            var rooms = new List<ThermalCompartment>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                rooms.Add(new ThermalCompartment(ReadId(reader), reader.ReadInt64(),
+                    reader.ReadInt64(), reader.ReadInt32(), reader.ReadInt32(),
+                    reader.ReadInt32(), reader.ReadInt32()));
+
+            var links = new List<ThermalConnection>();
+            for (int i = 0, count = ReadCount(reader); i < count; i++)
+                links.Add(new ThermalConnection(ReadId(reader), ReadId(reader), reader.ReadInt32()));
+
+            string boilerName = ReadText(reader);
+            long burn = reader.ReadInt64();
+            long heatYield = reader.ReadInt64();
+            var boiler = new BoilerConfiguration(
+                boilerName.Length == 0 ? default : EntityId.Parse(boilerName),
+                burn, heatYield);
+            return ShipThermalState.Create(rooms, links, boiler);
         }
 
         private static void WriteCount(BinaryWriter writer, int count)
