@@ -46,7 +46,7 @@ namespace FrostArk.Core.World
         public static WorldState Create(WorldMinute minute,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             InventoryState inventory = null, ShipThermalState thermal = null,
-            CrewState crewDuty = null)
+            CrewState? crewDuty = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -93,7 +93,7 @@ namespace FrostArk.Core.World
 
         private WorldState CopyWithCommand(string commandId,
             Dictionary<string, long> supplies, Dictionary<string, string> crewStations,
-            InventoryState inventory = null, CrewState crewDuty = null)
+            InventoryState inventory = null, CrewState? crewDuty = null)
         {
             long nextRevision = checked(Revision + 1);
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
@@ -201,7 +201,7 @@ namespace FrostArk.Core.World
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
             IEnumerable<EntityId> processed, InventoryState inventory = null,
-            ShipThermalState thermal = null, CrewState crewDuty = null)
+            ShipThermalState thermal = null, CrewState? crewDuty = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
