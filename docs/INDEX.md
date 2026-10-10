@@ -14,6 +14,7 @@
 - [Saving, content and procedural generation](engineering/save-content.md)
 - [Platforms, rendering, controls and art](engineering/platform-art.md)
 - [Testing and autonomous development](engineering/validation.md)
+- [Verified local bootstrap and remaining runner gates](engineering/local-bootstrap-handoff.md)
 
 ## Production
 - [Dependency-ordered roadmap](production/roadmap.md)

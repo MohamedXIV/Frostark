@@ -18,6 +18,8 @@ At every milestone report which gates ran, exact commands, platform, evidence an
 
 ## Starting local/connector constraints
 
+The [2026-10-10 local bootstrap](local-bootstrap-handoff.md) supersedes the initial installation assumptions: local Unity CLI and headless tests work, but ShellWarden's installed broker remains git-only and WebGL support is absent from the exact 6000.6.0f1 installation. Use `tools/Validate-Unity.ps1` on an authorized local runner; do not confuse it with remote ShellWarden readiness.
+
 Unity project was created in `F:\UnityProjects\Frostark`, version 6000.6.0f1; GitHub is canonical after push. As of planning, ShellWarden's bootstrap policy rejects `Unity.exe`, `unity`, and `unity-cli` and does not itself prove Unity CLI availability. Enable narrowly scoped executable permission only after user-approved policy configuration; do not bypass ShellWarden. Avoid assuming headless execution can overlap with an already open same Unity project.
 
 ## Agent development loop
