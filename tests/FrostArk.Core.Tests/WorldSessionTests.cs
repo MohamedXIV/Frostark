@@ -106,6 +106,31 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void RestoredSessionPreservesProceduralOverridesOnSubsequentSave()
+        {
+            var initial = WorldState.Create(new WorldMinute(14),
+                new[] { new SupplyStock(Fuel, 5) }, new[] { Crew });
+            var scheduler = new SimulationScheduler(new WorldClock(initial.Minute),
+                Array.Empty<IWorldMinuteSystem>(), seed: 291);
+            var snapshot = SaveGameDto.Capture(initial, scheduler,
+                new[] { new ProceduralOverride(EntityId.Parse("site:wreck-17"), "salvaged") });
+
+            using (var session = WorldSession.Restore(snapshot))
+            {
+                session.Advance(3);
+                var again = session.Capture();
+                var decoded = SaveCodec.TryDecode(SaveCodec.Encode(again));
+
+                Assert.That(decoded.Success, Is.True);
+                Assert.That(decoded.Value.ProceduralOverrides, Has.Count.EqualTo(1));
+                Assert.That(decoded.Value.ProceduralOverrides[0].Id,
+                    Is.EqualTo(EntityId.Parse("site:wreck-17")));
+                Assert.That(decoded.Value.ProceduralOverrides[0].Value, Is.EqualTo("salvaged"));
+                Assert.That(decoded.Value.State.Minute.Value, Is.EqualTo(17));
+            }
+        }
+
+        [Test]
         public void DisposeRejectsUseAndReleasesSubscriptions()
         {
             var session = MakeSession();
