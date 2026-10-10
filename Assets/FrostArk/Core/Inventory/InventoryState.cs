@@ -219,7 +219,8 @@ namespace FrostArk.Core.Inventory
             IEnumerable<KeyValuePair<EntityId, long>> pack,
             IEnumerable<KeyValuePair<EntityId, long>> ship,
             long packWeightGrams, int packSlots, long shipWeightGrams, int shipSlots,
-            IEnumerable<KeyValuePair<EntityId, long>> credited = null)
+            IEnumerable<KeyValuePair<EntityId, long>> credited = null,
+            bool deferInflowValidation = false)
         {
             var fresh = Create(catalog, pickups, packWeightGrams, packSlots,
                 shipWeightGrams, shipSlots);
@@ -271,6 +272,7 @@ namespace FrostArk.Core.Inventory
             // Stock may be sourced from consumed salvage, or legitimate minted
             // crafting/trading inflows. Both ledgers are monotonic provenance,
             // never a replacement for capacity and stock checks.
+            if (!deferInflowValidation)
             foreach (var row in packState)
             {
                 long claimed = checked(row.Value + (shipState.TryGetValue(row.Key,
@@ -281,6 +283,7 @@ namespace FrostArk.Core.Inventory
                 if (claimed > available)
                     throw new ArgumentException("Loaded inventory exceeds verified inflows.");
             }
+            if (!deferInflowValidation)
             foreach (var row in shipState)
             {
                 if (packState.ContainsKey(row.Key)) continue;
@@ -292,6 +295,17 @@ namespace FrostArk.Core.Inventory
             }
             return new InventoryState(catalog, fresh._pickups, consumed, packState, shipState,
                 packWeightGrams, packSlots, shipWeightGrams, shipSlots, creditMap);
+        }
+
+        internal InventoryState WithCredited(
+            IEnumerable<KeyValuePair<EntityId, long>> incoming)
+        {
+            return RestoreSnapshot(new ItemCatalog(SnapshotDefinitions()),
+                SnapshotPickups(), SnapshotCollected(),
+                SnapshotStock(InventoryContainer.Pack),
+                SnapshotStock(InventoryContainer.ShipHold),
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams,
+                ShipMaxSlots, incoming);
         }
 
         /// <summary>Stable replay fingerprint, not a save format or security signature.</summary>

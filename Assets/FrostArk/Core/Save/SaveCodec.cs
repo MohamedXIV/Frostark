@@ -94,6 +94,7 @@ namespace FrostArk.Core.Save
                     WriteCrew(writer, state.CrewDuty);
                     WriteLayout(writer, state.Layout);
                     WriteNavigation(writer, state.Navigation);
+                    WriteCreditedInventory(writer, state.Inventory);
                 }
                 payload = stream.ToArray();
             }
@@ -220,6 +221,7 @@ namespace FrostArk.Core.Save
             var crewDuty = version >= 5 ? ReadCrew(reader) : CrewState.Empty;
             var layout = version >= 6 ? ReadLayout(reader) : ShipLayoutState.Empty;
             var navigation = version >= 7 ? ReadNavigation(reader) : ShipNavigationState.Empty;
+            if (version >= 8) inventory = ReadCreditedInventory(reader, inventory);
             var world = WorldState.RestoreSnapshot(minute, revision,
                 supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
