@@ -21,7 +21,9 @@ namespace FrostArk.Core.Events
         MarketBought = 13,
         MarketSold = 14,
         WeaponFired = 15,
-        CrewTreated = 16
+        CrewTreated = 16,
+        SiteLooted = 17,
+        SiteDamaged = 18
     }
 
     /// <summary>
