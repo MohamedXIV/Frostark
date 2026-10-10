@@ -48,9 +48,19 @@ namespace FrostArk.Core.Save
                     writer.Write(stack.Value);
                 }
             }
+
+            // v8 only. Minted/credited inputs are signed provenance counts,
+            // never another live stock balance.
+            var credited = inventory.SnapshotCredited();
+            WriteCount(writer, credited.Count);
+            foreach (var entry in credited)
+            {
+                WriteId(writer, entry.Key);
+                writer.Write(entry.Value);
+            }
         }
 
-        private static InventoryState ReadInventory(BinaryReader reader)
+        private static InventoryState ReadInventory(BinaryReader reader, bool withCredited)
         {
             long packWeight = reader.ReadInt64();
             int packSlots = reader.ReadInt32();
@@ -81,8 +91,13 @@ namespace FrostArk.Core.Save
 
             var pack = ReadStock();
             var ship = ReadStock();
+            var credited = new List<KeyValuePair<EntityId, long>>();
+            if (withCredited)
+                for (int i = 0, count = ReadCount(reader); i < count; i++)
+                    credited.Add(new KeyValuePair<EntityId, long>(
+                        ReadId(reader), reader.ReadInt64()));
             return InventoryState.RestoreSnapshot(catalog, pickups, collected, pack, ship,
-                packWeight, packSlots, shipWeight, shipSlots);
+                packWeight, packSlots, shipWeight, shipSlots, credited);
         }
 
 
