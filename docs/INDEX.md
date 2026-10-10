@@ -13,6 +13,7 @@
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
 - [Saving, content and procedural generation](engineering/save-content.md)
 - [Platforms, rendering, controls and art](engineering/platform-art.md)
+- [V01 camera/texture/fog benchmark (G2/G3 pending)](engineering/visual-benchmark.md)
 - [Testing and autonomous development](engineering/validation.md)
 - [Verified local bootstrap and remaining runner gates](engineering/local-bootstrap-handoff.md)
 

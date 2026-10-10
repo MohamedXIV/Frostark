@@ -4,19 +4,19 @@
 
 ## Fixed experiment and alternatives
 
-`Assets/VisualBenchmarks/visual-benchmark.json` is the versioned source for two camera profiles on the **same** representative geometry. `fixed_isometric` uses a 35° downward pitch and fog density 0.014; `steep_tilt` uses 60° and 0.024. Both use yaw 45°, orthographic size 11, URP Lit, 32-pixel deterministic checker textures, point filtering and no vertex snapping. Snow, sea ice, a ship deck/hull/cabin/rail, industrial cover/tower, two humanoid silhouettes, sparse foliage and a warm point light intentionally create competing foreground/occlusion cases. These are neutral geometry fixtures, **not** production art.
+`Assets/VisualBenchmarks/visual-benchmark.json` is the versioned source for four profiles in a **2×2 controlled experiment** on the same representative geometry. `fixed_isometric` uses a 35° downward pitch and `steep_tilt` uses 60°. Both are captured in `clear` (fog density 0.008) and `haze` (0.03) variants, with yaw 45° and orthographic size 11. URP Lit uses 32-pixel deterministic checker textures, point filtering and no vertex snapping. Snow, sea ice, a ship deck/hull/cabin/rail, industrial cover/tower, two humanoid silhouettes, sparse foliage and a warm point light intentionally create competing foreground/occlusion cases. These are neutral geometry fixtures, **not** production art.
 
-The camera pitch and fog vary together for the initial atmosphere stress test. **Do not attribute an observed difference to pitch alone.** For a controlled camera-only comparison, hold fog constant in the manifest and regenerate both scenes; repeat a fog-only sweep holding pitch constant. Record each manifest value beside the image. This avoids mistaking two correlated changes for a camera effect.
+Compare camera pitch at **fixed fog** (`fixed_isometric_clear` vs `steep_tilt_clear`, and likewise for `haze`), then compare fog at **fixed pitch**. Record the manifest revision with every screenshot; do not compare mismatched camera/fog pairs as though they isolate one factor.
 
 ## Explicit Unity steps — NOT executed here
 
-Use an authorized Unity 6000.6.0f1 checkout with the pinned URP 17.6.0. Open the Editor and invoke **FrostArk → Visual Benchmark → Generate Comparison Scenes**. The generator writes only under `Assets/VisualBenchmarks/{Scenes,Materials,Textures}`, never touches SampleScene, never auto-runs, and saves two independent scenes. Review generated scene, material, texture and `.meta` diffs before tracking them. For headless import/compile, a licensed authorized runner can invoke:
+Use an authorized Unity 6000.6.0f1 checkout with the pinned URP 17.6.0. Open the Editor and invoke **FrostArk → Visual Benchmark → Generate Comparison Scenes**. The generator writes only under `Assets/VisualBenchmarks/{Scenes,Materials,Textures}`, never touches SampleScene, never auto-runs, and saves four independent scenes. Review generated scene, material, texture and `.meta` diffs before tracking them. For headless import/compile, a licensed authorized runner can invoke:
 
 ```text
 Unity.exe -batchmode -nographics -quit -projectPath <authorized-checkout> -logFile <ignored-log-path>
 ```
 
-Import success alone is G2 compile, **not** a rendered screenshot. In a graphics-capable Editor invoke **FrostArk → Visual Benchmark → Capture Comparison PNGs**. It uses a URP `RenderPipeline.StandardRequest` into a `RenderTexture` (not unsupported `Camera.Render`) and writes 1600×900 desktop, 1024×768 controller/4:3 and 960×540 mobile-landscape **framing simulations** to ignored `Logs/visual-benchmark/`. These resolutions do not prove hardware/controller/mobile acceptance. Capture may require a graphics-capable interactive Editor; `-nographics` cannot substitute. Never claim the screenshots exist until files and actual render logs are inspected.
+Import success alone is G2 compile, **not** a rendered screenshot. Open an **empty Editor scene** first: the capture command refuses to render if any other loaded scene has root GameObjects, preventing accidental screenshot contamination without modifying the user's scenes. In a graphics-capable Editor invoke **FrostArk → Visual Benchmark → Capture Comparison PNGs**. It uses a URP `RenderPipeline.StandardRequest` into a `RenderTexture` (not unsupported `Camera.Render`) and writes 1600×900 desktop, 1024×768 controller/4:3 and 960×540 mobile-landscape **framing simulations** to ignored `Logs/visual-benchmark/`. These resolutions do not prove hardware/controller/mobile acceptance. Capture may require a graphics-capable interactive Editor; `-nographics` cannot substitute. Never claim the screenshots exist until files and actual render logs are inspected.
 
 ## Evaluation and decision record (unresolved)
 
