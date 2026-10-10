@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "textureFilter": "Point",
+  "vertexSnapping": false,
+  "texturePixels": 32,
+  "tileWorldUnits": 2.0,
+  "features": [
+    "ship_deck",
+    "snow",
+    "sea_ice",
+    "industrial_cover",
+    "protagonist",
+    "foliage",
+    "artificial_light",
+    "fog"
+  ],
+  "profiles": [
+    {
+      "id": "fixed_isometric",
+      "pitchDegrees": 35.0,
+      "yawDegrees": 45.0,
+      "orthographicSize": 11.0,
+      "fogDensity": 0.014
+    },
+    {
+      "id": "steep_tilt",
+      "pitchDegrees": 60.0,
+      "yawDegrees": 45.0,
+      "orthographicSize": 11.0,
+      "fogDensity": 0.024
+    }
+  ]
+}
