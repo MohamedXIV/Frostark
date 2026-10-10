@@ -1,22 +1,29 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Crew
 {
     /// <summary>
-    /// Persistent immutable crew roster, shift windows and ordered repair jobs.
-    /// Duties are calculated afresh from stable IDs per minute, never cached as
-    /// separate mutable assignments in a MonoBehaviour.
+    /// Immutable, sorted canonical crew duty snapshot. No wall clock, hidden RNG,
+    /// Unity references or independent mutable queue. Roles have fixed priority
+    /// Engineering > Watch > Cooking > Medical > Repair. A crew member fills
+    /// at most one role per minute; eligible backup duty requires >=200 base skill.
     /// </summary>
     public sealed class CrewState
     {
+        private static readonly DutyRole[] Roles =
+        {
+            DutyRole.Engineering, DutyRole.Watch, DutyRole.Cooking,
+            DutyRole.Medical, DutyRole.Repair
+        };
         private readonly CrewMember[] _members;
         private readonly RepairJob[] _jobs;
-
+        public IReadOnlyList<CrewMember> Members => Array.AsReadOnly(_members);
+        public IReadOnlyList<RepairJob> RepairJobs => Array.AsReadOnly(_jobs);
         private CrewState(CrewMember[] members, RepairJob[] jobs)
         {
             _members = members;
@@ -24,26 +31,26 @@ namespace FrostArk.Core.Crew
         }
 
         public static CrewState Empty => Create(Array.Empty<CrewMember>());
-        public IReadOnlyList<CrewMember> Members => Array.AsReadOnly(_members);
-        public IReadOnlyList<RepairJob> Repairs => Array.AsReadOnly(_jobs);
 
         public static CrewState Create(IEnumerable<CrewMember> members,
             IEnumerable<RepairJob> jobs = null)
         {
             if (members == null) throw new ArgumentNullException(nameof(members));
-            var people = members.ToArray();
-            if (people.Any(x => x == null)) throw new ArgumentException("Null member.");
-            Array.Sort(people, (a, b) => StringComparer.Ordinal.Compare(a.Id.Value, b.Id.Value));
-            for (int i = 1; i < people.Length; i++)
-                if (people[i].Id == people[i - 1].Id)
-                    throw new ArgumentException("Duplicate crew ID.", nameof(members));
-            var repairs = (jobs ?? Array.Empty<RepairJob>()).ToArray();
-            if (repairs.Any(x => x == null)) throw new ArgumentException("Null repair job.");
-            Array.Sort(repairs, (a, b) => StringComparer.Ordinal.Compare(a.Id.Value, b.Id.Value));
-            for (int i = 1; i < repairs.Length; i++)
-                if (repairs[i].Id == repairs[i - 1].Id)
+            var crew = members.ToArray();
+            if (crew.Any(x => x == null))
+                throw new ArgumentException("Null crew member.", nameof(members));
+            crew = crew.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray();
+            for (int i = 1; i < crew.Length; i++)
+                if (crew[i - 1].Id == crew[i].Id)
+                    throw new ArgumentException("Duplicate persistent crew ID.", nameof(members));
+            var queue = (jobs ?? Array.Empty<RepairJob>()).ToArray();
+            if (queue.Any(x => x == null))
+                throw new ArgumentException("Null repair job.", nameof(jobs));
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var job in queue)
+                if (!ids.Add(job.Id.Value))
                     throw new ArgumentException("Duplicate repair job ID.", nameof(jobs));
-            return new CrewState(people, repairs);
+            return new CrewState(crew, queue);
         }
 
         public CrewMember Get(EntityId id) =>
@@ -55,102 +62,121 @@ namespace FrostArk.Core.Crew
         public CrewState SetAway(EntityId id, bool away)
         {
             if (Get(id) == null)
-                throw new ArgumentException("Crew ID not in the roster.", nameof(id));
-            var people = _members.Select(p => p.Id == id ? p.WithAway(away) : p).ToArray();
-            return new CrewState(people, _jobs);
+                throw new ArgumentException("Crew member is not in the authored roster.", nameof(id));
+            var changed = _members.Select(m => m.Id == id ? m.WithAway(away) : m).ToArray();
+            return changed.Zip(_members, (a, b) => ReferenceEquals(a, b)).All(x => x)
+                ? this : new CrewState(changed, _jobs);
         }
 
         /// <summary>
-        /// One person per staffed role. Only authored primary roles open a duty
-        /// slot; alternate specialties can cover them with backup skill.
-        /// Engineering and Repair have precedence over other roles.
+        /// A fixed-priority, one-person-one-job assignment; prefer trained
+        /// specialists, then highest effective backup and ordinal ID ties.
+        /// This makes a skilled watchkeeper cover an absent engineer at a
+        /// visible cost, rather than generating an imaginary replacement.
         /// </summary>
-        private Dictionary<DutyRole, CrewMember> Allocate(WorldMinute minute)
+        private Dictionary<DutyRole, CrewMember> Staff(WorldMinute minute)
         {
-            var staffed = new Dictionary<DutyRole, CrewMember>();
-            var used = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var role in new[] { DutyRole.Engineering, DutyRole.Repair,
-                DutyRole.Watch, DutyRole.Cooking, DutyRole.Medical })
+            var assigned = new Dictionary<DutyRole, CrewMember>();
+            var occupied = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var role in Roles)
             {
-                if (!_members.Any(p => p.Specialty == role))
-                    continue;
                 CrewMember best = null;
-                int bestSkill = 0;
-                foreach (var person in _members)
+                int bestScore = 0;
+                // Primary specialists are preferred to backups for each role.
+                foreach (bool primary in new[] { true, false })
                 {
-                    if (used.Contains(person.Id.Value)) continue;
-                    int skill = person.EffectiveSkill(role, minute);
-                    if (skill > bestSkill)
+                    foreach (var member in _members)
                     {
-                        best = person;
-                        bestSkill = skill;
+                        if (occupied.Contains(member.Id.Value) || member.IsAway ||
+                            !member.OnShift(minute) || (member.Role == role) != primary)
+                            continue;
+                        if (!primary && member.BackupSkill < 200)
+                            continue;
+                        int score = member.SkillFor(role);
+                        if (score > bestScore)
+                        {
+                            best = member;
+                            bestScore = score;
+                        }
                     }
+                    if (best != null) break;
                 }
-                if (best == null) continue;
-                staffed.Add(role, best);
-                used.Add(best.Id.Value);
+                if (best != null)
+                {
+                    assigned.Add(role, best);
+                    occupied.Add(best.Id.Value);
+                }
             }
-            return staffed;
+            return assigned;
         }
 
         public int EffectiveSkill(DutyRole role, WorldMinute minute)
         {
-            var allocated = Allocate(minute);
-            return allocated.TryGetValue(role, out var person)
-                ? person.EffectiveSkill(role, minute) : 0;
+            if (!Enum.IsDefined(typeof(DutyRole), role))
+                throw new ArgumentOutOfRangeException(nameof(role));
+            var assigned = Staff(minute);
+            return assigned.TryGetValue(role, out var member) ? member.SkillFor(role) : 0;
         }
 
+        /// <summary>
+        /// Advance exactly one world-minute worth of duty, fatigue/rest and
+        /// head-of-queue repair work. Caller owns minute sequencing and commit.
+        /// Wounds do not magically heal during ordinary sleep.
+        /// </summary>
         public CrewState Tick(WorldMinute minute)
         {
-            var staffed = Allocate(minute);
-            var busy = new HashSet<string>(staffed.Values.Select(x => x.Id.Value),
+            var staffed = Staff(minute);
+            var occupied = new HashSet<string>(staffed.Values.Select(x => x.Id.Value),
                 StringComparer.Ordinal);
-            var next = _members.Select(x =>
+            var nextMembers = _members.Select(member =>
             {
-                int fatigue = x.Fatigue;
-                if (busy.Contains(x.Id.Value))
+                int fatigue = member.Fatigue;
+                if (occupied.Contains(member.Id.Value))
                     fatigue = Math.Min(1000, fatigue + 1);
-                else if (!x.IsAway)
+                else if (!member.IsAway)
                     fatigue = Math.Max(0, fatigue - 2);
-                return x.WithFatigue(fatigue);
+                return member.WithFatigue(fatigue);
             }).ToArray();
 
-            // Only a staffed on-shift repair specialist or available backup
-            // may process the first unfinished ordered repair job.
             var jobs = (RepairJob[])_jobs.Clone();
-            int work = EffectiveSkill(DutyRole.Repair, minute) / 100;
-            if (work > 0)
+            if (jobs.Length > 0 && staffed.TryGetValue(DutyRole.Repair, out var repairer))
             {
-                for (int i = 0; i < jobs.Length; i++)
-                {
-                    if (jobs[i].RemainingWork == 0) continue;
-                    jobs[i] = jobs[i].WithWork(Math.Max(0, jobs[i].RemainingWork - work));
-                    break;
-                }
+                long progress = Math.Max(1, repairer.SkillFor(DutyRole.Repair) / 100);
+                long remaining = jobs[0].RemainingWork - progress;
+                if (remaining <= 0)
+                    jobs = jobs.Skip(1).ToArray();
+                else
+                    jobs[0] = new RepairJob(jobs[0].Id, remaining);
             }
-            return new CrewState(next, jobs);
+            return new CrewState(nextMembers, jobs);
         }
 
         public uint Fingerprint()
         {
-            var sb = new StringBuilder();
-            void Add(string x) { sb.Append(x.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(x); }
-            foreach (var p in _members)
+            var canonical = new StringBuilder();
+            void Add(string part)
             {
-                Add(p.Id.Value); Add(((int)p.Specialty).ToString(CultureInfo.InvariantCulture));
-                Add(p.PrimarySkill.ToString(CultureInfo.InvariantCulture));
-                Add(p.BackupSkill.ToString(CultureInfo.InvariantCulture));
-                Add(p.ShiftStart.ToString(CultureInfo.InvariantCulture));
-                Add(p.ShiftMinutes.ToString(CultureInfo.InvariantCulture));
-                Add(p.Fatigue.ToString(CultureInfo.InvariantCulture));
-                Add(p.Wounds.ToString(CultureInfo.InvariantCulture));
-                Add(p.IsAway ? "1" : "0");
+                canonical.Append(part.Length.ToString(CultureInfo.InvariantCulture))
+                    .Append(':').Append(part);
+            }
+            foreach (var m in _members)
+            {
+                Add("member"); Add(m.Id.Value);
+                Add(((int)m.Role).ToString(CultureInfo.InvariantCulture));
+                Add(m.PrimarySkill.ToString(CultureInfo.InvariantCulture));
+                Add(m.BackupSkill.ToString(CultureInfo.InvariantCulture));
+                Add(m.ShiftStart.ToString(CultureInfo.InvariantCulture));
+                Add(m.ShiftMinutes.ToString(CultureInfo.InvariantCulture));
+                Add(m.Fatigue.ToString(CultureInfo.InvariantCulture));
+                Add(m.Wounds.ToString(CultureInfo.InvariantCulture));
+                Add(m.IsAway ? "1" : "0");
             }
             foreach (var job in _jobs)
             {
-                Add(job.Id.Value); Add(job.RemainingWork.ToString(CultureInfo.InvariantCulture));
+                Add("repair"); Add(job.Id.Value);
+                Add(job.RemainingWork.ToString(CultureInfo.InvariantCulture));
             }
-            return StableHash32.Of(sb.ToString());
+            return StableHash32.Of(canonical.ToString());
         }
     }
 }
