@@ -1,6 +1,6 @@
 # FrostArk #26 — Modular ship authority and paid repairs
 
-**Design status:** Proposed for review · 2026-10-10. **Branch:** `feat/26-modular-ship-layout`.  
+**Design status:** Approved by user for Core-first planning · 2026-10-10. **Branch:** `feat/26-modular-ship-layout`.  
 **Issue:** #26 · **Dependencies:** #23, #24, #25, all closed.  
 **Baseline:** `main` at `7f7e1c7461dc7ff2c6e2b99d576874c4d67b19c8`.  
 **Existing RED fixture:** `tests/FrostArk.Core.Tests/ShipModuleWorldTests.cs` (GitHub Actions 38043991612, G0 passed and actual .NET G1 failed to compile because ship module types do not yet exist). Do not call this a completed implementation.
@@ -13,7 +13,7 @@ Main alternatives: (A) Unity GameObjects own modules (rejected: breaks offline s
 
 ## Authoritative data
 
-- `WorldState.Layout: ShipLayoutState` is immutable-on-commit. Create with bounded `ShipCompartmentSlot(Id, Width, Height)` grid definitions, versioned `ShipModuleBlueprint(Id, Kind, Width, Height, PartId, BuildCost, RepairCost)`, and `ShipModule(Id, BlueprintId, RoomId, X, Y, IntegrityPermille)` instances.
+- `WorldState.Layout: ShipLayoutState` is immutable-on-commit. Create with bounded `ShipCompartmentSlot(Id, Width, Height)` grid definitions, versioned `ShipModuleBlueprint(Id, Kind, Width, Height, PartId, BuildCost, RepairCost)`, and `ShipModule(Id, BlueprintId, RoomId, X, Y, IntegrityPermille, RepairReserved)` instances. `RepairReserved` is an immutable persisted marker set only by a successful paid repair command, never inferred merely from a crew job ID.
 - Bound positive room sizes and module footprints (candidate 1..64 cells/axis); reject duplicate stable IDs, missing blueprint/room, negative origins, out-of-grid positions and rectangle overlap using checked arithmetic to avoid overflow. Every footprint is integer and deterministic. No `UnityEngine` types or GameObject IDs in Core.
 - Module integrity is integer 0..1000. `ShipModuleKind` initially differentiates Engine, Boiler and Auxiliary; preserve stable enum values in the persisted schema. Missing authored layout yields efficiency 1000, preserving old saves without silently reducing boiler heat.
 - A zero-integrity engine decreases the published `PropulsionPermille` projection; until navigation #33 consumes it, propulsion is a **read projection, not working vehicle movement**. `BoilerOutputPermille` combines damaged engine/boiler limits with existing crew engineering skill in the Heat phase, using deterministic integer ratios. Avoid double consumption of fuel or an independent heat clock.
@@ -25,7 +25,7 @@ Main alternatives: (A) Unity GameObjects own modules (rejected: breaks offline s
 - `DamageShipModuleCommand(Id, ModuleId, DamagePermille, ExpectedRevision)` rejects missing module, invalid/zero damage and ineffective state; success reduces integrity with clamping and records provenance.
 - `StartShipModuleRepairCommand(Id, ModuleId, ExpectedRevision)` requires damage, no existing job and sufficient `ShipHold` stock for `RepairCost`. It **spends once** when creating a persistent `CrewState.RepairJob` identified by the module ID. If rejected it must return the identical prior WorldState reference, no events and no inventory/queue mutation.
 - The command bus's existing `ExpectedRevision`, command ID and provenance guards remain authoritative. `InventoryState.TryConsumeShip` should perform a single validated immutable decrement and never treat world supply IDs or uncollected pickups as free parts.
-- A repair completion event at the Crew phase boundary may restore module integrity from recorded work completion, **only** if the module still exists; jobs with legacy non-module IDs continue to represent tracked work without fictitious ship repair. No free module resurrection or duplicate refund. The 500 work-unit starting quantity is a balance candidate, subject to test and ADR; it is not a physics-based repair rate.
+- A repair completion at the Crew phase boundary may restore module integrity from recorded work completion, **only** if the module still exists and its persisted paid repair reservation is set; otherwise a stray or legacy repair job must never heal it; jobs with legacy non-module IDs continue to represent tracked work without fictitious ship repair. No free module resurrection or duplicate refund. The 500 work-unit starting quantity is a balance candidate, subject to test and ADR; it is not a physics-based repair rate.
 
 ## Scheduling and cross-module semantics
 
