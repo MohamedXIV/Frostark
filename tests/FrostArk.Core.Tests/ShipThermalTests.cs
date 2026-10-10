@@ -21,7 +21,8 @@ namespace FrostArk.Core.Tests
                     exteriorConductance: 5000, insulationPermille: cabinInsulation,
                     integrityPermille: cabinIntegrity),
             }, new[] { new ThermalConnection(BoilerRoom, Cabin, conductance: 200) },
-                new BoilerConfiguration(BoilerRoom, boilerFuelPerMinute, energyPerFuelUnit: 3000));
+                boilerFuelPerMinute == 0 ? BoilerConfiguration.Disabled :
+                    new BoilerConfiguration(BoilerRoom, boilerFuelPerMinute, energyPerFuelUnit: 3000));
         }
 
         [Test]
