@@ -47,4 +47,34 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+
+    public sealed class CollectSalvageCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId PickupId { get; }
+        public long ExpectedRevision { get; }
+
+        public CollectSalvageCommand(EntityId id, EntityId pickupId, long expectedRevision)
+        {
+            Id = id;
+            PickupId = pickupId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
+
+    public sealed class UnloadToShipCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId ItemId { get; }
+        public long Quantity { get; }
+        public long ExpectedRevision { get; }
+
+        public UnloadToShipCommand(EntityId id, EntityId itemId, long quantity, long expectedRevision)
+        {
+            Id = id;
+            ItemId = itemId;
+            Quantity = quantity;
+            ExpectedRevision = expectedRevision;
+        }
+    }
 }
