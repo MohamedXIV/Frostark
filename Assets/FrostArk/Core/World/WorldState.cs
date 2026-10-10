@@ -167,8 +167,20 @@ namespace FrostArk.Core.World
         }
 
         internal WorldState WithWorkshopStart(EconomyState next, InventoryState inventory,
-            EntityId commandId) => CopyWithCommand(commandId.Value, _supplies,
-                _crewStations, inventory: inventory, economy: next);
+            long fuelUsed, EntityId commandId)
+        {
+            if (fuelUsed < 0) throw new ArgumentOutOfRangeException(nameof(fuelUsed));
+            var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
+            var fuel = EntityId.Parse("supply:fuel");
+            if (fuelUsed > 0)
+            {
+                if (!HasSupply(fuel) || GetSupply(fuel) < fuelUsed)
+                    throw new ArgumentException("Insufficient world fuel.");
+                supplies[fuel.Value] = GetSupply(fuel) - fuelUsed;
+            }
+            return CopyWithCommand(commandId.Value, supplies, _crewStations,
+                inventory: inventory, economy: next);
+        }
 
         /// <summary>Commits due jobs once. A no-Heat scheduler may also use
         /// this as its minute owner; never increments player-command revision.</summary>

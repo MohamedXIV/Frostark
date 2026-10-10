@@ -19,6 +19,7 @@ namespace FrostArk.Core.Save
                 writer.Write(recipe.Version);
                 WriteId(writer, recipe.StationId);
                 writer.Write(recipe.MinutesPerBatch);
+                writer.Write(recipe.FuelUnitsPerBatch);
                 WriteCount(writer, recipe.Inputs.Count);
                 foreach (var row in recipe.Inputs)
                 {
@@ -76,9 +77,10 @@ namespace FrostArk.Core.Save
                 int version = reader.ReadInt32();
                 var station = ReadId(reader);
                 long minutes = reader.ReadInt64();
+                long fuel = reader.ReadInt64();
                 var input = ReadRows();
                 var output = ReadRows();
-                recipes.Add(new WorkshopRecipe(id, version, station, minutes, input, output));
+                recipes.Add(new WorkshopRecipe(id, version, station, minutes, input, output, fuel));
             }
             var catalog = new WorkshopCatalog(recipes);
             var stations = new List<EntityId>();

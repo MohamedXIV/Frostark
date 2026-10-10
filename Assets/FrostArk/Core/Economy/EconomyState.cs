@@ -179,6 +179,7 @@ namespace FrostArk.Core.Economy
                 Add(recipe.Version.ToString(CultureInfo.InvariantCulture));
                 Add(recipe.StationId.Value);
                 Add(recipe.MinutesPerBatch.ToString(CultureInfo.InvariantCulture));
+                Add(recipe.FuelUnitsPerBatch.ToString(CultureInfo.InvariantCulture));
                 foreach (var x in recipe.Inputs)
                 {
                     Add("in"); Add(x.ItemId.Value);

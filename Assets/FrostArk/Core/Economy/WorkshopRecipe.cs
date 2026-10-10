@@ -40,12 +40,13 @@ namespace FrostArk.Core.Economy
         public int Version { get; }
         public EntityId StationId { get; }
         public long MinutesPerBatch { get; }
+        public long FuelUnitsPerBatch { get; }
         public IReadOnlyList<RecipeStack> Inputs => Array.AsReadOnly(_inputs);
         public IReadOnlyList<RecipeStack> Outputs => Array.AsReadOnly(_outputs);
 
         public WorkshopRecipe(EntityId id, int version, EntityId stationId,
             long minutesPerBatch, IEnumerable<RecipeStack> inputs,
-            IEnumerable<RecipeStack> outputs)
+            IEnumerable<RecipeStack> outputs, long fuelUnitsPerBatch = 0)
         {
             if (!id.IsValid) throw new ArgumentException("Recipe ID is required.", nameof(id));
             if (version <= 0) throw new ArgumentOutOfRangeException(nameof(version));
@@ -53,6 +54,8 @@ namespace FrostArk.Core.Economy
                 throw new ArgumentException("Station ID is required.", nameof(stationId));
             if (minutesPerBatch <= 0)
                 throw new ArgumentOutOfRangeException(nameof(minutesPerBatch));
+            if (fuelUnitsPerBatch < 0)
+                throw new ArgumentOutOfRangeException(nameof(fuelUnitsPerBatch));
 
             _inputs = CanonicalStacks(inputs, nameof(inputs));
             _outputs = CanonicalStacks(outputs, nameof(outputs));
@@ -60,6 +63,7 @@ namespace FrostArk.Core.Economy
             Version = version;
             StationId = stationId;
             MinutesPerBatch = minutesPerBatch;
+            FuelUnitsPerBatch = fuelUnitsPerBatch;
         }
 
         private static RecipeStack[] CanonicalStacks(IEnumerable<RecipeStack> items, string name)

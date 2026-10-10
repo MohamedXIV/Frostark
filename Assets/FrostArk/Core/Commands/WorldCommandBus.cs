@@ -194,6 +194,9 @@ namespace FrostArk.Core.Commands
                 var recipe = state.Economy.Recipes.Get(workshop.RecipeId);
                 if (recipe == null || !state.Economy.CanStart(workshop.JobId, workshop.RecipeId))
                     return CommandResult.Rejected(state, CommandFailure.WorkshopUnavailable);
+                if (recipe.FuelUnitsPerBatch > 0 &&
+                    state.GetSupply(EntityId.Parse("supply:fuel")) < recipe.FuelUnitsPerBatch)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientSupply);
                 foreach (var output in recipe.Outputs)
                     if (!state.Inventory.HasItem(output.ItemId))
                         return CommandResult.Rejected(state, CommandFailure.UnknownItem);
@@ -204,7 +207,8 @@ namespace FrostArk.Core.Commands
                 if (!payment.Success)
                     return CommandResult.Rejected(state, MapInventoryFailure(payment.Error));
                 var economy = state.Economy.Start(workshop.JobId, workshop.RecipeId, state.Minute);
-                var next = state.WithWorkshopStart(economy, payment.State, command.Id);
+                var next = state.WithWorkshopStart(economy, payment.State,
+                    recipe.FuelUnitsPerBatch, command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
                     next.Revision, WorldEventKind.WorkshopStarted, workshop.JobId, workshop.RecipeId));
             }
