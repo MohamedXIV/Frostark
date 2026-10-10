@@ -34,6 +34,9 @@ namespace FrostArk.Core.Commands
         UnknownMarket = 29,
         MarketOutOfStock = 30,
         InsufficientCurrency = 31,
-        MerchantCannotAfford = 32
+        MerchantCannotAfford = 32,
+        UnknownWeapon = 33,
+        WeaponNotCarried = 34,
+        WeaponCoolingDown = 35
     }
 }

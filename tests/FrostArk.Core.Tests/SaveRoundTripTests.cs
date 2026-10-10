@@ -153,7 +153,7 @@ namespace FrostArk.Core.Tests
             // v5 adds 8 bytes for an empty crew roster, v4 adds 28 bytes for
             // an empty thermal graph, v3 adds 44
             // for an empty inventory, and v2 adds 4 for overrides.
-            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 117);
+            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 129);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -168,8 +168,8 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
-            Assert.That(v4[8], Is.EqualTo(9));
-            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 113);
+            Assert.That(v4[8], Is.EqualTo(10));
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 125);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -185,8 +185,8 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
-            Assert.That(v4[8], Is.EqualTo(9));
-            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 69);
+            Assert.That(v4[8], Is.EqualTo(10));
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 81);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
@@ -200,10 +200,10 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             var current = SaveCodec.Encode(original);
-            Assert.That(current[8], Is.EqualTo(9));
+            Assert.That(current[8], Is.EqualTo(10));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
-            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 20);
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 32);
             var decoded = SaveCodec.TryDecode(old);
             Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
             Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
@@ -217,10 +217,10 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v9 = SaveCodec.Encode(current);
-            Assert.That(v9[8], Is.EqualTo(9));
+            Assert.That(v9[8], Is.EqualTo(10));
             // V9 added 4 empty collection counts for recipes, stations,
             // pending prepaid jobs and finite merchants.
-            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 16);
+            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 28);
             var restored = SaveCodec.TryDecode(v8);
             Assert.That(restored.Success, Is.True, restored.Error.ToString());
             Assert.That(restored.Value.State.Economy.Jobs, Is.Empty);
@@ -228,6 +228,23 @@ namespace FrostArk.Core.Tests
             Assert.That(restored.Value.State.Fingerprint(),
                 Is.EqualTo(current.State.Fingerprint()));
             Assert.That(SaveCodec.Encode(restored.Value), Is.EqualTo(v9));
+        }
+
+        [Test]
+        public void LegacyV9WithoutCombatMigratesToEmptyWeaponsAndZeroTacticalTick()
+        {
+            var original = MakeSnapshot();
+            var v10 = SaveCodec.Encode(original);
+            Assert.That(v10[8], Is.EqualTo(10));
+            // V10 appends one int64 tactical tick plus one empty weapon count.
+            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 12);
+            var recovered = SaveCodec.TryDecode(v9);
+            Assert.That(recovered.Success, Is.True, recovered.Error.ToString());
+            Assert.That(recovered.Value.State.Combat.Tick, Is.Zero);
+            Assert.That(recovered.Value.State.Combat.Weapons, Is.Empty);
+            Assert.That(recovered.Value.State.Fingerprint(),
+                Is.EqualTo(original.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(recovered.Value), Is.EqualTo(v10));
         }
 
         [Test]

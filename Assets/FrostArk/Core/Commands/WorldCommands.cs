@@ -191,4 +191,18 @@ namespace FrostArk.Core.Commands
             Quantity = quantity; ExpectedRevision = expectedRevision;
         }
     }
+
+    /// <summary>One validated fire intent; target physics is external G3 evidence.</summary>
+    public sealed class FireWeaponCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId WeaponId { get; }
+        public long ExpectedRevision { get; }
+        public FireWeaponCommand(EntityId id, EntityId weaponId, long expectedRevision)
+        {
+            Id = id;
+            WeaponId = weaponId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
 }
