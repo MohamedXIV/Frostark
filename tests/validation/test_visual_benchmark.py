@@ -53,7 +53,7 @@ class VisualBenchmarkContractTests(unittest.TestCase):
         for token in (
             "[MenuItem(", "CreateScene", "EditorSceneManager.NewScene",
             "EditorSceneManager.SaveScene", "Camera", "GameObject.CreatePrimitive",
-            "AssetDatabase.CreateFolder", "VisualBenchmarks/Scenes",
+            "AssetDatabase.CreateFolder", "SceneFolder = Root + \"/Scenes\"",
         ):
             self.assertIn(token, source, token)
         self.assertNotIn("[InitializeOnLoad", source)

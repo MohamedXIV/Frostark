@@ -231,7 +231,7 @@ namespace FrostArk.VisualBenchmark.Editor
                 spec.profiles.Select(p => p.pitchDegrees).Distinct().Count() != 2 ||
                 spec.profiles.Select(p => p.fogDensity).Distinct().Count() != 2 ||
                 spec.profiles.Select(p => p.pitchDegrees + "/" + p.fogDensity).Distinct().Count() != 4 ||
-                spec.profiles.Select(p => p.id).Distinct().Count() != 2 ||
+                spec.profiles.Select(p => p.id).Distinct().Count() != spec.profiles.Length ||
                 spec.profiles.Any(p => p.pitchDegrees < 20 || p.pitchDegrees > 75 ||
                     p.orthographicSize <= 0 || p.fogDensity < 0 || p.fogDensity > 0.1f))
                 throw new InvalidDataException("Unsupported or invalid V01 benchmark spec.");
