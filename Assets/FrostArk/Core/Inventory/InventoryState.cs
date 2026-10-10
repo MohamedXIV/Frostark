@@ -169,6 +169,73 @@ namespace FrostArk.Core.Inventory
             new InventoryTransactionResult(next, InventoryError.None);
 
 
+
+        /// <summary>
+        /// Strictly reconstruct persisted inventory without trusting string IDs,
+        /// duplicate rows or fabricated collected stock. No mutable collections
+        /// can escape a restored state.
+        /// </summary>
+        internal static InventoryState RestoreSnapshot(ItemCatalog catalog,
+            IEnumerable<SalvagePickup> pickups, IEnumerable<EntityId> collected,
+            IEnumerable<KeyValuePair<EntityId, long>> pack,
+            IEnumerable<KeyValuePair<EntityId, long>> ship,
+            long packWeightGrams, int packSlots, long shipWeightGrams, int shipSlots)
+        {
+            var fresh = Create(catalog, pickups, packWeightGrams, packSlots,
+                shipWeightGrams, shipSlots);
+            var consumed = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var id in collected ?? throw new ArgumentNullException(nameof(collected)))
+            {
+                if (!id.IsValid || !fresh._pickups.ContainsKey(id.Value) ||
+                    !consumed.Add(id.Value))
+                    throw new ArgumentException("Unknown or duplicate consumed pickup.", nameof(collected));
+            }
+
+            Dictionary<string, long> RestoreStock(IEnumerable<KeyValuePair<EntityId, long>> source)
+            {
+                if (source == null) throw new ArgumentNullException(nameof(source));
+                var rows = new Dictionary<string, long>(StringComparer.Ordinal);
+                foreach (var entry in source)
+                {
+                    if (!entry.Key.IsValid || entry.Value <= 0 ||
+                        catalog.Get(entry.Key) == null ||
+                        !rows.TryAdd(entry.Key.Value, entry.Value))
+                        throw new ArgumentException("Unknown, invalid or duplicate inventory stack.");
+                }
+                return rows;
+            }
+
+            var packState = RestoreStock(pack);
+            var shipState = RestoreStock(ship);
+            if (fresh.CheckLimit(packState, packWeightGrams, packSlots) != InventoryError.None ||
+                fresh.CheckLimit(shipState, shipWeightGrams, shipSlots) != InventoryError.None)
+                throw new ArgumentException("Loaded inventory exceeds capacity.");
+
+            var collectedTotals = new Dictionary<string, long>(StringComparer.Ordinal);
+            foreach (var id in consumed)
+            {
+                var pickup = fresh._pickups[id];
+                collectedTotals[pickup.ItemId.Value] = checked(
+                    (collectedTotals.TryGetValue(pickup.ItemId.Value, out var amount) ? amount : 0) +
+                    pickup.Quantity);
+            }
+            foreach (var row in packState)
+            {
+                var allocated = row.Value + (shipState.TryGetValue(row.Key, out var shipQty) ? shipQty : 0);
+                if (!collectedTotals.TryGetValue(row.Key, out var total) || allocated > total)
+                    throw new ArgumentException("Loaded inventory exceeds collected pickup total.");
+            }
+            foreach (var row in shipState)
+            {
+                if (packState.ContainsKey(row.Key)) continue;
+                if (!collectedTotals.TryGetValue(row.Key, out var total) || row.Value > total)
+                    throw new ArgumentException("Loaded ship stock exceeds collected pickup total.");
+            }
+
+            return new InventoryState(catalog, fresh._pickups, consumed, packState, shipState,
+                packWeightGrams, packSlots, shipWeightGrams, shipSlots);
+        }
+
         /// <summary>Stable replay fingerprint, not a save format or security signature.</summary>
         public uint Fingerprint()
         {
