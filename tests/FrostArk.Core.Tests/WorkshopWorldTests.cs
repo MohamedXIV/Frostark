@@ -107,6 +107,37 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void BoilerFuelRequirementMustBePaidOnceAtCraftStartOrRejectWholeCommand()
+        {
+            var recipe = new WorkshopRecipe(Recipe, 2, Station, 60,
+                new[] { new RecipeStack(Scrap, 3) },
+                new[] { new RecipeStack(Stove, 1) }, fuelUnitsPerBatch: 2);
+            var economy = EconomyState.Create(new WorkshopCatalog(new[] { recipe }),
+                new[] { Station });
+            WorldState Make(long fuel) => WorldState.Create(new WorldMinute(120),
+                new[] { new SupplyStock(EntityId.Parse("supply:fuel"), fuel) },
+                Array.Empty<EntityId>(), inventory: Start().Inventory, economy: economy);
+
+            var bus = new WorldCommandBus();
+            var broke = Make(1);
+            var denied = bus.Execute(broke,
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:denied"), Job, Recipe, 0));
+            Assert.That(denied.Failure, Is.EqualTo(CommandFailure.InsufficientSupply));
+            Assert.That(denied.State, Is.SameAs(broke));
+            Assert.That(broke.Inventory.GetAmount(InventoryContainer.ShipHold, Scrap), Is.EqualTo(8));
+
+            var started = bus.Execute(Make(2),
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:paid"), Job, Recipe, 0));
+            Assert.That(started.Success, Is.True);
+            Assert.That(started.State.GetSupply(EntityId.Parse("supply:fuel")), Is.Zero);
+            Assert.That(started.State.Inventory.GetAmount(InventoryContainer.ShipHold, Scrap),
+                Is.EqualTo(5));
+            var replay = bus.Execute(started.State,
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:paid"), Job, Recipe, 1));
+            Assert.That(replay.Failure, Is.EqualTo(CommandFailure.DuplicateCommand));
+        }
+
+        [Test]
         public void MissingStationRecipeAndInsufficientMaterialsRejectAtomically()
         {
             var bus = new WorldCommandBus();
