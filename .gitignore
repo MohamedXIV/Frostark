@@ -112,3 +112,16 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+
+# Authored standalone .NET projects. Unity-generated .csproj files stay ignored.
+!/src/FrostArk.Core/FrostArk.Core.csproj
+!/tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj
+
+# SDK build/test output in nested source/test directories.
+**/[Bb]in/
+**/[Oo]bj/
+**/TestResults/
+
+# Python G0 verifier's generated caches (never commit).
+**/__pycache__/
+*.py[cod]
