@@ -273,7 +273,7 @@ namespace FrostArk.Core.Tests
                 bool match = true;
                 for (int j = 0; j < marker.Length; j++)
                     if (bytes[i + j] != marker[j]) { match = false; break; }
-                if (match) found = i;
+                if (match) { found = i; break; }
             }
             Assert.That(found, Is.GreaterThan(0));
             bytes[found + marker.Length] = 255; // Serialized ShipModuleKind after the blueprint ID.

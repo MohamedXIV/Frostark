@@ -31,6 +31,15 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void RejectsOversizedBlueprintMaterialCosts()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ShipModuleBlueprint(
+                Type, ShipModuleKind.Engine, 2, 2, Part, 1_000_001, 1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new ShipModuleBlueprint(
+                Type, ShipModuleKind.Engine, 2, 2, Part, 1, 1_000_001));
+        }
+
+        [Test]
         public void OutOfBoundsAndOverflowingOriginsAreRejected()
         {
             var layout = ShipLayoutState.Create(new[] { Slot() }, new[] { Blueprint() },
