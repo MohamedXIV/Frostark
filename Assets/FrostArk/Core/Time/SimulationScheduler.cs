@@ -53,6 +53,39 @@ namespace FrostArk.Core.Time
             _pending.Add(worldEvent);
         }
 
+
+        internal uint Seed => _seed;
+
+        internal IReadOnlyList<ScheduledWorldEvent> SnapshotPending() =>
+            _pending.OrderBy(e => e.DueAt.Value)
+                .ThenBy(e => e.Id.Value, StringComparer.Ordinal).ToArray();
+
+        internal IReadOnlyList<EntityId> SnapshotReservedIds() =>
+            _eventIds.OrderBy(id => id, StringComparer.Ordinal)
+                .Select(EntityId.Parse).ToArray();
+
+        internal static SimulationScheduler FromSave(WorldClock clock,
+            IEnumerable<IWorldMinuteSystem> systems, uint seed,
+            IEnumerable<ScheduledWorldEvent> pending, IEnumerable<EntityId> reserved)
+        {
+            var scheduler = new SimulationScheduler(clock, systems, seed);
+            foreach (var id in reserved ?? throw new ArgumentNullException(nameof(reserved)))
+            {
+                if (!id.IsValid || !scheduler._eventIds.Add(id.Value))
+                    throw new ArgumentException("Invalid or duplicate reserved event ID.", nameof(reserved));
+            }
+            var found = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var worldEvent in pending ?? throw new ArgumentNullException(nameof(pending)))
+            {
+                if (worldEvent == null || worldEvent.DueAt <= clock.Current ||
+                    !scheduler._eventIds.Contains(worldEvent.Id.Value) ||
+                    !found.Add(worldEvent.Id.Value))
+                    throw new ArgumentException("Invalid pending scheduled event.", nameof(pending));
+                scheduler._pending.Add(worldEvent);
+            }
+            return scheduler;
+        }
+
         public WorldAdvanceResult Advance(long minutes)
         {
             if (minutes < 0)
