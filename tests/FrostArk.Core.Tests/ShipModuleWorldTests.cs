@@ -238,6 +238,32 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ForgedChecksumCannotAuthorizeUnknownModuleKind()
+        {
+            var built = Build(Begin(), Engine, EngineType, 0, 0, "cmd:module-forgery");
+            var timer = new SimulationScheduler(new WorldClock(built.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var bytes = SaveCodec.Encode(SaveGameDto.Capture(built, timer));
+            var marker = System.Text.Encoding.UTF8.GetBytes("blueprint:engine");
+            int found = -1;
+            for (int i = 0; i <= bytes.Length - marker.Length - 32; i++)
+            {
+                bool match = true;
+                for (int j = 0; j < marker.Length; j++)
+                    if (bytes[i + j] != marker[j]) { match = false; break; }
+                if (match) found = i;
+            }
+            Assert.That(found, Is.GreaterThan(0));
+            bytes[found + marker.Length] = 255; // Serialized ShipModuleKind after the blueprint ID.
+            using (var sha = SHA256.Create())
+                Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32), 0,
+                    bytes, bytes.Length - 32, 32);
+            var loaded = SaveCodec.TryDecode(bytes);
+            Assert.That(loaded.Success, Is.False);
+            Assert.That(loaded.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void V5SaveMigratesToEmptyLayoutWithoutInventingShipModules()
         {
             var state = WorldState.Create(WorldMinute.Zero,
