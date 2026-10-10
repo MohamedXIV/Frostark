@@ -23,4 +23,4 @@ Start with [documentation index](docs/INDEX.md), [game vision](docs/design/visio
 
 ## Current state
 
-An initial Unity URP template is present; no FrostArk gameplay implementation is claimed. Documentation, execution roadmap, and issue backlog are established in PR #1 and Issues #2–#43. GitHub Projects board setup remains tracked in Issue #43. The Unity template's `Assets/TutorialInfo` is disposable starter guidance, not game content.
+An initial Unity URP template is present; no FrostArk gameplay implementation is claimed. Documentation, execution roadmap, and issue backlog are established in PR #1 and Issues #2–#43. [Frostark Development Project #5](https://github.com/users/MohamedXIV/projects/5) now contains all 42 Issues, with priority values assigned and #13/#14 marked Ready. Native blocked-by and parent-child relationships and optional Phase/Type fields remain tracked in Issue #43. The Unity template's `Assets/TutorialInfo` is disposable starter guidance, not game content.

@@ -1,6 +1,6 @@
 # FrostArk full-game roadmap (dependency-oriented)
 
-**Version:** foundation baseline (2026-10-10). This is a complete production architecture plan, **not a promise of dates**. All epics are production systems; slices provide early integration feedback without disposable code. GitHub Issues [#2–#43](https://github.com/MohamedXIV/Frostark/issues) now link to these epics and are the execution source of truth; see [live issue map](backlog.md).
+**Version:** foundation baseline (2026-10-10). This is a complete production architecture plan, **not a promise of dates**. All epics are production systems; slices provide early integration feedback without disposable code. GitHub Issues [#2–#43](https://github.com/MohamedXIV/Frostark/issues) now link to these epics and are the execution source of truth; see [live issue map](backlog.md) and [Frostark Development Project #5](https://github.com/users/MohamedXIV/projects/5).
 
 ## Lifecycle
 
