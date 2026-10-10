@@ -111,6 +111,37 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ResignedInvalidSiteFlagsAndDamageCannotBeLoaded()
+        {
+            var (world, _) = Start();
+            var timer = new SimulationScheduler(new WorldClock(world.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var original = SaveCodec.Encode(SaveGameDto.Capture(world, timer));
+            void Resign(byte[] bytes)
+            {
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                    Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32),
+                        0, bytes, bytes.Length - 32, 32);
+            }
+
+            // Last site record: island ID, site ID, one looted flag, int32 damage.
+            var badFlag = (byte[])original.Clone();
+            badFlag[badFlag.Length - 32 - 5] = 2;
+            Resign(badFlag);
+            var invalidFlag = SaveCodec.TryDecode(badFlag);
+            Assert.That(invalidFlag.Success, Is.False);
+            Assert.That(invalidFlag.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+
+            var badDamage = (byte[])original.Clone();
+            Array.Copy(BitConverter.GetBytes(-10), 0,
+                badDamage, badDamage.Length - 32 - 4, 4);
+            Resign(badDamage);
+            var invalidDamage = SaveCodec.TryDecode(badDamage);
+            Assert.That(invalidDamage.Success, Is.False);
+            Assert.That(invalidDamage.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void MultiIslandProgressHasIndependentStableMembershipAndCanonicalOrder()
         {
             var a = Layout();
