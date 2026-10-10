@@ -71,6 +71,22 @@ namespace FrostArk.Core.Commands
             }
 
 
+            if (command is SetCrewAwayCommand shore)
+            {
+                if (!state.HasCrew(shore.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                var member = state.CrewDuty.Get(shore.CrewId);
+                if (member == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (member.IsAway == shore.Away)
+                    return CommandResult.Rejected(state, CommandFailure.CrewAvailabilityUnchanged);
+                var next = state.WithCrewAway(shore.CrewId, shore.Away, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision,
+                    shore.Away ? WorldEventKind.CrewDispatched : WorldEventKind.CrewReturned,
+                    shore.CrewId));
+            }
+
             if (command is CollectSalvageCommand collect)
             {
                 var outcome = state.Inventory.TryCollect(collect.PickupId);
