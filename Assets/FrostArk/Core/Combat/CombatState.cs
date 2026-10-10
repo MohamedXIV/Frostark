@@ -49,8 +49,9 @@ namespace FrostArk.Core.Combat
             foreach (var weapon in array)
             {
                 if (weapon.ShotCount > 0 &&
-                    weapon.NextReadyTick < weapon.Definition.CooldownTicks)
-                    throw new ArgumentException("Invalid cooldown checkpoint.");
+                    (weapon.NextReadyTick < weapon.Definition.CooldownTicks ||
+                     weapon.NextReadyTick - weapon.Definition.CooldownTicks > tick))
+                    throw new ArgumentException("Invalid cooldown checkpoint: last shot is in the future.");
             }
             return new CombatState(tick, array);
         }

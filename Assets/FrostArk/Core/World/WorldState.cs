@@ -341,6 +341,11 @@ namespace FrostArk.Core.World
             }
             if (commands.Count != revision)
                 throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
+            long shots = 0;
+            foreach (var weapon in baseline.Combat.Weapons)
+                shots = checked(shots + weapon.ShotCount);
+            if (shots > revision)
+                throw new ArgumentException("Weapon shot count exceeds committed command provenance.", nameof(combat));
             return new WorldState(minute, revision, baseline._supplies,
                 baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty,
                 thermal ?? ShipThermalState.Empty, baseline.CrewDuty, baseline.Layout,
