@@ -102,5 +102,21 @@ namespace FrostArk.Core.Tests
                 new[] { new RepairJob(EntityId.Parse("repair:one"), 10),
                     new RepairJob(EntityId.Parse("repair:one"), 15) }));
         }
+        [Test]
+        public void ReplacementNeverDoubleBooksSameWatchkeeper()
+        {
+            var loneWatch = CrewState.Create(new[]
+            {
+                new CrewMember(Watch, DutyRole.Watch, 900, 400,
+                    shiftStart: 0, shiftMinutes: 1440)
+            });
+            Assert.That(loneWatch.EffectiveSkill(DutyRole.Engineering,
+                new WorldMinute(1)), Is.EqualTo(400));
+            Assert.That(loneWatch.EffectiveSkill(DutyRole.Watch,
+                new WorldMinute(1)), Is.Zero);
+            Assert.That(loneWatch.Tick(new WorldMinute(1)).Get(Watch).Fatigue,
+                Is.EqualTo(1));
+        }
+
     }
 }
