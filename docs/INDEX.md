@@ -11,6 +11,9 @@
 ## Engineering
 - [Architecture and module boundaries](engineering/architecture.md)
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
+- [R2 crew duty and repair queue ADR](engineering/crew-duty-contract.md)
+- [R2 ship modules, paid repairs and save v6 Core ADR](engineering/ship-modules-contract.md)
+- [R4 navigation routes, ice/weather, heat-first fuel and save v7 Core ADR](engineering/navigation-core-contract.md)
 - [Saving, content and procedural generation](engineering/save-content.md)
 - [Platforms, rendering, controls and art](engineering/platform-art.md)
 - [V01 camera/texture/fog benchmark (G2/G3 pending)](engineering/visual-benchmark.md)
