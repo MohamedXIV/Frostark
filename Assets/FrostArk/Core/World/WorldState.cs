@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using FrostArk.Core.Inventory;
 
 namespace FrostArk.Core.World
 {
@@ -17,13 +18,15 @@ namespace FrostArk.Core.World
         private readonly HashSet<string> _crewIds;
         private readonly Dictionary<string, string> _crewStations;
         private readonly HashSet<string> _processedCommands;
+        public InventoryState Inventory { get; }
 
         public WorldMinute Minute { get; }
         public long Revision { get; }
 
         private WorldState(WorldMinute minute, long revision,
             Dictionary<string, long> supplies, HashSet<string> crewIds,
-            Dictionary<string, string> crewStations, HashSet<string> processedCommands)
+            Dictionary<string, string> crewStations, HashSet<string> processedCommands,
+            InventoryState inventory)
         {
             Minute = minute;
             Revision = revision;
@@ -31,10 +34,12 @@ namespace FrostArk.Core.World
             _crewIds = crewIds;
             _crewStations = crewStations;
             _processedCommands = processedCommands;
+            Inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
         }
 
         public static WorldState Create(WorldMinute minute,
-            IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew)
+            IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
+            InventoryState inventory = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -58,7 +63,7 @@ namespace FrostArk.Core.World
 
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
-                new HashSet<string>(StringComparer.Ordinal));
+                new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);
@@ -74,13 +79,14 @@ namespace FrostArk.Core.World
             commandId.IsValid && _processedCommands.Contains(commandId.Value);
 
         private WorldState CopyWithCommand(string commandId,
-            Dictionary<string, long> supplies, Dictionary<string, string> crewStations)
+            Dictionary<string, long> supplies, Dictionary<string, string> crewStations,
+            InventoryState inventory = null)
         {
             long nextRevision = checked(Revision + 1);
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
             commands.Add(commandId);
             return new WorldState(Minute, nextRevision, supplies,
-                _crewIds, crewStations, commands);
+                _crewIds, crewStations, commands, inventory ?? Inventory);
         }
 
         internal WorldState WithWithdrawal(EntityId supplyId, long amount, EntityId commandId)
@@ -105,6 +111,12 @@ namespace FrostArk.Core.World
         }
 
 
+        internal WorldState WithInventoryChange(InventoryState inventory, EntityId commandId)
+        {
+            if (inventory == null) throw new ArgumentNullException(nameof(inventory));
+            return CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory);
+        }
+
         /// <summary>
         /// Explicit world-minute projection; commands remain revision controlled.
         /// No existing snapshot is mutated by advancing the authoritative clock.
@@ -113,7 +125,7 @@ namespace FrostArk.Core.World
         {
             if (minute < Minute)
                 throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
-            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands);
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory);
         }
 
         internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
@@ -134,7 +146,7 @@ namespace FrostArk.Core.World
         internal static WorldState RestoreSnapshot(WorldMinute minute, long revision,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
-            IEnumerable<EntityId> processed)
+            IEnumerable<EntityId> processed, InventoryState inventory = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
@@ -156,7 +168,7 @@ namespace FrostArk.Core.World
             if (commands.Count != revision)
                 throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
             return new WorldState(minute, revision, baseline._supplies,
-                baseline._crewIds, stations, commands);
+                baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty);
         }
 
         /// <summary>
@@ -191,6 +203,8 @@ namespace FrostArk.Core.World
             {
                 Add("x"); Add(id);
             }
+            Add("inventory");
+            Add(Inventory.Fingerprint().ToString(CultureInfo.InvariantCulture));
             return StableHash32.Of(canonical.ToString());
         }
     }

@@ -1,5 +1,6 @@
 using System;
 using FrostArk.Core.Events;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Commands
@@ -69,7 +70,45 @@ namespace FrostArk.Core.Commands
                     unassignment.CrewId, stationId));
             }
 
+
+            if (command is CollectSalvageCommand collect)
+            {
+                var outcome = state.Inventory.TryCollect(collect.PickupId);
+                if (!outcome.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(outcome.Error));
+                var next = state.WithInventoryChange(outcome.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.SalvageCollected,
+                    collect.PickupId));
+            }
+
+            if (command is UnloadToShipCommand unload)
+            {
+                var outcome = state.Inventory.TryUnload(unload.ItemId, unload.Quantity);
+                if (!outcome.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(outcome.Error));
+                var next = state.WithInventoryChange(outcome.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.SalvageUnloaded,
+                    unload.ItemId, quantity: unload.Quantity));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
+        }
+
+        private static CommandFailure MapInventoryFailure(InventoryError error)
+        {
+            switch (error)
+            {
+                case InventoryError.UnknownPickup: return CommandFailure.UnknownPickup;
+                case InventoryError.AlreadyCollected: return CommandFailure.AlreadyCollected;
+                case InventoryError.UnknownItem: return CommandFailure.UnknownItem;
+                case InventoryError.InvalidQuantity: return CommandFailure.InvalidQuantity;
+                case InventoryError.InsufficientStock: return CommandFailure.InsufficientInventory;
+                case InventoryError.TooHeavy: return CommandFailure.InventoryTooHeavy;
+                case InventoryError.NotEnoughSlots: return CommandFailure.InventoryNoSlots;
+                default: throw new ArgumentOutOfRangeException(nameof(error));
+            }
         }
     }
 }

@@ -149,13 +149,10 @@ namespace FrostArk.Core.Tests
             var current = MakeSnapshot();
             var withoutOverrides = SaveGameDto.Capture(current.State,
                 current.CreateScheduler(Array.Empty<IWorldMinuteSystem>()));
-            byte[] v2 = SaveCodec.Encode(withoutOverrides);
-            var legacy = new byte[v2.Length - 4];
-            Array.Copy(v2, legacy, 14 + (BitConverter.ToInt32(v2, 10) - 4));
-            legacy[8] = 1; legacy[9] = 0;
-            int length = BitConverter.ToInt32(v2, 10) - 4;
-            Array.Copy(BitConverter.GetBytes(length), 0, legacy, 10, 4);
-            RecalculateChecksum(legacy);
+            byte[] v3 = SaveCodec.Encode(withoutOverrides);
+            // Empty v3 inventory adds 24 capacity bytes and 5 empty counts
+            // (20 bytes), v2 overrides adds one final 4-byte count.
+            byte[] legacy = DowngradeEmptyInventory(v3, version: 1, removedBytes: 48);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -163,6 +160,23 @@ namespace FrostArk.Core.Tests
             Assert.That(result.Value.State.Fingerprint(),
                 Is.EqualTo(MakeSnapshot().State.Fingerprint()));
             Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(result.Value)).Success, Is.True);
+        }
+
+        [Test]
+        public void LegacyV2WithoutInventoryMigratesToEmptyInventory()
+        {
+            var original = MakeSnapshot();
+            byte[] v3 = SaveCodec.Encode(original);
+            Assert.That(v3[8], Is.EqualTo(3));
+            byte[] v2 = DowngradeEmptyInventory(v3, version: 2, removedBytes: 44);
+            var loaded = SaveCodec.TryDecode(v2);
+
+            Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
+            Assert.That(loaded.Value.ProceduralOverrides, Has.Count.EqualTo(2));
+            Assert.That(loaded.Value.State.Inventory.PackMaxSlots, Is.Zero);
+            Assert.That(loaded.Value.State.Inventory.GetUsedWeightGrams(
+                FrostArk.Core.Inventory.InventoryContainer.ShipHold), Is.Zero);
+            Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(loaded.Value)).Success, Is.True);
         }
 
         [Test]
@@ -262,6 +276,20 @@ namespace FrostArk.Core.Tests
                 Array.Empty<IWorldMinuteSystem>());
             Assert.Throws<ArgumentException>(() => SaveGameDto.Capture(snapshot.State, ahead));
             Assert.That(snapshot.State.Minute.Value, Is.EqualTo(1320));
+        }
+
+        private static byte[] DowngradeEmptyInventory(byte[] encoded, ushort version, int removedBytes)
+        {
+            const int header = 14;
+            const int checksum = 32;
+            int payloadLength = BitConverter.ToInt32(encoded, 10) - removedBytes;
+            var legacy = new byte[header + payloadLength + checksum];
+            Array.Copy(encoded, legacy, header + payloadLength);
+            legacy[8] = (byte)version;
+            legacy[9] = 0;
+            Array.Copy(BitConverter.GetBytes(payloadLength), 0, legacy, 10, 4);
+            RecalculateChecksum(legacy);
+            return legacy;
         }
 
         private static void RecalculateChecksum(byte[] bytes)

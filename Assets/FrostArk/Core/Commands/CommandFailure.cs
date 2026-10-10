@@ -13,6 +13,12 @@ namespace FrostArk.Core.Commands
         InvalidStation = 8,
         CrewAlreadyAssigned = 9,
         CrewNotAssigned = 10,
-        UnsupportedCommand = 11
+        UnsupportedCommand = 11,
+        UnknownPickup = 12,
+        AlreadyCollected = 13,
+        UnknownItem = 14,
+        InsufficientInventory = 15,
+        InventoryTooHeavy = 16,
+        InventoryNoSlots = 17
     }
 }
