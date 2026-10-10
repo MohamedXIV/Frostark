@@ -87,6 +87,57 @@ namespace FrostArk.Core.Commands
                     shore.CrewId));
             }
 
+            if (command is BuildShipModuleCommand build)
+            {
+                var blueprint = state.Layout.GetBlueprint(build.BlueprintId);
+                if (blueprint == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownBlueprint);
+                if (!state.Layout.CanPlace(build.ModuleId, build.BlueprintId,
+                    build.RoomId, build.X, build.Y))
+                    return CommandResult.Rejected(state, CommandFailure.InvalidPlacement);
+                var spend = state.Inventory.TryConsumeShip(blueprint.PartId, blueprint.BuildCost);
+                if (!spend.Success)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientMaterials);
+                var next = state.WithShipLayoutChange(state.Layout.Place(
+                    build.ModuleId, build.BlueprintId, build.RoomId, build.X, build.Y),
+                    spend.State, state.CrewDuty, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.ShipModuleBuilt, build.ModuleId));
+            }
+            if (command is DamageShipModuleCommand damage)
+            {
+                var module = state.Layout.GetModule(damage.ModuleId);
+                if (module == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownModule);
+                if (damage.DamagePermille <= 0 || damage.DamagePermille > 1000 ||
+                    module.IntegrityPermille == 0)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                var next = state.WithShipLayoutChange(state.Layout.Damage(damage.ModuleId,
+                    damage.DamagePermille), state.Inventory, state.CrewDuty, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.ShipModuleDamaged, damage.ModuleId,
+                    quantity: damage.DamagePermille));
+            }
+            if (command is StartShipModuleRepairCommand repair)
+            {
+                var module = state.Layout.GetModule(repair.ModuleId);
+                if (module == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownModule);
+                if (module.IntegrityPermille == 1000)
+                    return CommandResult.Rejected(state, CommandFailure.ModuleNotDamaged);
+                if (module.RepairReserved || state.CrewDuty.GetRepair(repair.ModuleId) != null)
+                    return CommandResult.Rejected(state, CommandFailure.ModuleAlreadyRepairing);
+                var type = state.Layout.GetBlueprint(module.BlueprintId);
+                var spend = state.Inventory.TryConsumeShip(type!.PartId, type.RepairCost);
+                if (!spend.Success)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientMaterials);
+                var next = state.WithShipLayoutChange(state.Layout.ReserveRepair(repair.ModuleId),
+                    spend.State, state.CrewDuty.EnqueueRepair(repair.ModuleId, 500), command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.ShipModuleRepairStarted, repair.ModuleId,
+                    quantity: type.RepairCost));
+            }
+
             if (command is CollectSalvageCommand collect)
             {
                 var outcome = state.Inventory.TryCollect(collect.PickupId);

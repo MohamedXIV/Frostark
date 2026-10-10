@@ -19,7 +19,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 5;
+        public const ushort CurrentVersion = 6;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -92,6 +92,7 @@ namespace FrostArk.Core.Save
                     WriteInventory(writer, state.Inventory);
                     WriteThermal(writer, state.Thermal);
                     WriteCrew(writer, state.CrewDuty);
+                    WriteLayout(writer, state.Layout);
                 }
                 payload = stream.ToArray();
             }
@@ -148,7 +149,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -216,8 +217,9 @@ namespace FrostArk.Core.Save
             var inventory = version >= 3 ? ReadInventory(reader) : InventoryState.Empty;
             var thermal = version >= 4 ? ReadThermal(reader) : ShipThermalState.Empty;
             var crewDuty = version >= 5 ? ReadCrew(reader) : CrewState.Empty;
+            var layout = version >= 6 ? ReadLayout(reader) : ShipLayoutState.Empty;
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory, thermal, crewDuty);
+                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);
         }
 

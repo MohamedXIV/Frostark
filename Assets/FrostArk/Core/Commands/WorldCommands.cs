@@ -61,6 +61,42 @@ namespace FrostArk.Core.Commands
         }
     }
 
+    public sealed class BuildShipModuleCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId ModuleId { get; }
+        public EntityId BlueprintId { get; }
+        public EntityId RoomId { get; }
+        public int X { get; }
+        public int Y { get; }
+        public long ExpectedRevision { get; }
+        public BuildShipModuleCommand(EntityId id, EntityId moduleId, EntityId blueprintId,
+            EntityId roomId, int x, int y, long expectedRevision)
+        { Id = id; ModuleId = moduleId; BlueprintId = blueprintId; RoomId = roomId;
+          X = x; Y = y; ExpectedRevision = expectedRevision; }
+    }
+
+    public sealed class DamageShipModuleCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId ModuleId { get; }
+        public int DamagePermille { get; }
+        public long ExpectedRevision { get; }
+        public DamageShipModuleCommand(EntityId id, EntityId moduleId, int damagePermille,
+            long expectedRevision)
+        { Id = id; ModuleId = moduleId; DamagePermille = damagePermille;
+          ExpectedRevision = expectedRevision; }
+    }
+
+    public sealed class StartShipModuleRepairCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId ModuleId { get; }
+        public long ExpectedRevision { get; }
+        public StartShipModuleRepairCommand(EntityId id, EntityId moduleId, long expectedRevision)
+        { Id = id; ModuleId = moduleId; ExpectedRevision = expectedRevision; }
+    }
+
     public sealed class CollectSalvageCommand : IGameCommand
     {
         public EntityId Id { get; }

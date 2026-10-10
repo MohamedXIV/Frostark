@@ -20,6 +20,12 @@ namespace FrostArk.Core.Commands
         InsufficientInventory = 15,
         InventoryTooHeavy = 16,
         InventoryNoSlots = 17,
-        CrewAvailabilityUnchanged = 18
+        CrewAvailabilityUnchanged = 18,
+        UnknownBlueprint = 19,
+        InvalidPlacement = 20,
+        InsufficientMaterials = 21,
+        UnknownModule = 22,
+        ModuleNotDamaged = 23,
+        ModuleAlreadyRepairing = 24
     }
 }

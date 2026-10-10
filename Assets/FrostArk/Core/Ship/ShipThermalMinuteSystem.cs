@@ -43,8 +43,9 @@ namespace FrostArk.Core.Ship
 
             var result = ShipThermalModel.Step(current.Thermal, _ambient(minute),
                 current.GetSupply(EntityId.Parse("supply:fuel")),
-                current.CrewDuty.Members.Count == 0 ? 1000 :
-                    current.CrewDuty.EffectiveSkill(DutyRole.Engineering, minute));
+                checked((current.CrewDuty.Members.Count == 0 ? 1000 :
+                    current.CrewDuty.EffectiveSkill(DutyRole.Engineering, minute)) *
+                    current.Layout.BoilerOutputPermille) / 1000);
             var next = current.WithThermalMinute(minute, result);
             _commit(next);
             LastTick = result;
