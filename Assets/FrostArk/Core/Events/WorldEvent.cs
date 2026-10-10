@@ -14,7 +14,9 @@ namespace FrostArk.Core.Events
         CrewReturned = 6,
         ShipModuleBuilt = 7,
         ShipModuleDamaged = 8,
-        ShipModuleRepairStarted = 9
+        ShipModuleRepairStarted = 9,
+        ShipRoutePlanned = 10,
+        ShipRouteCancelled = 11
     }
 
     /// <summary>

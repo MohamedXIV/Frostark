@@ -138,6 +138,33 @@ namespace FrostArk.Core.Commands
                     quantity: type.RepairCost));
             }
 
+            if (command is PlanShipRouteCommand route)
+            {
+                if (!state.Navigation.CurrentWaypoint.IsValid)
+                    return CommandResult.Rejected(state, CommandFailure.NavigationUnavailable);
+                if (state.Navigation.ProgressUnits != 0)
+                    return CommandResult.Rejected(state, CommandFailure.CannotRerouteMidLeg);
+                Ship.ShipNavigationState nextRoute;
+                try { nextRoute = state.Navigation.PlanRoute(route.LegIds); }
+                catch (ArgumentException)
+                { return CommandResult.Rejected(state, CommandFailure.InvalidRoute); }
+                var next = state.WithNavigationCommand(nextRoute, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.ShipRoutePlanned,
+                    nextRoute.CurrentWaypoint));
+            }
+            if (command is CancelShipRouteCommand)
+            {
+                if (!state.Navigation.IsActive)
+                    return CommandResult.Rejected(state, CommandFailure.NavigationUnavailable);
+                if (state.Navigation.ProgressUnits != 0)
+                    return CommandResult.Rejected(state, CommandFailure.CannotRerouteMidLeg);
+                var next = state.WithNavigationCommand(state.Navigation.CancelRoute(), command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.ShipRouteCancelled,
+                    state.Navigation.CurrentWaypoint));
+            }
+
             if (command is CollectSalvageCommand collect)
             {
                 var outcome = state.Inventory.TryCollect(collect.PickupId);

@@ -26,6 +26,9 @@ namespace FrostArk.Core.Commands
         InsufficientMaterials = 21,
         UnknownModule = 22,
         ModuleNotDamaged = 23,
-        ModuleAlreadyRepairing = 24
+        ModuleAlreadyRepairing = 24,
+        InvalidRoute = 25,
+        NavigationUnavailable = 26,
+        CannotRerouteMidLeg = 27
     }
 }

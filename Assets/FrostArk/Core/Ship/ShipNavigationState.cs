@@ -65,6 +65,37 @@ namespace FrostArk.Core.Ship
         public SeaLeg? GetLeg(EntityId id) => id.IsValid ?
             Array.Find(_legs, l => l.Id == id) : null;
 
+        public ShipNavigationState PlanRoute(IReadOnlyList<EntityId> legIds)
+        {
+            if (legIds == null || legIds.Count == 0)
+                throw new ArgumentException("Nonempty route required.", nameof(legIds));
+            if (!CurrentWaypoint.IsValid || ProgressUnits != 0)
+                throw new InvalidOperationException("Cannot plan from an unknown or mid-leg location.");
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var at = CurrentWaypoint;
+            var ordered = new EntityId[legIds.Count];
+            for (int i = 0; i < legIds.Count; ++i)
+            {
+                var id = legIds[i];
+                if (!id.IsValid || !seen.Add(id.Value))
+                    throw new ArgumentException("Duplicate or invalid leg.", nameof(legIds));
+                var leg = GetLeg(id);
+                if (leg == null || leg.FromId != at)
+                    throw new ArgumentException("Route must be connected and begin here.", nameof(legIds));
+                ordered[i] = id; at = leg.ToId;
+            }
+            return new ShipNavigationState(_waypoints, _legs, CurrentWaypoint, Tuning,
+                HullIntegrityPermille, ordered, 0, 0);
+        }
+
+        public ShipNavigationState CancelRoute()
+        {
+            if (!IsActive || ProgressUnits != 0)
+                throw new InvalidOperationException("Cannot cancel an idle or mid-leg route.");
+            return new ShipNavigationState(_waypoints, _legs, CurrentWaypoint, Tuning,
+                HullIntegrityPermille, Array.Empty<EntityId>(), 0, 0);
+        }
+
         public uint Fingerprint()
         {
             var b = new StringBuilder();
