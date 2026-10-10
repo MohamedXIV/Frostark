@@ -11,7 +11,10 @@ namespace FrostArk.Core.Events
         SalvageCollected = 3,
         SalvageUnloaded = 4,
         CrewDispatched = 5,
-        CrewReturned = 6
+        CrewReturned = 6,
+        ShipModuleBuilt = 7,
+        ShipModuleDamaged = 8,
+        ShipModuleRepairStarted = 9
     }
 
     /// <summary>

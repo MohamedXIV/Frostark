@@ -137,6 +137,20 @@ namespace FrostArk.Core.Inventory
                 PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
         }
 
+        public InventoryTransactionResult TryConsumeShip(EntityId itemId, long quantity)
+        {
+            if (quantity <= 0) return Reject(InventoryError.InvalidQuantity);
+            if (!itemId.IsValid || _catalog.Get(itemId) == null)
+                return Reject(InventoryError.UnknownItem);
+            long available = GetAmount(InventoryContainer.ShipHold, itemId);
+            if (quantity > available) return Reject(InventoryError.InsufficientStock);
+            var next = new Dictionary<string, long>(_ship, StringComparer.Ordinal);
+            if (quantity == available) next.Remove(itemId.Value);
+            else next[itemId.Value] = available - quantity;
+            return Accepted(new InventoryState(_catalog, _pickups, _collected, _pack, next,
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+        }
+
         private InventoryError CheckLimit(Dictionary<string, long> stock, long maxWeight, int maxSlots)
         {
             long grams = 0;

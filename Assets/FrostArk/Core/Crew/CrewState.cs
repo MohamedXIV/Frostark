@@ -53,6 +53,13 @@ namespace FrostArk.Core.Crew
             return new CrewState(crew, queue);
         }
 
+        public CrewState EnqueueRepair(EntityId id, long work)
+        {
+            if (!id.IsValid || GetRepair(id) != null || work <= 0)
+                throw new ArgumentException("Duplicate or invalid repair job.", nameof(id));
+            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }));
+        }
+
         public CrewMember? Get(EntityId id) =>
             id.IsValid ? Array.Find(_members, x => x.Id == id) : null;
 

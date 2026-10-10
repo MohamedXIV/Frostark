@@ -137,6 +137,10 @@ namespace FrostArk.Core.World
             CopyWithCommand(commandId.Value, _supplies, _crewStations,
                 crewDuty: CrewDuty.SetAway(crewId, away));
 
+        internal WorldState WithShipLayoutChange(ShipLayoutState layout,
+            InventoryState inventory, CrewState crewDuty, EntityId commandId) =>
+            CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory, crewDuty, layout);
+
         // Crew phase runs before Heat and does not advance world time itself.
         // The heat adapter commits the same minute once after all crew effects.
         internal WorldState WithCrewTick(WorldMinute minute, CrewState nextCrew)
