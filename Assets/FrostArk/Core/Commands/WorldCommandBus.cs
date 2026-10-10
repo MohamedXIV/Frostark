@@ -332,21 +332,21 @@ namespace FrostArk.Core.Commands
                     loot.SiteId, site.IslandId));
             }
 
-            if (command is DamageSiteCommand damage)
+            if (command is DamageSiteCommand siteDamage)
             {
-                if (damage.DamagePermille <= 0 || damage.DamagePermille > 1000)
+                if (siteDamage.DamagePermille <= 0 || siteDamage.DamagePermille > 1000)
                     return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
-                var site = state.SiteProgress.Get(damage.SiteId);
+                var site = state.SiteProgress.Get(siteDamage.SiteId);
                 if (site == null)
                     return CommandResult.Rejected(state, CommandFailure.UnknownSite);
                 if (site.DamagePermille == 1000)
                     return CommandResult.Rejected(state, CommandFailure.SiteFullyDamaged);
                 var next = state.WithSiteChange(
-                    state.SiteProgress.ApplyDamage(damage.SiteId, damage.DamagePermille),
+                    state.SiteProgress.ApplyDamage(siteDamage.SiteId, siteDamage.DamagePermille),
                     command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
                     state.Minute, next.Revision, WorldEventKind.SiteDamaged,
-                    damage.SiteId, site.IslandId, damage.DamagePermille));
+                    siteDamage.SiteId, site.IslandId, siteDamage.DamagePermille));
             }
 
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
