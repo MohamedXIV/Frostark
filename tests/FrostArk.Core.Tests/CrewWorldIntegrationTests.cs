@@ -1,4 +1,5 @@
 using System;
+using System.Security.Cryptography;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Events;
@@ -154,5 +155,31 @@ namespace FrostArk.Core.Tests
             Assert.That(legacy.Thermal.TotalEnergy - initial, Is.EqualTo(10000));
             Assert.That(legacy.CrewDuty.Members, Is.Empty);
         }
+        [Test]
+        public void V4SaveMigratesToEmptyCrewWithoutFabricatingDuty()
+        {
+            var world = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
+            var snapshot = SaveGameDto.Capture(world,
+                new SimulationScheduler(new WorldClock(world.Minute),
+                    Array.Empty<IWorldMinuteSystem>()));
+            var current = SaveCodec.Encode(snapshot);
+            int payloadLength = BitConverter.ToInt32(current, 10) - 8;
+            var legacy = new byte[14 + payloadLength + 32];
+            Array.Copy(current, legacy, 14 + payloadLength);
+            legacy[8] = 4;
+            Array.Copy(BitConverter.GetBytes(payloadLength), 0, legacy, 10, 4);
+            using (var sha = SHA256.Create())
+            {
+                var hash = sha.ComputeHash(legacy, 0, legacy.Length - 32);
+                Array.Copy(hash, 0, legacy, legacy.Length - 32, 32);
+            }
+            var loaded = SaveCodec.TryDecode(legacy);
+            Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
+            Assert.That(loaded.Value.State.CrewDuty.Members, Is.Empty);
+            Assert.That(loaded.Value.State.CrewDuty.RepairJobs, Is.Empty);
+            Assert.That(loaded.Value.State.Fingerprint(), Is.EqualTo(world.Fingerprint()));
+        }
+
     }
 }
