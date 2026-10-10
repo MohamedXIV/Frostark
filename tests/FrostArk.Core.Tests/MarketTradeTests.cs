@@ -112,6 +112,59 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void MerchantCannotPurchaseWhenItsActualWalletIsEmpty()
+        {
+            var issued = Start().Inventory.TryExchangeShip(
+                Array.Empty<System.Collections.Generic.KeyValuePair<EntityId,long>>(),
+                new[] { new System.Collections.Generic.KeyValuePair<EntityId,long>(Heater, 1) });
+            Assert.That(issued.Success, Is.True);
+            var market = new MarketState(Market, credits: 0,
+                new[] { new MarketListing(Heater, 1, 30, 20) });
+            var economy = EconomyState.Create(
+                new WorkshopCatalog(Array.Empty<WorkshopRecipe>()),
+                Array.Empty<EntityId>(), markets: new[] { market });
+            var before = WorldState.Create(WorldMinute.Zero,
+                new[] { new SupplyStock(Coin, 100) }, Array.Empty<EntityId>(),
+                inventory: issued.State, economy: economy);
+            var sold = new WorldCommandBus().Execute(before,
+                new SellMarketItemCommand(EntityId.Parse("cmd:drain"), Market, Heater, 1, 0));
+            Assert.That(sold.Failure, Is.EqualTo(CommandFailure.MerchantCannotAfford));
+            Assert.That(sold.State, Is.SameAs(before));
+            Assert.That(before.Inventory.GetAmount(InventoryContainer.ShipHold, Heater),
+                Is.EqualTo(1));
+            Assert.That(before.GetSupply(Coin), Is.EqualTo(100));
+        }
+
+        [Test]
+        public void ForgedNegativeMarketCreditsRejectedEvenWithCorrectChecksum()
+        {
+            var bought = new WorldCommandBus().Execute(Start(),
+                new BuyMarketItemCommand(EntityId.Parse("cmd:buy-safe"), Market, Heater, 1, 0));
+            Assert.That(bought.Success, Is.True);
+            var timer = new SimulationScheduler(new WorldClock(bought.State.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var blob = SaveCodec.Encode(SaveGameDto.Capture(bought.State, timer));
+            var marker = System.Text.Encoding.UTF8.GetBytes("market:port-a");
+            int position = -1;
+            for (int i = 0; i <= blob.Length - 32 - marker.Length; i++)
+            {
+                bool same = true;
+                for (int j = 0; j < marker.Length; j++)
+                    if (blob[i + j] != marker[j]) { same = false; break; }
+                if (same) { position = i; break; }
+            }
+            Assert.That(position, Is.GreaterThanOrEqualTo(0));
+            // Market cash follows length-prefixed merchant ID.
+            Array.Copy(BitConverter.GetBytes(-1L), 0, blob, position + marker.Length, 8);
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                Array.Copy(sha.ComputeHash(blob, 0, blob.Length - 32),
+                    0, blob, blob.Length - 32, 32);
+            var invalid = SaveCodec.TryDecode(blob);
+            Assert.That(invalid.Success, Is.False);
+            Assert.That(invalid.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void InvalidMerchantListingsAndPricesAreRejected()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new MarketListing(Heater, 1, 0, 1));

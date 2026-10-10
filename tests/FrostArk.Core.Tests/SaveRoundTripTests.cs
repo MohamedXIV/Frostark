@@ -213,6 +213,24 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void LegacyV8WithoutWorkshopOrMarketsMigratesToEmptyEconomy()
+        {
+            var current = MakeSnapshot();
+            var v9 = SaveCodec.Encode(current);
+            Assert.That(v9[8], Is.EqualTo(9));
+            // V9 added 4 empty collection counts for recipes, stations,
+            // pending prepaid jobs and finite merchants.
+            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 16);
+            var restored = SaveCodec.TryDecode(v8);
+            Assert.That(restored.Success, Is.True, restored.Error.ToString());
+            Assert.That(restored.Value.State.Economy.Jobs, Is.Empty);
+            Assert.That(restored.Value.State.Economy.Markets, Is.Empty);
+            Assert.That(restored.Value.State.Fingerprint(),
+                Is.EqualTo(current.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(restored.Value), Is.EqualTo(v9));
+        }
+
+        [Test]
         public void InvalidHeaderAndOversizedDataFailWithoutThrowing()
         {
             var bytes = SaveCodec.Encode(MakeSnapshot());

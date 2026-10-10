@@ -138,6 +138,30 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void SleepingPastInterruptedHazardOnlyProgressesWorkshopToHazard()
+        {
+            var started = new WorldCommandBus().Execute(Start(),
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:start-raid"), Job, Recipe, 0));
+            var current = started.State;
+            var timeline = new SimulationScheduler(new WorldClock(current.Minute),
+                new IWorldMinuteSystem[]
+                { new WorkshopMinuteSystem(() => current, x => current = x) });
+            timeline.Schedule(new ScheduledWorldEvent(EntityId.Parse("event:raid"),
+                new WorldMinute(160), "raiders", interruptsSleep: true));
+            var outcome = timeline.AdvanceUntil(new WorldMinute(220),
+                new SleepInterruptionPolicy());
+            Assert.That(outcome.WasInterrupted, Is.True);
+            Assert.That(outcome.EndedAt.Value, Is.EqualTo(160));
+            Assert.That(current.Minute.Value, Is.EqualTo(160));
+            Assert.That(current.Economy.Jobs, Has.Count.EqualTo(1));
+            Assert.That(current.Inventory.GetAmount(InventoryContainer.ShipHold, Stove), Is.Zero);
+            timeline.Advance(20);
+            Assert.That(current.Economy.Jobs, Is.Empty);
+            Assert.That(current.Inventory.GetAmount(InventoryContainer.ShipHold, Stove),
+                Is.EqualTo(1));
+        }
+
+        [Test]
         public void MissingStationRecipeAndInsufficientMaterialsRejectAtomically()
         {
             var bus = new WorldCommandBus();
