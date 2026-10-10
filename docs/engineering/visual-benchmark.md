@@ -1,6 +1,6 @@
 # V01 — visual benchmark: camera, stable textures and readability
 
-**Status (2026-10-10): generator authored; G0 structural tests only until hosted results. Unity 6000.6.0f1 G2 import/compile, G3 renderer screenshot, G4 controller/device measurements are unverified.** This is an experiment, not an approved final art/camera choice. Issue #20 and decision D018 remain open.
+**Status (2026-10-10): generator authored; live PR #56 sync to main v12 verified at `623fbf01c3c9f18e7fe7ecb9511569bb9e634bf9` ([GitHub Actions 38068501653](https://github.com/MohamedXIV/Frostark/actions/runs/38068501653)) with 14/14 G0 Python PASS and 179/179 Core NUnit G1 PASS. Unity 6000.6.0f1 G2 import/compile, G3 renderer screenshots, and G4 controller/device measurements remain unverified.** This is an experiment, not an approved final art/camera choice. Issue #20 and decision D018 remain open.
 
 ## Fixed experiment and alternatives
 
