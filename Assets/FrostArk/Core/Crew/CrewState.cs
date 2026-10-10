@@ -22,18 +22,23 @@ namespace FrostArk.Core.Crew
         };
         private readonly CrewMember[] _members;
         private readonly RepairJob[] _jobs;
+        private readonly MedicalTreatmentProtocol[] _treatments;
         public IReadOnlyList<CrewMember> Members => Array.AsReadOnly(_members);
         public IReadOnlyList<RepairJob> RepairJobs => Array.AsReadOnly(_jobs);
-        private CrewState(CrewMember[] members, RepairJob[] jobs)
+        public IReadOnlyList<MedicalTreatmentProtocol> Treatments => Array.AsReadOnly(_treatments);
+        private CrewState(CrewMember[] members, RepairJob[] jobs,
+            MedicalTreatmentProtocol[] treatments)
         {
             _members = members;
             _jobs = jobs;
+            _treatments = treatments;
         }
 
         public static CrewState Empty => Create(Array.Empty<CrewMember>());
 
         public static CrewState Create(IEnumerable<CrewMember> members,
-            IEnumerable<RepairJob>? jobs = null)
+            IEnumerable<RepairJob>? jobs = null,
+            IEnumerable<MedicalTreatmentProtocol>? treatments = null)
         {
             if (members == null) throw new ArgumentNullException(nameof(members));
             var crew = members.ToArray();
@@ -50,18 +55,46 @@ namespace FrostArk.Core.Crew
             foreach (var job in queue)
                 if (!ids.Add(job.Id.Value))
                     throw new ArgumentException("Duplicate repair job ID.", nameof(jobs));
-            return new CrewState(crew, queue);
+            var protocols = (treatments ?? Array.Empty<MedicalTreatmentProtocol>()).ToArray();
+            if (protocols.Any(x => x == null))
+                throw new ArgumentException("Null medical protocol.", nameof(treatments));
+            protocols = protocols.OrderBy(x => x.ItemId.Value, StringComparer.Ordinal).ToArray();
+            for (int i = 1; i < protocols.Length; i++)
+                if (protocols[i-1].ItemId == protocols[i].ItemId)
+                    throw new ArgumentException("Duplicate treatment item.", nameof(treatments));
+            return new CrewState(crew, queue, protocols);
         }
 
         public CrewState EnqueueRepair(EntityId id, long work)
         {
             if (!id.IsValid || GetRepair(id) != null || work <= 0)
                 throw new ArgumentException("Duplicate or invalid repair job.", nameof(id));
-            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }));
+            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }), _treatments);
         }
 
         public CrewMember? Get(EntityId id) =>
             id.IsValid ? Array.Find(_members, x => x.Id == id) : null;
+
+        public MedicalTreatmentProtocol? GetTreatment(EntityId itemId) =>
+            itemId.IsValid ? Array.Find(_treatments, x => x.ItemId == itemId) : null;
+
+        public CrewState WithTreatments(IEnumerable<MedicalTreatmentProtocol> treatments) =>
+            Create(_members, _jobs, treatments);
+
+        /// <summary>Only authored treatment IDs can resolve healing potency;
+        /// a caller cannot supply a substituted high-healing protocol.</summary>
+        internal CrewState Treat(EntityId crewId, EntityId treatmentItemId)
+        {
+            var protocol = GetTreatment(treatmentItemId);
+            if (protocol == null)
+                throw new ArgumentException("Treatment protocol not authored.", nameof(treatmentItemId));
+            var member = Get(crewId);
+            if (member == null || member.IsAway || member.Wounds == 0)
+                throw new ArgumentException("Crew patient is unavailable or healthy.", nameof(crewId));
+            return new CrewState(_members.Select(m => m.Id == crewId
+                ? m.WithWounds(Math.Max(0, m.Wounds - protocol.HealPermille))
+                : m).ToArray(), _jobs, _treatments);
+        }
 
         public RepairJob? GetRepair(EntityId id) =>
             id.IsValid ? Array.Find(_jobs, x => x.Id == id) : null;
@@ -72,7 +105,7 @@ namespace FrostArk.Core.Crew
                 throw new ArgumentException("Crew member is not in the authored roster.", nameof(id));
             var changed = _members.Select(m => m.Id == id ? m.WithAway(away) : m).ToArray();
             return changed.Zip(_members, (a, b) => ReferenceEquals(a, b)).All(x => x)
-                ? this : new CrewState(changed, _jobs);
+                ? this : new CrewState(changed, _jobs, _treatments);
         }
 
         /// <summary>
@@ -155,7 +188,7 @@ namespace FrostArk.Core.Crew
                 else
                     jobs[0] = new RepairJob(jobs[0].Id, remaining);
             }
-            return new CrewState(nextMembers, jobs);
+            return new CrewState(nextMembers, jobs, _treatments);
         }
 
         public uint Fingerprint()
@@ -182,6 +215,13 @@ namespace FrostArk.Core.Crew
             {
                 Add("repair"); Add(job.Id.Value);
                 Add(job.RemainingWork.ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var t in _treatments)
+            {
+                Add("medicine"); Add(t.ItemId.Value);
+                Add(t.Version.ToString(CultureInfo.InvariantCulture));
+                Add(t.HealPermille.ToString(CultureInfo.InvariantCulture));
+                Add(t.MinimumMedicalSkill.ToString(CultureInfo.InvariantCulture));
             }
             return StableHash32.Of(canonical.ToString());
         }

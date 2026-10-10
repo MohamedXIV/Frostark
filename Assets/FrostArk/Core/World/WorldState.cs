@@ -80,6 +80,10 @@ namespace FrostArk.Core.World
             }
 
             var duty = crewDuty ?? CrewState.Empty;
+            foreach (var protocol in duty.Treatments)
+                if (!(inventory ?? InventoryState.Empty).HasItem(protocol.ItemId))
+                    throw new ArgumentException("Treatment items must be authored in InventoryState.",
+                        nameof(crewDuty));
             foreach (var member in duty.Members)
                 if (!crews.Contains(member.Id.Value))
                     throw new ArgumentException("Authored crew member is absent from world registry.", nameof(crewDuty));
@@ -157,6 +161,14 @@ namespace FrostArk.Core.World
         {
             if (inventory == null) throw new ArgumentNullException(nameof(inventory));
             return CopyWithCommand(commandId.Value, _supplies, _crewStations, inventory);
+        }
+
+        internal WorldState WithCrewTreatment(CrewState healed, InventoryState paid,
+            EntityId commandId)
+        {
+            if (healed == null || paid == null) throw new ArgumentNullException(nameof(healed));
+            return CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                inventory: paid, crewDuty: healed);
         }
 
         internal WorldState WithCrewAway(EntityId crewId, bool away, EntityId commandId) =>

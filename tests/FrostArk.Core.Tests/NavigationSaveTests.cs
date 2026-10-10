@@ -50,7 +50,7 @@ namespace FrostArk.Core.Tests
             var scheduler = Bind(() => state, s => state = s);
             scheduler.Advance(3);
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
-            Assert.That(bytes[8], Is.EqualTo(10));
+            Assert.That(bytes[8], Is.EqualTo(11));
             var loaded = SaveCodec.TryDecode(bytes);
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
             Assert.That(loaded.Value.State.Fingerprint(), Is.EqualTo(state.Fingerprint()));
@@ -92,8 +92,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var now = SaveCodec.Encode(SaveGameDto.Capture(state, new SimulationScheduler(
                 new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(now[now.Length - 65], Is.Zero); // Empty navigation presence.
-            var old = new byte[now.Length - 33];
+            Assert.That(now[now.Length - 69], Is.Zero); // Empty navigation presence.
+            var old = new byte[now.Length - 37];
             Array.Copy(now, old, old.Length - 32);
             old[8] = 6;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);
@@ -115,7 +115,7 @@ namespace FrostArk.Core.Tests
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, timer));
             // Last Int32 in active v7 payload is progress on the current leg.
             Array.Copy(BitConverter.GetBytes(int.MaxValue), 0, bytes,
-                bytes.Length - 32 - 36, 4);
+                bytes.Length - 32 - 40, 4);
             Rehash(bytes);
             var decoded = SaveCodec.TryDecode(bytes);
             Assert.That(decoded.Success, Is.False);

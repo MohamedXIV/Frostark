@@ -21,7 +21,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 10;
+        public const ushort CurrentVersion = 11;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -99,6 +99,7 @@ namespace FrostArk.Core.Save
                     WriteCreditedInventory(writer, state.Inventory);
                     WriteEconomy(writer, state.Economy);
                     WriteCombat(writer, state.Combat);
+                    WriteMedical(writer, state.CrewDuty);
                 }
                 payload = stream.ToArray();
             }
@@ -155,7 +156,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -228,6 +229,7 @@ namespace FrostArk.Core.Save
             if (version >= 8) inventory = ReadCreditedInventory(reader, inventory);
             var economy = version >= 9 ? ReadEconomy(reader) : EconomyState.Empty;
             var combat = version >= 10 ? ReadCombat(reader) : CombatState.Empty;
+            if (version >= 11) crewDuty = crewDuty.WithTreatments(ReadMedical(reader));
             var world = WorldState.RestoreSnapshot(minute, revision,
                 supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy, combat);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides);

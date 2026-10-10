@@ -67,6 +67,10 @@ namespace FrostArk.Core.Crew
         public CrewMember WithFatigue(int fatigue) => fatigue == Fatigue ? this :
             new CrewMember(Id, Role, PrimarySkill, BackupSkill, ShiftStart,
                 ShiftMinutes, fatigue, Wounds, IsAway);
+
+        public CrewMember WithWounds(int wounds) => wounds == Wounds ? this :
+            new CrewMember(Id, Role, PrimarySkill, BackupSkill, ShiftStart,
+                ShiftMinutes, Fatigue, wounds, IsAway);
     }
 
     public sealed class RepairJob

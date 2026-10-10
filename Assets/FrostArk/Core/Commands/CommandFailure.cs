@@ -37,6 +37,10 @@ namespace FrostArk.Core.Commands
         MerchantCannotAfford = 32,
         UnknownWeapon = 33,
         WeaponNotCarried = 34,
-        WeaponCoolingDown = 35
+        WeaponCoolingDown = 35,
+        UnknownTreatment = 36,
+        MedicalStaffUnavailable = 37,
+        PatientUnavailable = 38,
+        PatientNotWounded = 39
     }
 }
