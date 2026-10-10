@@ -137,6 +137,26 @@ namespace FrostArk.Core.Inventory
                 PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
         }
 
+        /// <summary>
+        /// Deduct only actual carried Pack stock. Intended for atomic higher-level
+        /// action commits (e.g. future weapon fire); not a standalone shot command.
+        /// A rejection returns the exact original state.
+        /// </summary>
+        public InventoryTransactionResult TryConsumePack(EntityId itemId, long quantity)
+        {
+            if (quantity <= 0) return Reject(InventoryError.InvalidQuantity);
+            if (!itemId.IsValid || _catalog.Get(itemId) == null)
+                return Reject(InventoryError.UnknownItem);
+
+            long available = GetAmount(InventoryContainer.Pack, itemId);
+            if (quantity > available) return Reject(InventoryError.InsufficientStock);
+            var nextPack = new Dictionary<string, long>(_pack, StringComparer.Ordinal);
+            if (quantity == available) nextPack.Remove(itemId.Value);
+            else nextPack[itemId.Value] = available - quantity;
+            return Accepted(new InventoryState(_catalog, _pickups, _collected, nextPack, _ship,
+                PackMaxWeightGrams, PackMaxSlots, ShipMaxWeightGrams, ShipMaxSlots));
+        }
+
         public InventoryTransactionResult TryConsumeShip(EntityId itemId, long quantity)
         {
             if (quantity <= 0) return Reject(InventoryError.InvalidQuantity);
