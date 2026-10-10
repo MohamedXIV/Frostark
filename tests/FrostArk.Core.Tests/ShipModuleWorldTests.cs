@@ -238,6 +238,28 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ReservationFlagWithoutPaidCrewJobRejectsForgedSave()
+        {
+            var built = Build(Begin(), Engine, EngineType, 0, 0, "cmd:build-reservation-forge");
+            var damaged = new WorldCommandBus().Execute(built,
+                new DamageShipModuleCommand(EntityId.Parse("cmd:damage-reservation-forge"),
+                    Engine, 300, built.Revision)).State;
+            var scheduler = new SimulationScheduler(new WorldClock(damaged.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var bytes = SaveCodec.Encode(SaveGameDto.Capture(damaged, scheduler));
+            // The module reservation flag is the final byte in the v6 layout payload
+            // when there is exactly one module.
+            Assert.That(bytes[bytes.Length - 33], Is.Zero);
+            bytes[bytes.Length - 33] = 1;
+            using (var sha = SHA256.Create())
+                Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32), 0,
+                    bytes, bytes.Length - 32, 32);
+            var result = SaveCodec.TryDecode(bytes);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void ForgedChecksumCannotAuthorizeUnknownModuleKind()
         {
             var built = Build(Begin(), Engine, EngineType, 0, 0, "cmd:module-forgery");
