@@ -108,6 +108,68 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ClosedBulkheadPreventsTransferButOpenBulkheadConservesShipEnergy()
+        {
+            ShipThermalState Scenario(int conductance) =>
+                ShipThermalState.Create(new[]
+                {
+                    new ThermalCompartment(BoilerRoom, 1000, 20_000_000, 0, 1000, 1000),
+                    new ThermalCompartment(Cabin, 1000, 0, 0, 1000, 1000)
+                }, new[] { new ThermalConnection(BoilerRoom, Cabin, conductance) },
+                    BoilerConfiguration.Disabled);
+
+            var closed = Scenario(0);
+            var open = Scenario(800);
+            for (int i = 0; i < 120; i++)
+            {
+                closed = ShipThermalModel.Step(closed, 0, 0).State;
+                open = ShipThermalModel.Step(open, 0, 0).State;
+            }
+
+            Assert.That(closed.Get(Cabin).Energy, Is.Zero);
+            Assert.That(open.Get(Cabin).Energy, Is.GreaterThan(0));
+            Assert.That(open.Get(BoilerRoom).Energy,
+                Is.LessThan(closed.Get(BoilerRoom).Energy));
+            Assert.That(open.TotalEnergy, Is.EqualTo(closed.TotalEnergy));
+        }
+
+        [Test]
+        public void FuelRationingAcrossColdNightHasAVisibleHeatCost()
+        {
+            ShipThermalState Scenario() =>
+                ShipThermalState.Create(new[]
+                {
+                    new ThermalCompartment(BoilerRoom, 1000, 10_000_000, 500, 900, 1000),
+                    new ThermalCompartment(Cabin, 1000, 10_000_000, 5000, 500, 1000)
+                }, new[] { new ThermalConnection(BoilerRoom, Cabin, 800) },
+                    new BoilerConfiguration(BoilerRoom, 1, 50_000));
+
+            var full = Scenario();
+            var rationed = Scenario();
+            long fullFuel = 480;
+            long rationFuel = 120;
+            for (int i = 0; i < 480; i++)
+            {
+                var a = ShipThermalModel.Step(full, -30_000, fullFuel);
+                var b = ShipThermalModel.Step(rationed, -30_000, rationFuel);
+                Assert.That(a.TotalEnergyAfter - a.TotalEnergyBefore,
+                    Is.EqualTo(a.HeatAdded + a.ExteriorTransfer));
+                Assert.That(b.TotalEnergyAfter - b.TotalEnergyBefore,
+                    Is.EqualTo(b.HeatAdded + b.ExteriorTransfer));
+                fullFuel -= a.FuelConsumed;
+                rationFuel -= b.FuelConsumed;
+                full = a.State;
+                rationed = b.State;
+            }
+            Assert.That(fullFuel, Is.Zero);
+            Assert.That(rationFuel, Is.Zero);
+            Assert.That(full.Get(Cabin).TemperatureMilliC,
+                Is.GreaterThan(rationed.Get(Cabin).TemperatureMilliC));
+            Assert.That(full.Get(BoilerRoom).TemperatureMilliC,
+                Is.GreaterThan(rationed.Get(BoilerRoom).TemperatureMilliC));
+        }
+
+        [Test]
         public void InvalidHeatGraphAndNegativeFuelAreRejected()
         {
             Assert.Throws<ArgumentException>(() => ShipThermalState.Create(
