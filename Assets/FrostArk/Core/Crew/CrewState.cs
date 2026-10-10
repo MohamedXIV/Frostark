@@ -81,10 +81,13 @@ namespace FrostArk.Core.Crew
         public CrewState WithTreatments(IEnumerable<MedicalTreatmentProtocol> treatments) =>
             Create(_members, _jobs, treatments);
 
-        public CrewState Treat(EntityId crewId, MedicalTreatmentProtocol protocol)
+        /// <summary>Only authored treatment IDs can resolve healing potency;
+        /// a caller cannot supply a substituted high-healing protocol.</summary>
+        internal CrewState Treat(EntityId crewId, EntityId treatmentItemId)
         {
-            if (protocol == null || GetTreatment(protocol.ItemId) == null)
-                throw new ArgumentException("Treatment protocol not authored.", nameof(protocol));
+            var protocol = GetTreatment(treatmentItemId);
+            if (protocol == null)
+                throw new ArgumentException("Treatment protocol not authored.", nameof(treatmentItemId));
             var member = Get(crewId);
             if (member == null || member.IsAway || member.Wounds == 0)
                 throw new ArgumentException("Crew patient is unavailable or healthy.", nameof(crewId));

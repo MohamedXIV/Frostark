@@ -310,7 +310,7 @@ namespace FrostArk.Core.Commands
                 var payment = state.Inventory.TryConsumeShip(treatment.TreatmentItemId, 1);
                 if (!payment.Success)
                     return CommandResult.Rejected(state, MapInventoryFailure(payment.Error));
-                var healed = state.CrewDuty.Treat(treatment.CrewId, policy);
+                var healed = state.CrewDuty.Treat(treatment.CrewId, treatment.TreatmentItemId);
                 var next = state.WithCrewTreatment(healed, payment.State, command.Id);
                 long recovered = patient.Wounds - healed.Get(treatment.CrewId)!.Wounds;
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
