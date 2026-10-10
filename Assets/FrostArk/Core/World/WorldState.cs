@@ -148,8 +148,14 @@ namespace FrostArk.Core.World
             if (nextCrew == null) throw new ArgumentNullException(nameof(nextCrew));
             if (minute.Value != checked(Minute.Value + 1))
                 throw new ArgumentOutOfRangeException(nameof(minute));
+            // Only a previously paid, persisted module repair reservation may
+            // restore integrity. Unrelated legacy repair jobs cannot heal modules.
+            var updatedLayout = Layout;
+            foreach (var job in CrewDuty.RepairJobs)
+                if (nextCrew.GetRepair(job.Id) == null)
+                    updatedLayout = updatedLayout.CompleteRepair(job.Id);
             return new WorldState(Minute, Revision, _supplies, _crewIds,
-                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, Layout);
+                _crewStations, _processedCommands, Inventory, Thermal, nextCrew, updatedLayout);
         }
 
         /// <summary>
