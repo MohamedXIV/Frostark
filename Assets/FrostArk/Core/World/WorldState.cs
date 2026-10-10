@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Ship;
 
 namespace FrostArk.Core.World
 {
@@ -19,6 +20,7 @@ namespace FrostArk.Core.World
         private readonly Dictionary<string, string> _crewStations;
         private readonly HashSet<string> _processedCommands;
         public InventoryState Inventory { get; }
+        public ShipThermalState Thermal { get; }
 
         public WorldMinute Minute { get; }
         public long Revision { get; }
@@ -26,7 +28,7 @@ namespace FrostArk.Core.World
         private WorldState(WorldMinute minute, long revision,
             Dictionary<string, long> supplies, HashSet<string> crewIds,
             Dictionary<string, string> crewStations, HashSet<string> processedCommands,
-            InventoryState inventory)
+            InventoryState inventory, ShipThermalState thermal)
         {
             Minute = minute;
             Revision = revision;
@@ -35,11 +37,12 @@ namespace FrostArk.Core.World
             _crewStations = crewStations;
             _processedCommands = processedCommands;
             Inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
+            Thermal = thermal ?? throw new ArgumentNullException(nameof(thermal));
         }
 
         public static WorldState Create(WorldMinute minute,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
-            InventoryState inventory = null)
+            InventoryState inventory = null, ShipThermalState thermal = null)
         {
             if (supplies == null)
                 throw new ArgumentNullException(nameof(supplies));
@@ -63,7 +66,7 @@ namespace FrostArk.Core.World
 
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
-                new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty);
+                new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty, thermal ?? ShipThermalState.Empty);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);
@@ -86,7 +89,7 @@ namespace FrostArk.Core.World
             var commands = new HashSet<string>(_processedCommands, StringComparer.Ordinal);
             commands.Add(commandId);
             return new WorldState(Minute, nextRevision, supplies,
-                _crewIds, crewStations, commands, inventory ?? Inventory);
+                _crewIds, crewStations, commands, inventory ?? Inventory, Thermal);
         }
 
         internal WorldState WithWithdrawal(EntityId supplyId, long amount, EntityId commandId)
@@ -118,6 +121,31 @@ namespace FrostArk.Core.World
         }
 
         /// <summary>
+        /// Commit one *simulation* minute without manufacturing a command ID or
+        /// incrementing a player-command revision. Existing command/replay
+        /// provenance remains bounded across weeks of thermal ticks.
+        /// </summary>
+        internal WorldState WithThermalMinute(WorldMinute minute, ThermalTickResult tick)
+        {
+            if (tick == null) throw new ArgumentNullException(nameof(tick));
+            if (minute.Value != checked(Minute.Value + 1))
+                throw new ArgumentOutOfRangeException(nameof(minute), "Thermal steps require consecutive minutes.");
+            if (Thermal.Rooms.Count == 0)
+                throw new InvalidOperationException("Cannot apply thermal step to an empty ship.");
+            if (tick.FuelConsumed < 0)
+                throw new ArgumentOutOfRangeException(nameof(tick));
+            var fuelId = EntityId.Parse("supply:fuel");
+            var amount = GetSupply(fuelId);
+            if (tick.FuelConsumed > amount)
+                throw new InvalidOperationException("Boiler cannot burn fuel not held by canonical WorldState.");
+            var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
+            if (tick.FuelConsumed > 0)
+                supplies[fuelId.Value] = checked(amount - tick.FuelConsumed);
+            return new WorldState(minute, Revision, supplies, _crewIds,
+                _crewStations, _processedCommands, Inventory, tick.State);
+        }
+
+        /// <summary>
         /// Explicit world-minute projection; commands remain revision controlled.
         /// No existing snapshot is mutated by advancing the authoritative clock.
         /// </summary>
@@ -125,7 +153,7 @@ namespace FrostArk.Core.World
         {
             if (minute < Minute)
                 throw new ArgumentOutOfRangeException(nameof(minute), "World time cannot go backwards.");
-            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory);
+            return new WorldState(minute, Revision, _supplies, _crewIds, _crewStations, _processedCommands, Inventory, Thermal);
         }
 
         internal IReadOnlyList<SupplyStock> SnapshotSupplies() =>
@@ -146,7 +174,8 @@ namespace FrostArk.Core.World
         internal static WorldState RestoreSnapshot(WorldMinute minute, long revision,
             IEnumerable<SupplyStock> supplies, IEnumerable<EntityId> crew,
             IEnumerable<KeyValuePair<EntityId, EntityId>> assignments,
-            IEnumerable<EntityId> processed, InventoryState inventory = null)
+            IEnumerable<EntityId> processed, InventoryState inventory = null,
+            ShipThermalState thermal = null)
         {
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
@@ -168,7 +197,8 @@ namespace FrostArk.Core.World
             if (commands.Count != revision)
                 throw new ArgumentException("Revision and processed command count disagree.", nameof(revision));
             return new WorldState(minute, revision, baseline._supplies,
-                baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty);
+                baseline._crewIds, stations, commands, inventory ?? InventoryState.Empty,
+                thermal ?? ShipThermalState.Empty);
         }
 
         /// <summary>
@@ -203,6 +233,8 @@ namespace FrostArk.Core.World
             {
                 Add("x"); Add(id);
             }
+            Add("thermal");
+            Add(Thermal.Fingerprint().ToString(CultureInfo.InvariantCulture));
             Add("inventory");
             Add(Inventory.Fingerprint().ToString(CultureInfo.InvariantCulture));
             return StableHash32.Of(canonical.ToString());
