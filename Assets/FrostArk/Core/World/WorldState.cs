@@ -74,11 +74,16 @@ namespace FrostArk.Core.World
             foreach (var member in duty.Members)
                 if (!crews.Contains(member.Id.Value))
                     throw new ArgumentException("Authored crew member is absent from world registry.", nameof(crewDuty));
+            var shipLayout = layout ?? ShipLayoutState.Empty;
+            foreach (var module in shipLayout.Modules)
+                if (module.RepairReserved && duty.GetRepair(module.Id) == null)
+                    throw new ArgumentException(
+                        "A reserved ship module requires a persistent paid repair job.", nameof(layout));
 
             return new WorldState(minute, 0, supplyMap, crews,
                 new Dictionary<string, string>(StringComparer.Ordinal),
                 new HashSet<string>(StringComparer.Ordinal), inventory ?? InventoryState.Empty,
-                thermal ?? ShipThermalState.Empty, duty, layout ?? ShipLayoutState.Empty);
+                thermal ?? ShipThermalState.Empty, duty, shipLayout);
         }
 
         public bool HasSupply(EntityId id) => id.IsValid && _supplies.ContainsKey(id.Value);

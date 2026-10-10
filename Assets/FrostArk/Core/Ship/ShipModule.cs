@@ -49,7 +49,12 @@ namespace FrostArk.Core.Ship
         public int IntegrityPermille { get; }
         public bool RepairReserved { get; }
         public ShipModule(EntityId id, EntityId blueprintId, EntityId roomId,
-            int x, int y, int integrityPermille = 1000, bool repairReserved = false)
+            int x, int y, int integrityPermille = 1000)
+            : this(id, blueprintId, roomId, x, y, integrityPermille, false) { }
+
+        // Only internal command or vetted save hydration code may set this flag.
+        internal ShipModule(EntityId id, EntityId blueprintId, EntityId roomId,
+            int x, int y, int integrityPermille, bool repairReserved)
         {
             if (!id.IsValid || !blueprintId.IsValid || !roomId.IsValid)
                 throw new ArgumentException("Module IDs required.");
