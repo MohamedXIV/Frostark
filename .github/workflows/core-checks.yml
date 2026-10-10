@@ -1,0 +1,45 @@
+name: FrostArk Core G0 and G1
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/core-checks.yml'
+      - 'Assets/FrostArk/**'
+      - 'src/FrostArk.Core/**'
+      - 'tests/**'
+      - 'tools/validate_core_structure.py'
+      - '.gitignore'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/core-checks.yml'
+      - 'Assets/FrostArk/**'
+      - 'src/FrostArk.Core/**'
+      - 'tests/**'
+      - 'tools/validate_core_structure.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: core-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: G0 validation
+        run: |
+          python3 tools/validate_core_structure.py
+          python3 -m unittest discover -s tests/validation -p 'test_*.py' -v
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restore
+        run: dotnet restore tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj --nologo
+      - name: G1 tests
+        run: dotnet test tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj --no-restore -c Release --logger "console;verbosity=normal"
