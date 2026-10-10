@@ -27,11 +27,13 @@ namespace FrostArk.Core.Tests
         [Test]
         public void FractionalRealTimeAccumulatesWithoutTruncationLoss()
         {
-            var pacer = new WorldTimePacer(new WorldTimeRate(3, 1000));
+            var pacer = new WorldTimePacer(new WorldTimeRate(1, 1000));
             for (int i = 0; i < 9; i++)
                 Assert.That(pacer.ConsumeElapsedMilliseconds(100), Is.EqualTo(0));
-            Assert.That(pacer.ConsumeElapsedMilliseconds(100), Is.EqualTo(3));
-            Assert.That(pacer.ConsumeElapsedMilliseconds(1000), Is.EqualTo(3));
+            Assert.That(pacer.ConsumeElapsedMilliseconds(100), Is.EqualTo(1));
+            Assert.That(pacer.ConsumeElapsedMilliseconds(1000), Is.EqualTo(1));
+            Assert.That(new WorldTimePacer(new WorldTimeRate(3, 1000))
+                .ConsumeElapsedMilliseconds(1000), Is.EqualTo(3));
         }
 
         [Test]
