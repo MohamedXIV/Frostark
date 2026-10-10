@@ -5,9 +5,9 @@
 ## Required tools and boundaries
 
 - Use connected **GitHub** for remote repository source, issues, PRs and comments; **RepoPilot Dev** for the Project issue/dependency graph, current-head checks, claims and checkpoints; **Superpowers** skills for design/plans, test-driven changes, debugging, review and verification.
-- Online work only. No **ShellWarden**, no edits to other repositories, no compulsory local Editor operation, no GitHub Actions (unless user explicitly changes this policy). Do not download Android/WebGL support solely for the worker.
+- Online work only. No **ShellWarden**, no edits to other repositories, no compulsory local Editor operation, owner-authorized read-only GitHub Actions for FrostArk's public Core G0/G1 checks. Do not introduce privileged/untrusted workflows, paid runners, or use CI to claim Unity engine validation. Do not download Android/WebGL support solely for the worker.
 - Never assume a scheduled ChatGPT task inherits interactive connector permissions. On each run, **probe tool availability first**. If missing, stop truthfully and avoid empty fabricated status reports. A scheduled task is not a persistent compute process. No claims of completed work after a tool-free run.
-- Don't use GitHub Actions just to work around an absent `dotnet` SDK; install/use an independently authorized .NET environment when available and record exactly what ran.
+- The owner has authorized the public repository's `.github/workflows/core-checks.yml` for repeatable Python G0 + real hosted .NET 8 NUnit G1 checks; read actual run/job logs with exact PR head before recording PASS. CI complements, not substitutes for Unity G2/G3.
 
 ## At every invocation
 
@@ -21,7 +21,7 @@
 
 ## Immediate queue (2026-10-10 baseline; revalidate)
 
-- **Issue #15**: first priority is [PR #46](https://github.com/MohamedXIV/Frostark/pull/46), Draft on `feat/15-core-standalone-tests` at `7ae6a809c8d75f33cbcb4cd784e3d7876ec9b7ca` (snapshot, **not** an evergreen SHA). Shared Unity-independent Core primitives and NUnit tests have been authored; **real `dotnet restore/test` and Unity compile on this PR are UNVERIFIED**. Reinspect source and run/fix tests using an authorized .NET environment before promoting or merging. The separate prior local Unity 2/2 smoke applies to **PR #45**, not #46.
+- **Issue #15**: first priority is [PR #46](https://github.com/MohamedXIV/Frostark/pull/46), Draft on `feat/15-core-standalone-tests` at `7ae6a809c8d75f33cbcb4cd784e3d7876ec9b7ca` (snapshot, **not** an evergreen SHA). Shared Unity-independent Core primitives and NUnit tests have been authored; **G0/G1 were subsequently verified via GitHub Actions and PR #46 was merged; G2 Unity remains UNVERIFIED**. Reinspect source and run/fix tests using an authorized .NET environment before promoting or merging. The separate prior local Unity 2/2 smoke applies to **PR #45**, not #46.
 - Once #15 completes, prioritize #16 clock/scheduler and #17 authoritative WorldState/commands (both blocked by #15), then #18 saves and #19 Unity composition.
 - ShellWarden remote execution is intentionally optional/outside FrostArk; never block pure-domain work on it. Keep WebGL build-module gap deferred until relevant platform work.
 

@@ -8,7 +8,7 @@ Applies to AI agents and contributors across the repository. Read `docs/INDEX.md
 2. This is a **full game, not a prototype**. Deliver production-shaped, modular vertical slices. Temporary art/fixtures are acceptable when explicitly named and replaceable; throwaway architecture is not.
 3. Preserve the hierarchy: desktop → mobile → web → PC handheld → console. Avoid a feature that silently breaks an earlier target.
 4. The user's local Unity project may contain unpushed work. Never silently reset, delete, or reconfigure local files. `Assets/TutorialInfo` is known removable starter content; clean it only as a deliberate separate commit.
-5. **No GitHub Actions** unless a necessity is demonstrated and the user approves the cost/benefit. Prefer .NET test runners, agent cloud environment, an approved headless Unity runner, and manual playtest evidence.
+5. **GitHub Actions explicitly approved for public FrostArk on 2026-10-10.** Use targeted, read-only hosted CI for G0/Python and G1/.NET NUnit tests (currently `.github/workflows/core-checks.yml`) and inspect real job logs before merging. Do not run privileged PR workflows, expose secrets, introduce paid runners, or claim Unity G2/PlayMode/target platform proof from G1.
 6. Never assume ShellWarden grants Unity execution. The 2026-10-10 bootstrap verified local Unity CLI/headless import and two package tests, but the installed ShellWarden broker still permits only git. See `docs/engineering/local-bootstrap-handoff.md`; new engine checks remain **not run** until execution evidence exists for that change.
 
 ## Engineering style
