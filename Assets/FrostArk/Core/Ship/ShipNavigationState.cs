@@ -96,6 +96,40 @@ namespace FrostArk.Core.Ship
                 HullIntegrityPermille, Array.Empty<EntityId>(), 0, 0);
         }
 
+        /// <summary>Pure one-minute travel; fuel is charged only for committed movement.</summary>
+        public NavigationTickResult Step(int propulsionPermille, long availableFuel)
+        {
+            if (propulsionPermille < 0 || propulsionPermille > 1000 ||
+                availableFuel < 0)
+                throw new ArgumentOutOfRangeException(nameof(propulsionPermille));
+            if (!IsActive || HullIntegrityPermille == 0 || propulsionPermille == 0)
+                return new NavigationTickResult(this, 0, 0, 0);
+            var leg = GetLeg(_route[ActiveLegIndex])!;
+            var tune = Tuning!;
+            long speed = (long)tune.SpeedUnitsPerMinute * propulsionPermille / 1000;
+            speed = speed * (1000 - (long)tune.IceDragPermille * leg.IcePermille / 1000) / 1000;
+            speed = speed * (1000 - (long)tune.StormDragPermille * leg.StormPermille / 1000) / 1000;
+            long move = Math.Min(speed, leg.DistanceUnits - (long)ProgressUnits);
+            if (move <= 0) return new NavigationTickResult(this, 0, 0, 0);
+            long baseFuel = checked(move * tune.FuelPerUnit);
+            long extraIceFuel = checked((checked(baseFuel * leg.IcePermille) + 999) / 1000);
+            long spend = checked(baseFuel + extraIceFuel);
+            if (spend > availableFuel)
+                return new NavigationTickResult(this, 0, 0, 0);
+            int nextProgress = checked((int)(ProgressUnits + move));
+            bool arrived = nextProgress == leg.DistanceUnits;
+            int nextIndex = arrived ? ActiveLegIndex + 1 : ActiveLegIndex;
+            var nextPoint = arrived ? leg.ToId : CurrentWaypoint;
+            if (arrived) nextProgress = 0;
+            int iceHazard = Math.Max(0, leg.IcePermille - tune.SafeIcePermille);
+            int damage = checked((int)((((long)iceHazard * tune.IceDamagePerMinute) + 999) / 1000 +
+                (((long)leg.StormPermille * tune.StormDamagePerMinute) + 999) / 1000));
+            int actualDamage = Math.Min(HullIntegrityPermille, damage);
+            var next = new ShipNavigationState(_waypoints, _legs, nextPoint, Tuning,
+                HullIntegrityPermille - actualDamage, _route, nextIndex, nextProgress);
+            return new NavigationTickResult(next, spend, checked((int)move), actualDamage);
+        }
+
         public uint Fingerprint()
         {
             var b = new StringBuilder();

@@ -196,6 +196,22 @@ namespace FrostArk.Core.World
                 _crewStations, _processedCommands, Inventory, tick.State, CrewDuty, Layout, Navigation);
         }
 
+        /// <summary>Travel phase uses the minute already committed by Heat.</summary>
+        internal WorldState WithTravelTick(WorldMinute minute, NavigationTickResult tick)
+        {
+            if (tick == null) throw new ArgumentNullException(nameof(tick));
+            if (minute != Minute)
+                throw new InvalidOperationException("Travel must follow the authoritative Heat phase.");
+            var fuelId = EntityId.Parse("supply:fuel");
+            var remaining = GetSupply(fuelId);
+            if (tick.FuelConsumed <= 0 || tick.FuelConsumed > remaining)
+                throw new InvalidOperationException("Travel requires a positive, available fuel payment.");
+            var supplies = new Dictionary<string, long>(_supplies, StringComparer.Ordinal);
+            supplies[fuelId.Value] = checked(remaining - tick.FuelConsumed);
+            return new WorldState(Minute, Revision, supplies, _crewIds, _crewStations,
+                _processedCommands, Inventory, Thermal, CrewDuty, Layout, tick.State);
+        }
+
         /// <summary>
         /// Explicit world-minute projection; commands remain revision controlled.
         /// No existing snapshot is mutated by advancing the authoritative clock.
