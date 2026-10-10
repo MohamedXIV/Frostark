@@ -75,10 +75,11 @@ namespace FrostArk.Core.Tests
             Assert.That(noItems.Failure, Is.EqualTo(CommandFailure.MarketOutOfStock));
             Assert.That(noItems.State.Inventory.GetAmount(InventoryContainer.ShipHold, Heater), Is.Zero);
 
-            var noSpace = bus.Execute(Start(shipSlots: 0), new BuyMarketItemCommand(
+            var packed = Start(shipSlots: 0);
+            var noSpace = bus.Execute(packed, new BuyMarketItemCommand(
                 EntityId.Parse("cmd:space"), Market, Heater, 1, 0));
             Assert.That(noSpace.Success, Is.False);
-            Assert.That(noSpace.State, Is.SameAs(noSpace.State));
+            Assert.That(noSpace.State, Is.SameAs(packed));
             Assert.That(noSpace.State.GetSupply(Coin), Is.EqualTo(100));
         }
 

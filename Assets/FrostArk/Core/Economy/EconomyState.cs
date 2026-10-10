@@ -22,7 +22,7 @@ namespace FrostArk.Core.Economy
         private readonly RecipeStack[] _outputs;
         public IReadOnlyList<RecipeStack> Outputs => Array.AsReadOnly(_outputs);
 
-        public WorkshopJob(EntityId id, WorkshopRecipe recipe, WorldMinute dueAt)
+        internal WorkshopJob(EntityId id, WorkshopRecipe recipe, WorldMinute dueAt)
             : this(id, recipe?.Id ?? default, recipe?.Version ?? 0,
                 recipe?.StationId ?? default, dueAt, recipe?.Outputs)
         { }

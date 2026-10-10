@@ -107,6 +107,38 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void MissingCraftingInputsOrUnregisteredStationRejectBeforeAnyWorldChange()
+        {
+            var recipe = new WorkshopRecipe(Recipe, 1, Station, 60,
+                new[] { new RecipeStack(Scrap, 3) },
+                new[] { new RecipeStack(Stove, 1) });
+            var items = new ItemCatalog(new[]
+            {
+                new ItemDefinition(Scrap, 1, 100, 10),
+                new ItemDefinition(Stove, 1, 2000, 1)
+            });
+            var stock = InventoryState.Create(items, Array.Empty<SalvagePickup>(),
+                20000, 10, 20000, 4);
+            var present = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(),
+                inventory: stock, economy: EconomyState.Create(
+                    new WorkshopCatalog(new[] { recipe }), new[] { Station }));
+            var missing = new WorldCommandBus().Execute(present,
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:no-scrap"), Job, Recipe, 0));
+            Assert.That(missing.Failure, Is.EqualTo(CommandFailure.InsufficientInventory));
+            Assert.That(missing.State, Is.SameAs(present));
+
+            var absent = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(),
+                inventory: Start().Inventory, economy: EconomyState.Create(
+                    new WorkshopCatalog(new[] { recipe }), Array.Empty<EntityId>()));
+            var denied = new WorldCommandBus().Execute(absent,
+                new StartWorkshopJobCommand(EntityId.Parse("cmd:no-station"), Job, Recipe, 0));
+            Assert.That(denied.Failure, Is.EqualTo(CommandFailure.WorkshopUnavailable));
+            Assert.That(denied.State, Is.SameAs(absent));
+        }
+
+        [Test]
         public void BoilerFuelRequirementMustBePaidOnceAtCraftStartOrRejectWholeCommand()
         {
             var recipe = new WorkshopRecipe(Recipe, 2, Station, 60,
