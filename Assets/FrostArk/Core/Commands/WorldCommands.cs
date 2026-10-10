@@ -48,6 +48,19 @@ namespace FrostArk.Core.Commands
         }
     }
 
+    public sealed class SetCrewAwayCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public bool Away { get; }
+        public long ExpectedRevision { get; }
+
+        public SetCrewAwayCommand(EntityId id, EntityId crewId, bool away, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; Away = away; ExpectedRevision = expectedRevision;
+        }
+    }
+
     public sealed class CollectSalvageCommand : IGameCommand
     {
         public EntityId Id { get; }

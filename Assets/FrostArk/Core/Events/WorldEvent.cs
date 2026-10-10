@@ -9,7 +9,9 @@ namespace FrostArk.Core.Events
         CrewAssigned = 1,
         CrewUnassigned = 2,
         SalvageCollected = 3,
-        SalvageUnloaded = 4
+        SalvageUnloaded = 4,
+        CrewDispatched = 5,
+        CrewReturned = 6
     }
 
     /// <summary>

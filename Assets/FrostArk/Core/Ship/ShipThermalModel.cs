@@ -33,11 +33,13 @@ namespace FrostArk.Core.Ship
     public static class ShipThermalModel
     {
         public static ThermalTickResult Step(ShipThermalState state,
-            long ambientMilliC, long availableFuelUnits)
+            long ambientMilliC, long availableFuelUnits, int engineeringPermille = 1000)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
             if (availableFuelUnits < 0)
                 throw new ArgumentOutOfRangeException(nameof(availableFuelUnits));
+            if (engineeringPermille < 0 || engineeringPermille > 1000)
+                throw new ArgumentOutOfRangeException(nameof(engineeringPermille));
             var updates = new Dictionary<string, long>(StringComparer.Ordinal);
             foreach (var room in state.Rooms) updates.Add(room.Id.Value, 0L);
 
@@ -74,8 +76,10 @@ namespace FrostArk.Core.Ship
             long heat = 0;
             if (state.Boiler.IsEnabled)
             {
-                fuel = Math.Min(state.Boiler.FuelUnitsPerMinute, availableFuelUnits);
-                heat = checked(fuel * state.Boiler.EnergyPerFuelUnit);
+                fuel = engineeringPermille == 0 ? 0 :
+                    Math.Min(state.Boiler.FuelUnitsPerMinute, availableFuelUnits);
+                heat = checked(checked(fuel * state.Boiler.EnergyPerFuelUnit) *
+                    engineeringPermille) / 1000;
                 updates[state.Boiler.RoomId.Value] =
                     checked(updates[state.Boiler.RoomId.Value] + heat);
             }
