@@ -130,6 +130,54 @@ namespace FrostArk.Core.Ship
             return new NavigationTickResult(next, spend, checked((int)move), actualDamage);
         }
 
+        internal static ShipNavigationState RestoreSnapshot(IEnumerable<SeaWaypoint> waypoints,
+            IEnumerable<SeaLeg> legs, EntityId currentWaypoint, NavigationTuning tuning,
+            int hullIntegrityPermille, IEnumerable<EntityId> orderedRoute,
+            int activeLegIndex, int progressUnits)
+        {
+            if (hullIntegrityPermille < 0 || hullIntegrityPermille > 1000)
+                throw new ArgumentOutOfRangeException(nameof(hullIntegrityPermille));
+            var basic = Create(waypoints, legs, currentWaypoint, tuning,
+                Math.Max(1, hullIntegrityPermille));
+            var route = (orderedRoute ?? throw new ArgumentNullException(nameof(orderedRoute))).ToArray();
+            if (activeLegIndex < 0 || activeLegIndex > route.Length || progressUnits < 0)
+                throw new ArgumentException("Invalid saved navigation progress.");
+            if (route.Length == 0)
+            {
+                if (activeLegIndex != 0 || progressUnits != 0)
+                    throw new ArgumentException("Idle route has progress.");
+            }
+            else
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var first = basic.GetLeg(route[0]);
+                if (first == null) throw new ArgumentException("Unknown first leg.");
+                EntityId at = first.FromId;
+                EntityId expected = at;
+                for (int i = 0; i < route.Length; ++i)
+                {
+                    var link = basic.GetLeg(route[i]);
+                    if (!route[i].IsValid || !seen.Add(route[i].Value) ||
+                        link == null || link.FromId != at)
+                        throw new ArgumentException("Saved route is broken or duplicated.");
+                    if (i == activeLegIndex) expected = at;
+                    at = link.ToId;
+                }
+                if (activeLegIndex == route.Length) expected = at;
+                if (expected != currentWaypoint)
+                    throw new ArgumentException("Current waypoint and route do not match.");
+                if (activeLegIndex == route.Length)
+                {
+                    if (progressUnits != 0)
+                        throw new ArgumentException("Completed route cannot have progress.");
+                }
+                else if (progressUnits >= basic.GetLeg(route[activeLegIndex])!.DistanceUnits)
+                    throw new ArgumentException("Progress exceeds current leg.");
+            }
+            return new ShipNavigationState(basic._waypoints, basic._legs, currentWaypoint,
+                tuning, hullIntegrityPermille, route, activeLegIndex, progressUnits);
+        }
+
         public uint Fingerprint()
         {
             var b = new StringBuilder();
