@@ -151,6 +151,43 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void UnpaidLegacyJobCannotHealMatchingModule()
+        {
+            var baseWorld = Build(Begin(), Engine, EngineType, 0, 0, "cmd:build");
+            var damaged = new WorldCommandBus().Execute(baseWorld,
+                new DamageShipModuleCommand(EntityId.Parse("cmd:hit"), Engine, 300,
+                    baseWorld.Revision)).State;
+            var rogueJob = CrewState.Create(damaged.CrewDuty.Members,
+                new[] { new RepairJob(Engine, 1) });
+            var forged = WorldState.Create(damaged.Minute, damaged.SnapshotSupplies(),
+                damaged.SnapshotCrew(), inventory: damaged.Inventory,
+                thermal: damaged.Thermal, crewDuty: rogueJob, layout: damaged.Layout);
+            var tick = forged;
+            Bind(() => tick, x => tick = x).Advance(1);
+            Assert.That(tick.Layout.GetModule(Engine).IntegrityPermille, Is.EqualTo(700));
+            Assert.That(tick.Layout.GetModule(Engine).RepairReserved, Is.False);
+        }
+
+        [Test]
+        public void AwayRepairerCannotCompletePaidRepair()
+        {
+            var built = Build(Begin(), Engine, EngineType, 0, 0, "cmd:engine");
+            var damaged = new WorldCommandBus().Execute(built,
+                new DamageShipModuleCommand(EntityId.Parse("cmd:damage-away"), Engine, 400,
+                    built.Revision)).State;
+            var queued = new WorldCommandBus().Execute(damaged,
+                new StartShipModuleRepairCommand(EntityId.Parse("cmd:repair-away"), Engine,
+                    damaged.Revision)).State;
+            var sent = new WorldCommandBus().Execute(queued,
+                new SetCrewAwayCommand(EntityId.Parse("cmd:shore-repairer"), Repairer, true,
+                    queued.Revision)).State;
+            var state = sent;
+            Bind(() => state, x => state = x).Advance(200);
+            Assert.That(state.Layout.GetModule(Engine).IntegrityPermille, Is.EqualTo(600));
+            Assert.That(state.CrewDuty.GetRepair(Engine).RemainingWork, Is.EqualTo(500));
+        }
+
+        [Test]
         public void SaveResumeDuringPaidRepairMatchesUninterruptedBytes()
         {
             var start = Build(Begin(), Engine, EngineType, 0, 0, "cmd:engine");
