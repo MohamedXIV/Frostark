@@ -110,6 +110,11 @@ namespace FrostArk.Core.Tests
             Assert.That(spent.Success, Is.True);
             Assert.That(spent.State.GetAmount(InventoryContainer.Pack, Scrap), Is.Zero);
             Assert.That(spent.State.GetAmount(InventoryContainer.ShipHold, Scrap), Is.EqualTo(2));
+            var emptyPack = spent.State.TryConsumePack(Scrap, 1);
+            Assert.That(emptyPack.Error, Is.EqualTo(InventoryError.InsufficientStock));
+            Assert.That(emptyPack.State, Is.SameAs(spent.State));
+            Assert.That(emptyPack.State.GetAmount(InventoryContainer.ShipHold, Scrap),
+                Is.EqualTo(2));
             Assert.That(unloaded.GetAmount(InventoryContainer.Pack, Scrap), Is.EqualTo(1));
             Assert.That(spent.State.IsCollected(EntityId.Parse("pickup:1")), Is.True);
             Assert.That(spent.State.GetUsedSlots(InventoryContainer.Pack), Is.Zero);
