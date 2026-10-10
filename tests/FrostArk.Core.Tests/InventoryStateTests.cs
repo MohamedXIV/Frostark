@@ -1,5 +1,7 @@
 using System;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Save;
+using FrostArk.Core.Time;
 using FrostArk.Core.World;
 using NUnit.Framework;
 
@@ -97,6 +99,64 @@ namespace FrostArk.Core.Tests
             Assert.That(invalid.Error, Is.EqualTo(InventoryError.InvalidQuantity));
             Assert.That(unknown.State, Is.SameAs(origin));
             Assert.That(invalid.State, Is.SameAs(origin));
+        }
+
+        [Test]
+        public void PackConsumeSpendsRealCarriedStockNotShipHold()
+        {
+            var collected = NewState().TryCollect(EntityId.Parse("pickup:1")).State;
+            var unloaded = collected.TryUnload(Scrap, 2).State;
+            var spent = unloaded.TryConsumePack(Scrap, 1);
+            Assert.That(spent.Success, Is.True);
+            Assert.That(spent.State.GetAmount(InventoryContainer.Pack, Scrap), Is.Zero);
+            Assert.That(spent.State.GetAmount(InventoryContainer.ShipHold, Scrap), Is.EqualTo(2));
+            Assert.That(unloaded.GetAmount(InventoryContainer.Pack, Scrap), Is.EqualTo(1));
+            Assert.That(spent.State.IsCollected(EntityId.Parse("pickup:1")), Is.True);
+            Assert.That(spent.State.GetUsedSlots(InventoryContainer.Pack), Is.Zero);
+            Assert.That(spent.State.GetUsedWeightGrams(InventoryContainer.Pack), Is.Zero);
+            Assert.That(spent.State.Fingerprint(), Is.Not.EqualTo(unloaded.Fingerprint()));
+        }
+
+        [Test]
+        public void PackConsumeRejectsUnknownMissingAndOverspendAtomically()
+        {
+            var start = NewState();
+            var taken = start.TryCollect(EntityId.Parse("pickup:1")).State;
+            foreach (var invalid in new[] {
+                taken.TryConsumePack(Scrap, 0),
+                taken.TryConsumePack(Scrap, -1),
+                taken.TryConsumePack(Scrap, 4),
+                taken.TryConsumePack(Fuel, 1),
+                taken.TryConsumePack(EntityId.Parse("item:unknown"), 1)
+            })
+            {
+                Assert.That(invalid.Success, Is.False);
+                Assert.That(invalid.State, Is.SameAs(taken));
+                Assert.That(invalid.State.GetAmount(InventoryContainer.Pack, Scrap), Is.EqualTo(3));
+            }
+            var uncollected = start.TryConsumePack(Scrap, 1);
+            Assert.That(uncollected.Error, Is.EqualTo(InventoryError.InsufficientStock));
+            Assert.That(uncollected.State, Is.SameAs(start));
+        }
+
+        [Test]
+        public void ConsumedPackItemSurvivesCanonicalSaveRoundTrip()
+        {
+            var pack = NewState().TryCollect(EntityId.Parse("pickup:1")).State;
+            var spent = pack.TryConsumePack(Scrap, 2);
+            Assert.That(spent.Success, Is.True);
+            var world = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>(), inventory: spent.State);
+            var scheduler = new SimulationScheduler(new WorldClock(world.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var bytes = SaveCodec.Encode(SaveGameDto.Capture(world, scheduler));
+            var loaded = SaveCodec.TryDecode(bytes);
+            Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
+            Assert.That(loaded.Value.State.Inventory.GetAmount(InventoryContainer.Pack, Scrap),
+                Is.EqualTo(1));
+            Assert.That(loaded.Value.State.Inventory.IsCollected(EntityId.Parse("pickup:1")), Is.True);
+            Assert.That(loaded.Value.State.Fingerprint(), Is.EqualTo(world.Fingerprint()));
+            Assert.That(SaveCodec.Encode(loaded.Value), Is.EqualTo(bytes));
         }
 
         [Test]
