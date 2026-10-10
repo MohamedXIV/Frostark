@@ -48,3 +48,7 @@ Code reviewed; requirements and regression tests met; serialization/migrations a
 ## Decision governance
 
 `docs/production/decisions.md` records adopted decisions, proposals and undecided questions. Proposals (squad cap, succession/permadeath, clock ratios, direct companion control, AI library selection, save format) remain proposals until approved or a documented implementation experiment decides them.
+
+## Continuous worker protocol
+
+The canonical coordination contract is [docs/production/worker-protocol.md](docs/production/worker-protocol.md). Start from LIVE GitHub/RepoPilot state every invocation; scheduled ChatGPT runs may lack plugin access and **must not** pretend they wrote code or merged a PR. The automation schedule is not a substitute for an authorized executable cloud environment.
