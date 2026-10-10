@@ -1,6 +1,7 @@
 using System;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
+using FrostArk.Core.Events;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
 using FrostArk.Core.Time;
