@@ -16,6 +16,7 @@
 - [R4 navigation routes, ice/weather, heat-first fuel and save v7 Core ADR](engineering/navigation-core-contract.md)
 - [Saving, content and procedural generation](engineering/save-content.md)
 - [Platforms, rendering, controls and art](engineering/platform-art.md)
+- [V01 camera/texture/fog benchmark (G2/G3 pending)](engineering/visual-benchmark.md)
 - [Testing and autonomous development](engineering/validation.md)
 - [Verified local bootstrap and remaining runner gates](engineering/local-bootstrap-handoff.md)
 
