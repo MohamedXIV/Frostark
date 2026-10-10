@@ -203,7 +203,7 @@ namespace FrostArk.Core.Tests
             Assert.That(current[8], Is.EqualTo(12));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
-            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 80);
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 40);
             var decoded = SaveCodec.TryDecode(old);
             Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
             Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
