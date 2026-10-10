@@ -163,7 +163,7 @@ namespace FrostArk.Core.Save
                     }
                 }
             }
-            catch (Exception ex) when (ex is IOException || ex is ArgumentException ||
+            catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is ArgumentException ||
                                         ex is OverflowException || ex is DecoderFallbackException)
             {
                 return SaveDecodeResult.Failed(SaveDecodeError.InvalidData);
