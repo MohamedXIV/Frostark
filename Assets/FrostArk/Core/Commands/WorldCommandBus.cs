@@ -290,6 +290,34 @@ namespace FrostArk.Core.Commands
                     fire.WeaponId, weapon.Definition.AmmoItemId, weapon.Definition.AmmoPerShot));
             }
 
+            if (command is TreatCrewWoundCommand treatment)
+            {
+                var patient = state.CrewDuty.Get(treatment.CrewId);
+                if (patient == null || !state.HasCrew(treatment.CrewId) || patient.IsAway)
+                    return CommandResult.Rejected(state, CommandFailure.PatientUnavailable);
+                if (patient.Wounds == 0)
+                    return CommandResult.Rejected(state, CommandFailure.PatientNotWounded);
+
+                var policy = state.CrewDuty.GetTreatment(treatment.TreatmentItemId);
+                if (policy == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownTreatment);
+                bool authoredMedic = state.CrewDuty.Members.Any(x =>
+                    x.Role == Crew.DutyRole.Medical);
+                if (!authoredMedic ||
+                    state.CrewDuty.EffectiveSkill(Crew.DutyRole.Medical, state.Minute) <
+                        policy.MinimumMedicalSkill)
+                    return CommandResult.Rejected(state, CommandFailure.MedicalStaffUnavailable);
+                var payment = state.Inventory.TryConsumeShip(treatment.TreatmentItemId, 1);
+                if (!payment.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(payment.Error));
+                var healed = state.CrewDuty.Treat(treatment.CrewId, policy);
+                var next = state.WithCrewTreatment(healed, payment.State, command.Id);
+                long recovered = patient.Wounds - healed.Get(treatment.CrewId)!.Wounds;
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewTreated,
+                    treatment.CrewId, treatment.TreatmentItemId, recovered));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
         }
 

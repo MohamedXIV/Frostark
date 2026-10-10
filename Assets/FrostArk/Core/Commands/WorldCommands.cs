@@ -205,4 +205,17 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+    public sealed class TreatCrewWoundCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId TreatmentItemId { get; }
+        public long ExpectedRevision { get; }
+        public TreatCrewWoundCommand(EntityId id, EntityId crewId,
+            EntityId treatmentItemId, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; TreatmentItemId = treatmentItemId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
 }
