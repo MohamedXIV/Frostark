@@ -56,7 +56,7 @@ namespace FrostArk.Core.Tests
         public void ForgedShotCounterCannotExceedCommittedWorldCommands()
         {
             var encoded = OneShot();
-            ReplaceLastLongAndResign(encoded, fromTail: 8, value: 400);
+            ReplaceLastLongAndResign(encoded, fromTail: 12, value: 400);
             var decoded = SaveCodec.TryDecode(encoded);
             Assert.That(decoded.Success, Is.False);
             Assert.That(decoded.Error, Is.EqualTo(SaveDecodeError.InvalidData));
@@ -66,7 +66,7 @@ namespace FrostArk.Core.Tests
         public void ForgedFutureCooldownBeyondCurrentTickPlusAuthoredPeriodIsInvalid()
         {
             var encoded = OneShot();
-            ReplaceLastLongAndResign(encoded, fromTail: 16, value: 10);
+            ReplaceLastLongAndResign(encoded, fromTail: 20, value: 10);
             var decoded = SaveCodec.TryDecode(encoded);
             Assert.That(decoded.Success, Is.False);
             Assert.That(decoded.Error, Is.EqualTo(SaveDecodeError.InvalidData));

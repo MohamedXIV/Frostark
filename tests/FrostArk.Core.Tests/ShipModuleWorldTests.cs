@@ -234,7 +234,7 @@ namespace FrostArk.Core.Tests
             var paid = moved.State.TryConsumeShip(Parts, 3);
             Assert.That(paid.Success, Is.True);
             Assert.That(paid.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(7));
-            Assert.That(moved.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(10));
+            Assert.That(moved.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(11));
         }
 
         [Test]
@@ -292,8 +292,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var current = SaveCodec.Encode(SaveGameDto.Capture(state,
                 new SimulationScheduler(new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(current[8], Is.EqualTo(10));
-            var old = new byte[current.Length - 45];
+            Assert.That(current[8], Is.EqualTo(11));
+            var old = new byte[current.Length - 49];
             Array.Copy(current, old, old.Length - 32);
             old[8] = 5;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);
