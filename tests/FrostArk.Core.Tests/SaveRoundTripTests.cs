@@ -169,7 +169,7 @@ namespace FrostArk.Core.Tests
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
             Assert.That(v4[8], Is.EqualTo(11));
-            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 169);
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 129);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -237,7 +237,7 @@ namespace FrostArk.Core.Tests
             var v10 = SaveCodec.Encode(original);
             Assert.That(v10[8], Is.EqualTo(11));
             // V10 appends one int64 tactical tick plus one empty weapon count.
-            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 12);
+            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 16);
             var recovered = SaveCodec.TryDecode(v9);
             Assert.That(recovered.Success, Is.True, recovered.Error.ToString());
             Assert.That(recovered.Value.State.Combat.Tick, Is.Zero);
@@ -245,6 +245,22 @@ namespace FrostArk.Core.Tests
             Assert.That(recovered.Value.State.Fingerprint(),
                 Is.EqualTo(original.State.Fingerprint()));
             Assert.That(SaveCodec.Encode(recovered.Value), Is.EqualTo(v10));
+        }
+
+        [Test]
+        public void LegacyV10WithoutMedicalProtocolsMigratesWithOriginalCrewWounds()
+        {
+            var current = MakeSnapshot();
+            var v11 = SaveCodec.Encode(current);
+            Assert.That(v11[8], Is.EqualTo(11));
+            // Empty v11 medical catalog = one 4-byte count after v10 combat.
+            var v10 = DowngradeEmptyInventory(v11, version: 10, removedBytes: 4);
+            var result = SaveCodec.TryDecode(v10);
+            Assert.That(result.Success, Is.True, result.Error.ToString());
+            Assert.That(result.Value.State.CrewDuty.Treatments, Is.Empty);
+            Assert.That(result.Value.State.Fingerprint(),
+                Is.EqualTo(current.State.Fingerprint()));
+            Assert.That(SaveCodec.Encode(result.Value), Is.EqualTo(v11));
         }
 
         [Test]

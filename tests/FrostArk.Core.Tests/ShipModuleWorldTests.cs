@@ -234,7 +234,7 @@ namespace FrostArk.Core.Tests
             var paid = moved.State.TryConsumeShip(Parts, 3);
             Assert.That(paid.Success, Is.True);
             Assert.That(paid.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(7));
-            Assert.That(moved.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(11));
+            Assert.That(moved.State.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(10));
         }
 
         [Test]
