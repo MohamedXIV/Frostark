@@ -1,6 +1,6 @@
 # FrostArk #33 — Sea Routes, Ice and Weather: Core-First Design
 
-**Status:** Proposed, not implementation-approved. **Issue:** #33, parent #8.  
+**Status:** Accepted for implementation planning on 2026-10-10; plan approval remains separate from code authorization. **Issue:** #33, parent #8.  
 **Main baseline:** `38fa1e18ce72cd6f69b43b1da0bba6e65ae8b575` (after Core ship PR #57).  
 **Dependency truth:** #24 and #26 CLOSED; Unity-facing deck follow-up #58 is separate and not evidence of G2/G3/G4.  
 **Direction:** Preserve full-game quality and correctness, while continuing without an available Unity runtime. No new Github Actions workflows, privileged jobs, game-engine or local-device claims.
