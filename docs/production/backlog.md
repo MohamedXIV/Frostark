@@ -18,12 +18,16 @@ All items are in [MohamedXIV/Frostark Issues](https://github.com/MohamedXIV/Fros
 
 ## Dependency-ready starting work
 
-**Ready without Unity/editor execution:** [F01 #13](https://github.com/MohamedXIV/Frostark/issues/13) and [F02 #14](https://github.com/MohamedXIV/Frostark/issues/14). Only perform F01 remote cleanup after reconciling local unpushed Unity changes—`TutorialInfo` itself is approved for removal. [F03 #43](https://github.com/MohamedXIV/Frostark/issues/43) needs a GitHub Projects creation/attach capability (currently unavailable in connected tools), **not** a Unity editor action.
+**Ready without Unity/editor execution:** [F01 #13](https://github.com/MohamedXIV/Frostark/issues/13) and [F02 #14](https://github.com/MohamedXIV/Frostark/issues/14). Only perform F01 remote cleanup after reconciling local unpushed Unity changes—`TutorialInfo` itself is approved for removal. [F03 #43](https://github.com/MohamedXIV/Frostark/issues/43) now tracks the remaining **native parent/dependency links and optional board metadata**; Project #5 already exists and contains all 42 issues.
 
 Once F02 creates reproducible domain checks, A01 #15 becomes ready; then A02 #16 and A03 #17 can proceed independently. F01 unlocks V01 #20; A03 also unlocks I01 #23. Avoid treating epic parents as executable stories.
 
-## Board status
+## Board status — verified 2026-10-10
 
-A **dedicated native GitHub Projects v2 board is NOT created yet**. RepoPilot Dev currently exposes `list_projects`, `inspect_project`, `update_project_item`, `bind_project` etc. but no native `create_project` or `add_project_item`. Do not report a board URL/number until created and verified. Track setup in [F03 #43](https://github.com/MohamedXIV/Frostark/issues/43). Proposed board columns: Backlog, Ready, In Progress, In Review, Blocked, Done; fields: Priority P0–P3, Phase R0–R8, Type Epic/Task/Bug/Decision. RepoPilot's dependency-ready query can activate after board setup.
+The canonical [**Frostark Development GitHub Project #5**](https://github.com/users/MohamedXIV/projects/5) is **live** under `MohamedXIV`, with exactly **42 issues** (#2–#43), 11 parent Epics and 31 child execution/coordination issues. RepoPilot Dev inspected all items without truncation, linked the board to its available workspace, and assigned project field `Priority` across every item: **11 P0, 21 P1, 10 P2**.
+
+The `Status` field has **Backlog, Ready, In progress, In review, Done**. Currently **#13 and #14 are Ready**, while 40 remain Backlog. `list_ready_work` returned exactly these two, with no recorded native blocked-by relationships. Agents should never promote a task based solely on issue-text dependencies.
+
+**Configuration still open:** [F03 #43](https://github.com/MohamedXIV/Frostark/issues/43) tracks native GitHub sub-issue parentage, native blocked-by issue relations and optional `Phase R0–R8` / `Type` metadata. Those operations are not exposed by the currently connected GitHub/RepoPilot Dev write tools, so the board is usable for priority/status coordination but **not yet a fully native dependency graph**. No completion claim for those missing relations. Optional Blocked status/P3 priority require field option setup if wanted.
 
 No GH Actions workflows should be added for these issues by default. 
