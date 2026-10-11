@@ -11,6 +11,7 @@
 
 ## Engineering
 - [Architecture and module boundaries](engineering/architecture.md)
+- [Pure-C# tactical order intent and Unity click-control adapter handoff](engineering/tactical-order-intent.md)
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
 - [R2 crew duty and repair queue ADR](engineering/crew-duty-contract.md)
 - [R2 ship modules, paid repairs and save v6 Core ADR](engineering/ship-modules-contract.md)

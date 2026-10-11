@@ -54,12 +54,11 @@ Issues need criteria and test gates, not checklists that merely say 'implement s
 
 Single-player first; no multiplayer. Do not demand deep RTS squads, physically accurate fluid/ice simulation, AAA open-world streaming, Steam Deck/console SDKs, large procedural story generation or a complete talent tree before core loops work. Existing Unity URP initial template and existing AI Navigation/Input System/Test Framework are baseline assets.
 
-## Ready-now sequence
+## Current next dependency gates — revised 2026-10-11
 
-1. Review and merge baseline documentation PR #1; track GitHub Projects creation explicitly in #43.
-2. Create core assembly and .NET tests, baseline benchmark and deterministic clock.
-3. Use bootstrap-validated VContainer 1.19.0 and Addressables 2.11.2; integrate scoped DI after assembly architecture exists, then add save schema. See the local bootstrap handoff for validation and unresolved runner gates.
-4. Unity import/compile/build runner contract (authorized) and first scene bridge.
-5. First playable coastal slice; add subsequent cross-system survival and combat behaviors.
+1. Verify draft **[#52](https://github.com/MohamedXIV/Frostark/pull/52)** scoped Unity WorldSession bridge with actual Editor G2, then cleanly integrate. Shared Core systems remain the only authoritative simulation source.
+2. Verify draft **[#56](https://github.com/MohamedXIV/Frostark/pull/56)** visual benchmark with actual Unity camera/occlusion/fog scene evidence (G2/G3). Use top-down click-target readability, not WASD aim legibility, as the camera decision benchmark.
+3. Use merged **[#77](https://github.com/MohamedXIV/Frostark/pull/77)** `TacticalOrderIntent` in [#21](https://github.com/MohamedXIV/Frostark/issues/21) to build the first physically playable **click-select protagonist → click ground to walk → contextual salvage/return** Unity scene. G0/G1 for this Core envelope is not G2/G3 proof of scene movement.
+4. Extend the same command/selection UI to ship rooms/crew and later tactical party execution (#32), cover/perception (#28/#29), combats and naval work. Avoid duplicate gameplay and data authorities or unneeded pre-R1 Core breadth.
 
 Track each open decision in `decisions.md`, connect resolved decisions to acceptance and migrate docs/issues together. Timelines follow actual verified throughput, not speculative dates.
