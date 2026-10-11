@@ -15,6 +15,30 @@ This is a **transient** selection/order envelope, not an executed command, saved
 
 **No `MoveX/MoveY` axes, WASD controls, `AimX/AimY` reticle, `FireHeld`, actor physics, direct damage, UI selection persistence, bespoke simulation clock or second authoritative resource state.**
 
+## Transient selected-unit snapshots (#79)
+
+`TacticalSelection` is an immutable, UI-scoped Core snapshot that builds on
+`TacticalOrderIntent` without changing the persistent world. Start from
+`TacticalSelection.Empty`; `Replace(ids)` canonicalizes caller selections
+into sorted, deduplicated stable actor IDs, `Include(id)` and `Exclude(id)`
+add/remove one actor, and `Clear()` returns the shared empty instance.
+Snapshots and their `ActorIds` are read-only and isolated from caller
+mutation. Duplicate selections are harmless; invalid actor IDs fail fast.
+An empty selection is legal as UI state but is rejected when creating an order.
+
+Use `selection.ActorIds` directly with
+`TacticalOrderIntent.MoveTo/InteractWith/AttackTarget`. Pointer clicks,
+shift/additive gestures, controller-focus semantics, team/ownership validation,
+actors leaving scenes, eligibility filtering, selection highlights and navmesh
+remain the responsibility of Unity scene/application integration (#21), **not**
+this Core class. Do not serialize `TacticalSelection` into `WorldState` or
+treat `Include` as a recruitment/crew assignment.
+
+Acceptance evidence: [Issue #79](https://github.com/MohamedXIV/Frostark/issues/79)
+and [PR #80](https://github.com/MohamedXIV/Frostark/pull/80). Real G1
+NUnit verifies immutable selection and compatibility with existing typed
+orders; G2/G3 are not claimed.
+
 ## Unity adapter responsibility (NOT implemented in this PR)
 
 1. Pointer/controller focus selects one/more scene actors; resolve to persistent `EntityId` using the session's authoritative character mapping. **Both the protagonist and crew** may be selected.
