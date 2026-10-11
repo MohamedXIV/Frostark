@@ -2,12 +2,14 @@
 
 **Version:** foundation baseline (2026-10-10). This is a complete production architecture plan, **not a promise of dates**. All epics are production systems; slices provide early integration feedback without disposable code. GitHub Issues [#2–#43](https://github.com/MohamedXIV/Frostark/issues) now link to these epics and are the execution source of truth; see [live issue map](backlog.md) and [Frostark Development Project #5](https://github.com/users/MohamedXIV/projects/5).
 
+**Accepted controls:** Top-down/near-isometric point-and-click selection, movement and context action for **protagonist and crew**, real-time squad orders and spatial ship/room management. Not WASD action-RPG locomotion. See [control contract](../design/control-and-interaction.md) and [decisions](decisions.md).
+
 ## Lifecycle
 
 - **R0 — Foundation / production contracts.** Documentation, architecture, issue graph, Unity/GitHub hygiene, editorless .NET test harness, DI, command/query ports, authoritative clock, world persistence baseline. Exit: deterministic headless simulation + explicit G2 integration evidence or named blocking gate.
-- **R1 — Embodied playable coastal loop.** Player movement/aim/camera, input, near-isometric visual baseline, scene assembly, interactive ship exterior/interior, small landing site, real inventory and resources, basic extraction/return. Exit: actual Unity playable transition with stable world state.
-- **R2 — Ship as survival settlement.** Module/layout/room integrity, thermal networks, heat/fuel/food/water, crew jobs/shifts, fatigue/medical effects, repair/crafting and constrained ship growth. Exit: meaningful cold/fuel staffing decisions across days including sleep interrupt.
-- **R3 — Shore combat & expeditions.** Weapons/armor/ammo/wounds, real-time enemies, AI navigation/perception, cover/utility decisions, squad orders and roster/loadout, loot/extraction. Exit: controllable fight/avoid/retreat loop with consequences and persistence.
+- **R1 — Embodied playable coastal loop.** Click-to-move protagonist/party selection and contextual tactical orders, input/camera, near-isometric visual baseline, scene assembly, interactive ship exterior/interior, small landing site, real inventory and resources, basic extraction/return. Exit: actual Unity playable transition with stable world state.
+- **R2 — Ship as top-down survival settlement.** Click-inspect/assign room management, module/layout/room integrity, thermal networks, heat/fuel/food/water, crew jobs/shifts, fatigue/medical effects, repair/crafting and constrained ship growth. Exit: meaningful cold/fuel staffing decisions across days including sleep interrupt.
+- **R3 — Shore combat & expeditions.** Selected-unit/group tactical orders, weapons/armor/ammo/wounds, real-time enemies, AI navigation/perception, cover/utility decisions, squad orders and roster/loadout, loot/extraction. Exit: controllable fight/avoid/retreat loop with consequences and persistence.
 - **R4 — Marine travel, ice and combat.** Navigation, weather currents, ice thickness, hull/engine, naval weapon stations/raiders, ship damage and retreat. Exit: alternate-risk routes and naval encounter materially change supplies and survivability.
 - **R5 — Crew/player careers and long-haul simulation.** Skills/perks/training, recruitment/relationships/morale, scheduling and replacement, advanced sleep/travel, environmental gear and deep region access. Exit: unique specialist losses/skill development create strategic consequences.
 - **R6 — Living world, regions, economy and mysteries.** Biome/thermal zones, generated plus authored sites, persistent world actors/factions/settlements/markets/contracts, rumor/intelligence and science/biopunk content. Exit: world advances outside player scenes and produces divergent credible outcomes.
@@ -16,7 +18,7 @@
 
 ### Cross-cutting integration slices
 
-- **Slice A: First shore return (R0→R1):** player leaves vessel, acquires salvage, returns and can save/resume.
+- **Slice A: First shore return (R0→R1):** player is click-selected, ordered ashore to salvage, returns and can save/resume.
 - **Slice B: Cold night (R1→R2):** crew assignments, heating ration, time advance and interrupted sleep.
 - **Slice C: Expedition danger (R2→R3):** AI opponent, cover, wounded companion, valid extraction.
 - **Slice D: Ice and pirates (R3→R4):** tactical voyage choice and real naval combat.
