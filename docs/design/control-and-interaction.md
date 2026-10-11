@@ -67,8 +67,9 @@ Pointer / touch / gamepad selection (Unity Input System and UI)
 - Open: exact isometric tilt/zoom, selection modifier/button defaults, order queueing, speed controls and tactical pause, controller/touch parity details, playable protagonist succession after death, direct ship-helm control precision.
 - All completion claims must distinguish G0/G1 pure-C# evidence from Unity G2/G3 and target G4 proof.
 
-## Migration targets
+## Implementation migration — status 2026-10-11
 
-- Design: `vision.md`, `gameplay.md`, `combat.md`, `characters.md`, `ship.md`, `platform-art.md`; register D017/D027 in `decisions.md`.
-- Roadmap/issues: #21 and #32 own actual input/selection/order implementation, #28/#29 combat AI and cover, #22 transitions, #39 tactical management UI, #20 camera benchmark. Update #4/#6/#7/#8/#11 epic language where conflicting. Parent dependencies and Unity gates remain in effect.
-- Code: replace the transient `PlayerInputIntent` axes sample + tests from PR #74 with an explicitly targeted tactical-request Core contract through a separate test-first PR. **Do not change saved WorldState or SaveCodec for transient input.**
+- **Docs complete:** PR #75 merged the accepted control direction, decision register D017/D027, visual/crew/ship/architecture/roadmap documentation.
+- **Issue migration complete (baseline):** #21 (selected-protagonist Unity click locomotion/interaction), #32 (advanced squad orders), #27–#30 (ordered combat, AI and cover), #20 (camera click-target readability), #22 (ship/shore click extraction), #39 (tactical management UI), #34/#58/#60/#64 (top-down ship/naval/station adapters) and relevant parent epics. Remaining work is implementation, not a second controller design.
+- **Core correction complete:** [PR #77](https://github.com/MohamedXIV/Frostark/pull/77) / [#76](https://github.com/MohamedXIV/Frostark/issues/76) replaced the superseded `PlayerInputIntent` axes contract from PR #74 with `TacticalOrderIntent`. [Core handoff](../engineering/tactical-order-intent.md) explains its typed ground/entity targets and Unity adapter obligations. Saved WorldState / SaveCodec did not change for transient UI input.
+- **Unity still unverified:** #19/#20 need Editor checks; #21 needs physical click-navigation/interaction G2/G3; #32 needs real tactical scene/AI evidence. No completed Core test implies that the game is playable yet.
