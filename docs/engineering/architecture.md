@@ -45,7 +45,7 @@ Small **command/query facades** let UI submit validated intents (`AssignCrew`, `
 
 ## Tactical and visual integrations
 
-Unity Input System → player intents; Unity AI Navigation for pathing; physics/raycast and animations remain real-time. Ship/shore/world simulated at suitable LOD, with common persistent state. Timeline/cinematics optional, not foundation dependencies.
+Unity Input System pointer/focus → character selection → physics camera-hit entity/world-point resolution → validated tactical order requests. The protagonist uses the same click-to-command path as any unit; no WASD/direct-aim input authority. Unity AI Navigation for pathing, raycast target feasibility and animations remain real-time. A transient selection or order request is **not** authoritative world state and cannot secretly spend ammunition or fuel; successful domain commands still pass through the shared session. See [top-down command contract](../design/control-and-interaction.md). Ship/shore/world simulated at suitable LOD, with common persistent state. Timeline/cinematics optional, not foundation dependencies.
 
 ## Performance and portability
 

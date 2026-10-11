@@ -4,6 +4,10 @@
 
 Begin in a fragile fishing trawler, tug or research craft (starting hull undecided), partially damaged and badly insulated. Grow through **constrained modular expansion**: reopen sealed compartments, reinforce hull/icebreaking bow, rework boiler/engine, add workshops, medical facilities, bunks, storage, insulation, cranes, lights, defensive systems and weapons. Ship physical appearance must reflect improvements, wear and repairs.
 
+## Top-down ship management and commands
+
+The ship is a visible multi-room moving home: inspect compartments, click-select crew or rooms, issue assignments/repairs/production and view fuel/heat/injury consequences in the same persistent WorldState. Selected protagonist and crew receive contextual move/interact orders inside reachable areas; there is no assumption of WASD avatar walking. This combines Frostpunk pressure and Fallout Shelter-like compartment management with Last Train Home crew stakes. [Accepted interaction contract](control-and-interaction.md).
+
 ## Compartments and staffing
 
 Compartments have spatial slots/footprints, integrity, insulation, thermal connectivity, energy needs, storage limits, worker assignments, repairability and unlock prerequisites. Core spaces: bridge, engine/boiler, sleeping quarters, kitchen, infirmary, workshop, stores. Occupancy affects work output and occupant thermal/health exposure. Roles are jobs, not unique character classes.
@@ -20,7 +24,7 @@ Simulate thermal economy in authoritative world ticks (e.g. 1 world-minute desig
 
 Ice fields have strength/thickness and local movement costs; hull shape, engine power, speed and condition affect passage and damage risk. Some routes favor short dangerous icecuts versus longer open-water routes with storm/pirate risk. Full deformable ice physics is **not required**: strategic tile/volume data + collision/visual break effects can deliver the mechanic.
 
-Ship navigation must coexist with player presence and crew duty. Whether the player manually helms the vessel at all times remains a control-design question; autopilot/waypoints are candidate accessibility features.
+Ship navigation must coexist with player presence and crew duty. Top-down route/waypoint commands and helm/workstation interaction are the baseline interface. Fine-grained steering/ship physics and optional direct manual helm control remain design/test decisions; no WASD or first-person ship possession is implied.
 
 ## Naval combat
 

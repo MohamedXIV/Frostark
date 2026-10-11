@@ -10,6 +10,8 @@
 
 These are **priority of investment**, not a promise all platforms ship day one.
 
+Top-down/near-isometric is an **accepted game presentation and command perspective**; exact fixed/adjustable pitch, occlusion rules and scene readability are still evaluated in [#20](https://github.com/MohamedXIV/Frostark/issues/20). Refer to the [accepted control contract](../design/control-and-interaction.md).
+
 ## Art bible (initial)
 
 Low-poly readable 3D mesh silhouettes; expressive, pixel-art-inspired/pixel-detailed textures carry much of the visual information. Cold maritime scrap-punk and biopunk atmosphere: welded armor, corroded hulls, snow and ice, fog, experimental growths and harsh artificial lights. Overall result should be beautiful and stable **without forced PSX vertex snapping, jittery affine textures or perspective artifacts**.
@@ -22,9 +24,9 @@ Use existing Unity 6.6 URP project with separate PC/mobile profiles. Establish q
 
 ## Player interactions
 
-- Desktop: WASD/left stick locomotion, mouse/right stick aim, contextual interact, inventory, map and command wheel.
-- Mobile: adapt controls and HUD after PC affordances validated; do not assume a mouse cursor, tiny tactical hit targets or a full RTS selection UI.
-- Controller/handheld: focus navigation, radial commands, rescalable typography, safe zones and remapping.
+- Desktop: point-and-click selection (protagonist and crew), ground click-to-move, contextual target click-to-act, group selection and tactical/management orders. Camera pan/zoom and shortcuts are distinct from avatar movement; **not WASD/direct mouse aim**. Exact button/modifier bindings remain a usability decision.
+- Mobile: map selection/world-point/target commands to touch with sensible tap/selection affordances and readable large targets; adapt HUD after desktop proof, without pretending a mouse exists.
+- Controller/handheld: selected-unit focus/cycling, world-target pointer or command cursor, radial orders, camera control, rescalable typography, safe zones and remapping. Stick input controls focus/cursor/camera, not mandatory twin-stick character movement.
 - Accessibility baseline: readable color/contrast, scalable HUD/text, configurable motion/shake, subtitles, color-independent threat cues, input remapping and adjustable command assistance.
 
 ## Art and platform proofs

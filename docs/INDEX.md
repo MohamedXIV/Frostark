@@ -3,6 +3,7 @@
 ## Game design
 - [Vision, pillars and boundaries](design/vision.md)
 - [Gameplay and exploration loops](design/gameplay.md)
+- [Accepted top-down point-and-click protagonist/squad/ship control](design/control-and-interaction.md)
 - [World, climate and mysteries](design/world.md)
 - [Ship survival, layout and naval play](design/ship.md)
 - [Characters, crew and progression](design/characters.md)
