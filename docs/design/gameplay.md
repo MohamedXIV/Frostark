@@ -2,10 +2,14 @@
 
 ## Physical play spaces
 
-1. **Open water / pack ice:** steer/navigate in real space; route scouting, storms, visibility, ship motion, breakability/collision with ice, threats and vessel weapon stations. World/route map supports informed planning but does not replace navigation.
-2. **Ship interior / deck:** inspect engine/boiler/storage/kitchen/infirmary/bunks/workshop/bridge, assign jobs, schedule repairs, rest, crafting, supply rationing, heat zones; move between exterior and relevant compartments without erasing persistent state.
-3. **Landing zone:** player and optional crew traverse a bounded or streamed island/industrial site, fight or avoid threats, loot, interact with machinery and survivors, retreat before cold overwhelms them.
+1. **Open water / pack ice:** top-down ship command, map/waypoint route scouting, storms, visibility, ship motion, ice collision and vessel weapon stations. Actual manual helm precision is an open design choice; no assumed WASD piloting. World/route map supports informed planning but does not replace navigation.
+2. **Ship interior / deck:** inspect and click compartments/workstations/crew, assign jobs, schedule repairs, rest, crafting, supply rationing and heat zones with a Fallout Shelter-like room-management view; ordered characters can move between areas without erasing persistent state.
+3. **Landing zone:** select the protagonist alone or a party, click ground to order movement and click entities/targets for context actions; human/creature AI executes real-time fights, cover and retreat while resources and wounds persist.
 4. **Strategic layer:** map, weather, known settlements/factions, rumor leads, mission selection, economic decisions, expedition roster and gear.
+
+## Player control across contexts
+
+The **protagonist is a selected persistent unit**, not a directly steered WASD pawn. Solo and squad play use the same selection → point-and-click move/target/action → unit/AI execution loop. Multi-selection and per-unit actions extend the same contract; mouse bindings, camera tilt and tactical pause are separately validated. The ship uses inspect/select/assign/interact and waypoint orders rather than an isolated first-person survival mode. See [accepted control contract](control-and-interaction.md).
 
 ## Moment-to-moment loops
 
@@ -31,4 +35,4 @@ No forced 'assault + medic + engineer' slots. Skills/equipment affect optional p
 
 ## Functional first playable
 
-A small but real coastal loop: command one player, start with a damaged ship and meaningful heat/fuel, cross navigable ice, land on one environment, face one enemy/contact, bring salvage home, assign repair crew and advance world time. Its systems must be the actual game modules extended later, not separate prototype scripts.
+A small but real coastal loop: click-select the protagonist and order them to walk/interact on a top-down shore, start with a damaged ship and meaningful heat/fuel, cross navigable ice, land on one environment, face one enemy/contact, bring salvage home, assign repair crew and advance world time. Its systems must be the actual game modules extended later, not separate prototype scripts.
