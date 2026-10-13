@@ -7,11 +7,13 @@ ROOT = Path(__file__).resolve().parents[2]
 UNITY = Path("Assets/FrostArk/Unity")
 EDITOR = Path("Assets/FrostArk/Editor")
 TESTS = Path("Assets/FrostArk/Tests/Editor")
+PLAYMODE = Path("Assets/FrostArk/Tests/PlayMode")
 FOLDERS = [
     Path("Assets/FrostArk/Unity"),
     Path("Assets/FrostArk/Editor"),
     Path("Assets/FrostArk/Tests"),
     Path("Assets/FrostArk/Tests/Editor"),
+    Path("Assets/FrostArk/Tests/PlayMode"),
     Path("Assets/FrostArk/Scenes"),
 ]
 
@@ -19,7 +21,7 @@ FOLDERS = [
 class UnityBridgeStructureTests(unittest.TestCase):
     def test_runtime_assembly_references_only_core_and_vcontainer(self):
         asm = json.loads((ROOT / UNITY / "FrostArk.Unity.asmdef").read_text())
-        self.assertEqual(asm["references"], ["FrostArk.Core", "VContainer"])
+        self.assertEqual(asm["references"], ["FrostArk.Core", "VContainer", "Unity.InputSystem"])
         self.assertEqual(asm["includePlatforms"], [])
         self.assertFalse(asm["noEngineReferences"])
 
@@ -36,7 +38,7 @@ class UnityBridgeStructureTests(unittest.TestCase):
         for folder in FOLDERS:
             self.assertTrue((ROOT / folder).is_dir(), folder)
             self.assertTrue((ROOT / (str(folder) + ".meta")).is_file(), folder)
-        for folder in (UNITY, EDITOR, TESTS):
+        for folder in (UNITY, EDITOR, TESTS, PLAYMODE):
             for source in (ROOT / folder).glob("*"):
                 if source.is_file() and source.suffix != ".meta":
                     self.assertTrue(Path(str(source) + ".meta").is_file(), source)
