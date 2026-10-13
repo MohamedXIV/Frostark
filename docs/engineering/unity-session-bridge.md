@@ -60,38 +60,22 @@ are integration tests of *existing* canonical minute systems: no separate
 workshop or navigation authority was introduced. They do **not** compile or
 run Unity assemblies.
 
-**Tomorrow's Unity check — not performed in this PR:**
+## Unity Editor verification (G2 and G3 executed locally — 2026-10-13)
 
-1. Ensure the Editor is closed before switching branches. Preserve any
-   uncommitted local work; never force-switch, reset or overwrite a dirty scene.
-   Fetch and inspect this PR's exact head before testing; PR #56 is a separate
-   branch and cannot be assumed present in the same checkout.
-2. Run the authorized Unity import/compile gate on the PR #52 branch and
-   inspect the actual Editor log for C# compile errors or package failures.
-   The pinned engine is **6000.6.0f1**, VContainer **1.19.0**.
-3. Execute the targeted Unity **EditMode**
-   `FrostArk.Unity.Tests.WorldSessionBridgeTests` fixture using the commands
-   above. Record exact SHA, test XML counts, process exit code and log path.
-   `WorldSessionScope` must provide **one** scoped authority to the presenter,
-   reject commands without mutating state, and dispose cleanly.
-4. Explicitly generate `Assets/FrostArk/Scenes/SessionBootstrap.unity`, review
-   the generated `.unity` and `.meta` files and test that the scope/presenter
-   scene actually loads. Do not commit generated files without inspecting them.
-5. **Only after G2 passes**, run a genuine Unity PlayMode scene smoke for G3:
-   verify scoped presenter shows a minute/revision snapshot and that explicit
-   session commands/time changes appear without a second source of truth.
-   **Do not call this a playable shore/ship scene**: fixture session starts empty,
-   and production starting world/weather composition and avatar control remain
-   future integration work.
-6. Record the exact engine results back on PR #52 and Issue #19, including
-   failures. Then test the independent [PR #56 visual benchmark](https://github.com/MohamedXIV/Frostark/pull/56)
-   branch separately for camera/fog generation and real graphic screenshots.
-   Keep #19/#20 open and Draft unless their acceptance gates truly pass.
-
-Stop and leave G2/G3 **UNVERIFIED** if the selected branch, pinned packages,
-Unity license, available modules or Editor log cannot be confirmed. A passing
-GitHub Actions status cannot replace an Editor or PlayMode result. G4 platform
-validation remains separately pending.
+- Local environment: Unity 6000.6.0f1, VContainer 1.19.0.
+- Resolved compile issues: added missing `VContainer` reference to `FrostArk.Unity.Editor.asmdef`; disambiguated `EntityId` in `WorldSessionBridgeTests.cs`; handled untitled active scenes in `FrostArkSessionFixture.CreateScene`.
+- Recompilation: `unity recompile` completed with exit code 0; `recompile_status: completed`.
+- EditMode test run: `unity command run_tests --mode EditMode --filter FrostArk.Unity.Tests.WorldSessionBridgeTests`: **1/1 passed (5.77s)**.
+- Scene fixture generation: `FrostArk/Fixtures/Rebuild Session Bootstrap Scene` executed successfully, generating `Assets/FrostArk/Scenes/SessionBootstrap.unity` and `.meta`.
+- Scene load & PlayMode smoke:
+  1. Opened `Assets/FrostArk/Scenes/SessionBootstrap.unity`.
+  2. Entered PlayMode (`editor_play`). `runtime_status` confirmed `IsPlaying=true`, `LoadedLevelName="SessionBootstrap"`.
+  3. `WorldSessionPresenter` bound to scoped `WorldSession` via VContainer injection (`IsBound=true`).
+  4. Initial presentation projection verified: `"FrostArk | minute 0 | revision 0"`.
+  5. Invalid command rejection verified: rejected with `Success=False`, revision remained 0.
+  6. Advancing session by 15 simulation minutes dynamically triggered `OnSessionChanged` and updated `WorldSessionPresenter.StatusText` to `"FrostArk | minute 15 | revision 0"`.
+  7. Exited PlayMode cleanly (`editor_stop`).
+- Acceptance criteria for Issue #19 are verified in Unity Editor. G4 target platform validation remains separately pending for future release stages.
 
 ## Ownership
 
