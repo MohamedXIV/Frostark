@@ -103,6 +103,8 @@ namespace FrostArk.Unity.Tests
                 if (scope.Container == null)
                     scope.Build();
                 restored = scope.Container.Resolve<WorldSession>();
+                Assert.Throws<InvalidOperationException>(() => scope.SetRestoreSnapshot(decoded.Value),
+                    "A built scope cannot silently replace its authoritative WorldSession.");
                 Assert.That(restored.Minute.Value, Is.EqualTo(22));
                 Assert.That(restored.Capture().State.GetSupply(EntityId.Parse("supply:fuel")),
                     Is.EqualTo(8));
