@@ -1,0 +1,15 @@
+{
+  "name": "FrostArk.Unity.Tests",
+  "references": [
+    "FrostArk.Unity",
+    "FrostArk.Core",
+    "VContainer"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "autoReferenced": false
+}

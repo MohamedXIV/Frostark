@@ -1,0 +1,19 @@
+{
+  "name": "FrostArk.Unity.Editor",
+  "rootNamespace": "FrostArk.Unity.Editor",
+  "references": [
+    "FrostArk.Unity",
+    "FrostArk.Core",
+    "VContainer"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": []
+}
