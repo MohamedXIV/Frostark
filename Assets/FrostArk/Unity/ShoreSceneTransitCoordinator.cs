@@ -173,7 +173,8 @@ namespace FrostArk.Unity
                 }
             }
 
-            PhysicalSceneCheckpoint checkpoint;
+            PhysicalSceneCheckpoint checkpoint = null;
+            string commitFailure = null;
             try
             {
                 checkpoint = destination.MakeCheckpoint(party);
@@ -183,19 +184,23 @@ namespace FrostArk.Unity
                         destination.Theater == PhysicalTheater.Shore, transitionId);
                     if (!transfer.Success)
                     {
-                        // This can include rare mid-batch failure. Do not
-                        // silently roll back successful canonical commands.
-                        Reject("CrewTransferRejected:" + transfer.Failure);
-                        yield return SceneManager.UnloadSceneAsync(loaded);
-                        IsBusy = false;
-                        yield break;
+                        // Ordinary rejected groups fail preflight, without
+                        // touching the world. Rare reentrant mid-batch
+                        // conflicts must remain visible for reconciliation.
+                        commitFailure = "CrewTransferRejected:" + transfer.Failure;
                     }
                 }
-                _session.SetSceneCheckpoint(checkpoint);
+                if (commitFailure == null)
+                    _session.SetSceneCheckpoint(checkpoint);
             }
-            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            catch (Exception ex) when (ex is ArgumentException ||
+                                       ex is InvalidOperationException)
             {
-                Reject("CheckpointRejected:" + ex.Message);
+                commitFailure = "CheckpointRejected:" + ex.Message;
+            }
+            if (commitFailure != null)
+            {
+                Reject(commitFailure);
                 yield return SceneManager.UnloadSceneAsync(loaded);
                 IsBusy = false;
                 yield break;
