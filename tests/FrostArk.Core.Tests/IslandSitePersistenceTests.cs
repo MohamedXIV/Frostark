@@ -126,7 +126,7 @@ namespace FrostArk.Core.Tests
 
             // Last site record: island ID, site ID, one looted flag, int32 damage.
             var badFlag = (byte[])original.Clone();
-            badFlag[badFlag.Length - 32 - 5] = 2;
+            badFlag[badFlag.Length - 32 - 6] = 2;
             Resign(badFlag);
             var invalidFlag = SaveCodec.TryDecode(badFlag);
             Assert.That(invalidFlag.Success, Is.False);
@@ -134,7 +134,7 @@ namespace FrostArk.Core.Tests
 
             var badDamage = (byte[])original.Clone();
             Array.Copy(BitConverter.GetBytes(-10), 0,
-                badDamage, badDamage.Length - 32 - 4, 4);
+                badDamage, badDamage.Length - 32 - 5, 4);
             Resign(badDamage);
             var invalidDamage = SaveCodec.TryDecode(badDamage);
             Assert.That(invalidDamage.Success, Is.False);
