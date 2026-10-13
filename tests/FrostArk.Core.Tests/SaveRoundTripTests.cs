@@ -203,7 +203,7 @@ namespace FrostArk.Core.Tests
             Assert.That(current[8], Is.EqualTo(13));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
-            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 51);
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 41);
             var decoded = SaveCodec.TryDecode(old);
             Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
             Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
@@ -270,7 +270,7 @@ namespace FrostArk.Core.Tests
             var v12 = SaveCodec.Encode(now);
             Assert.That(v12[8], Is.EqualTo(13));
             // V12 appended a 4-byte site count, plus the v13 1-byte absent-checkpoint flag.
-            var v11 = DowngradeEmptyInventory(v12, version: 11, removedBytes: 4);
+            var v11 = DowngradeEmptyInventory(v12, version: 11, removedBytes: 5);
             var loaded = SaveCodec.TryDecode(v11);
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
             Assert.That(loaded.Value.State.SiteProgress.Sites, Is.Empty);
