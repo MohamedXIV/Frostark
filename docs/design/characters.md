@@ -2,7 +2,9 @@
 
 ## Role of people
 
-The player is a **physical protagonist**, not an abstract captain avatar. Each persistent survivor may have profession, experience, skills, traits, condition, cold tolerance, morale, relationships, optional history and equipment. Typical roster **8–30 survivors** is a design range, not an enforced maximum. Every person can matter; losing a skilled engineer or doctor is a world-state event, not an anonymous population decrement.
+The player is a **physical, selectable protagonist**, not an abstract captain avatar and not a WASD-controlled action pawn. The protagonist is issued click-to-move/context-action orders like other selected crew; player skills, equipment, stakes and identity remain distinct. See [accepted control contract](control-and-interaction.md). Each persistent survivor may have profession, experience, skills, traits, condition, cold tolerance, morale, relationships, optional history and equipment. Typical roster **8–30 survivors** is a design range, not an enforced maximum. Every person can matter; losing a skilled engineer or doctor is a world-state event, not an anonymous population decrement.
+
+Shipboard station/room assignment uses point-and-click selection and context actions; expedition parties use single/multi-unit tactical selection and orders. UI selection never replaces persistent crew duty or expedition assignment commands.
 
 ## Dual assignment — one person, different duties
 
