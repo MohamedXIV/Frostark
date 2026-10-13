@@ -3,6 +3,7 @@ using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
 using FrostArk.Core.World;
 using FrostArk.Unity;
+using EntityId = FrostArk.Core.World.EntityId;
 using NUnit.Framework;
 using UnityEngine;
 using VContainer;

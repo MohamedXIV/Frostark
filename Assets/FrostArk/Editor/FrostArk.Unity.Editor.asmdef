@@ -3,7 +3,8 @@
   "rootNamespace": "FrostArk.Unity.Editor",
   "references": [
     "FrostArk.Unity",
-    "FrostArk.Core"
+    "FrostArk.Core",
+    "VContainer"
   ],
   "includePlatforms": [
     "Editor"

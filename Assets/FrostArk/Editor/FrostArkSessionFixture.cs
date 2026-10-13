@@ -21,8 +21,9 @@ namespace FrostArk.Unity.Editor
         public static void CreateScene()
         {
             var previouslyActive = SceneManager.GetActiveScene();
-            var fixtureScene = EditorSceneManager.NewScene(
-                NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            bool wasUntitled = string.IsNullOrEmpty(previouslyActive.path);
+            var mode = wasUntitled ? NewSceneMode.Single : NewSceneMode.Additive;
+            var fixtureScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, mode);
 
             try
             {
@@ -34,17 +35,25 @@ namespace FrostArk.Unity.Editor
                 presenter.AddComponent<WorldSessionPresenter>();
                 root.AddComponent<WorldSessionScope>();
 
+                var sceneDir = System.IO.Path.GetDirectoryName(ScenePath);
+                if (!string.IsNullOrEmpty(sceneDir) && !System.IO.Directory.Exists(sceneDir))
+                    System.IO.Directory.CreateDirectory(sceneDir);
+
                 if (!EditorSceneManager.SaveScene(fixtureScene, ScenePath))
                     throw new InvalidOperationException("Failed to save FrostArk session bootstrap fixture.");
                 AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
                 Debug.Log("[FrostArkSessionFixture] Scene saved to " + ScenePath);
             }
             finally
             {
-                if (previouslyActive.IsValid() && previouslyActive.isLoaded)
-                    SceneManager.SetActiveScene(previouslyActive);
-                if (fixtureScene.IsValid() && fixtureScene.isLoaded)
-                    EditorSceneManager.CloseScene(fixtureScene, true);
+                if (!wasUntitled)
+                {
+                    if (previouslyActive.IsValid() && previouslyActive.isLoaded)
+                        SceneManager.SetActiveScene(previouslyActive);
+                    if (fixtureScene.IsValid() && fixtureScene.isLoaded)
+                        EditorSceneManager.CloseScene(fixtureScene, true);
+                }
             }
         }
     }
