@@ -1,17 +1,34 @@
-# Bootstrap tools
+# Bootstrap & Validation Tools
 
-Run in Windows PowerShell from the repository root, with Unity 6000.6.0f1 installed and a valid local license:
+Run in Windows PowerShell from the repository root, with Unity 6000.6.0f1 installed and an active license:
 
 ```powershell
+# Verify package resolution, compiler readiness, and engine module availability
 ./tools/Validate-Unity.ps1 -Mode Import
+
+# Run all EditMode tests in the project (outputs structured NUnit JSON)
 ./tools/Validate-Unity.ps1 -Mode EditMode
+
+# Run targeted EditMode test filter
+./tools/Validate-Unity.ps1 -Mode EditMode -TestFilter FrostArk.Unity.Tests.TacticalSelectionBridgeTests
+
+# Run PlayMode integration tests
+./tools/Validate-Unity.ps1 -Mode PlayMode
 ```
 
-Save and close the Editor for this project first. The runner refuses an already-open project, caps execution time, records output under ignored `Logs/`, and validates exit codes and NUnit results. It never builds Android or downloads modules. The default Editor path is the verified owner's installation; a different runner must supply its installed 6000.6.0f1 path via `-EditorPath`.
+### Safety and Execution Rules
 
-Import audits exact required package versions. EditMode runs the two package smoke tests; this proves no player-build or device behavior. A fresh clone's fixture/settings/meta files are committed; no Library cache is required.
+- **Editor Lock Detection:** The runner detects if Unity Editor is already open for this project and cleanly aborts with a structured `EDITOR_LOCKED` error instead of causing lock corruption or multiple instances.
+- **Strict Parameter Validation:** `-Mode` is constrained to `Import`, `EditMode`, or `PlayMode`. `-TestFilter` is validated against `^[a-zA-Z0-9_\.]*$` to prevent shell argument injection.
+- **Process Cleanup & Timeout:** Capped by `-TimeoutSeconds` (default: 600s). In case of timeout or failure, the process is safely terminated.
+- **Structured JSON Output:** Returns structured JSON containing execution status, exit code, log file path, test count breakdown (`total`, `passed`, `failed`, `skipped`, `duration`), and error messages for any failing tests.
+- **Log Hygiene:** Detailed engine output is recorded under git-ignored `Logs/`.
 
-GitHub relationship plan (authenticated GitHub CLI required):
+---
+
+### GitHub Relationship Sync
+
+Authenticated GitHub CLI required:
 
 ```powershell
 ./tools/Sync-IssueRelationships.ps1
@@ -19,4 +36,4 @@ GitHub relationship plan (authenticated GitHub CLI required):
 
 `-Apply` adds and verifies missing native relationships for Issues #13–#43. It is an external mutation requiring authorization; the bootstrap run was explicitly authorized. It preserves issue bodies and board fields.
 
-See [verified handoff](../docs/engineering/local-bootstrap-handoff.md) for evidence, platform gaps and the ShellWarden blocker. These scripts do not expose a remote endpoint or weaken ShellWarden permissions.
+See [verified handoff](../docs/engineering/local-bootstrap-handoff.md) for evidence, platform gaps and the ShellWarden broker allowlist policy.
