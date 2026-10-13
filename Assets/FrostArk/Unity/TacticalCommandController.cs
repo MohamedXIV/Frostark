@@ -76,10 +76,10 @@ namespace FrostArk.Unity
         public void RefreshSceneRegistrations()
         {
             _registeredActors.Clear();
-            _registeredActors.AddRange(FindObjectsByType<TacticalActorProxy>(FindObjectsSortMode.None));
+            _registeredActors.AddRange(FindObjectsByType<TacticalActorProxy>());
 
             _registeredInteractables.Clear();
-            var foundInteractables = FindObjectsByType<TacticalInteractableProxy>(FindObjectsSortMode.None);
+            var foundInteractables = FindObjectsByType<TacticalInteractableProxy>();
             foreach (var interactable in foundInteractables)
             {
                 RegisterInteractable(interactable);
@@ -134,18 +134,10 @@ namespace FrostArk.Unity
             if (_selectionController.Count == 0)
                 return false;
 
-            var intent = TacticalOrderIntent.MoveTo(
-                _selectionController.SelectedActorIds,
-                worldDestination.x,
-                worldDestination.z);
-
-            LastIssuedIntent = intent;
-            OrderIssued?.Invoke(intent);
-
-            if (destinationMarker != null)
-                destinationMarker.Show(worldDestination);
-
             var selectedActors = GetSelectedActorProxies();
+            if (selectedActors.Count == 0)
+                return false;
+
             bool anyDispatched = false;
             for (int i = 0; i < selectedActors.Count; i++)
             {
@@ -166,12 +158,38 @@ namespace FrostArk.Unity
                 }
             }
 
-            return anyDispatched || selectedActors.Count > 0;
+            if (!anyDispatched)
+            {
+                // When every NavMesh dispatch fails, do not produce success feedback
+                return false;
+            }
+
+            var intent = TacticalOrderIntent.MoveTo(
+                _selectionController.SelectedActorIds,
+                worldDestination.x,
+                worldDestination.z);
+
+            LastIssuedIntent = intent;
+            OrderIssued?.Invoke(intent);
+
+            if (destinationMarker != null)
+                destinationMarker.Show(worldDestination);
+
+            return true;
         }
 
         public bool IssueInteractOrder(TacticalInteractableProxy interactable)
         {
             if (interactable == null || interactable.IsDepleted || _selectionController.Count == 0)
+                return false;
+
+            var selectedActors = GetSelectedActorProxies();
+            if (selectedActors.Count == 0)
+                return false;
+
+            // Primary ordered actor approaches and performs contextual interaction
+            bool dispatched = selectedActors[0].ApproachAndInteract(interactable);
+            if (!dispatched)
                 return false;
 
             var intent = TacticalOrderIntent.InteractWith(
@@ -184,14 +202,7 @@ namespace FrostArk.Unity
             if (destinationMarker != null)
                 destinationMarker.Show(interactable.transform.position);
 
-            var selectedActors = GetSelectedActorProxies();
-            if (selectedActors.Count > 0)
-            {
-                // Primary ordered actor approaches and performs contextual interaction
-                return selectedActors[0].ApproachAndInteract(interactable);
-            }
-
-            return false;
+            return true;
         }
 
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
@@ -307,9 +318,9 @@ namespace FrostArk.Unity
             }
             else
             {
-                // Standalone presentation/mock fallback without session
-                interactable.SetDepleted(true);
-                InteractionCompleted?.Invoke(actor, interactable);
+                // Missing WorldSession cannot show depleted salvage or increment a presentation-only success event
+                Debug.LogWarning($"[TacticalCommandController] Interaction rejected for {interactable.TargetId}: No authoritative WorldSession is bound.");
+                InteractionFailed?.Invoke(actor, interactable, "NoSessionBound");
             }
         }
 
