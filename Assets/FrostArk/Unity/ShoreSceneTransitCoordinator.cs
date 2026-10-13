@@ -56,6 +56,24 @@ namespace FrostArk.Unity
         }
 
         /// <summary>
+        /// Explicit fixture/authoring hook. Set before scene-resume requests.
+        /// A missing authored destination is a reported error, not a fallback.
+        /// </summary>
+        public void ConfigureDestinations(params SceneTransitDestination[] authored)
+        {
+            destinations = authored ?? throw new ArgumentNullException(nameof(authored));
+        }
+
+        public bool TryDepartSelected(SceneTransitDestination shore, EntityId transitionId)
+        {
+            if (_commander == null)
+                _commander = GetComponentInChildren<TacticalCommandController>();
+            if (_commander == null)
+                return Reject("MissingTacticalCommander");
+            return TryDepart(shore, _commander.Selection.SelectedActorIds, transitionId);
+        }
+
+        /// <summary>
         /// The caller has selected the party and requested an authored landing.
         /// The physical destination must be loaded and validated before crew
         /// availability changes. This is not an implicit movement command.
