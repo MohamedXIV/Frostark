@@ -14,6 +14,7 @@
 - [Pure-C# tactical order intent and Unity click-control adapter handoff](engineering/tactical-order-intent.md)
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
 - [R1 ship/shore crew transfer (Core) and Unity scene/save handoff](engineering/ship-shore-transfer.md)
+- [Unity ship/shore scene transit adapter and pending engine tests](engineering/unity-scene-transit-adapter.md)
 - [R2 crew duty and repair queue ADR](engineering/crew-duty-contract.md)
 - [R2 ship modules, paid repairs and save v6 Core ADR](engineering/ship-modules-contract.md)
 - [R4 navigation routes, ice/weather, heat-first fuel and save v7 Core ADR](engineering/navigation-core-contract.md)
