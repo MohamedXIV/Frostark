@@ -81,7 +81,7 @@ namespace FrostArk.Unity
                 selectionMarker.SetActive(IsSelected);
         }
 
-        public bool MoveTo(Vector3 destination)
+        public virtual bool MoveTo(Vector3 destination)
         {
             CancelPendingInteraction();
 
@@ -95,7 +95,7 @@ namespace FrostArk.Unity
             return false;
         }
 
-        public bool ApproachAndInteract(TacticalInteractableProxy interactable)
+        public virtual bool ApproachAndInteract(TacticalInteractableProxy interactable)
         {
             if (interactable == null || interactable.IsDepleted)
                 return false;

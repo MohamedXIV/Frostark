@@ -5,6 +5,7 @@ using FrostArk.Unity;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AI;
+using Unity.AI.Navigation;
 using EntityId = FrostArk.Core.World.EntityId;
 
 namespace FrostArk.Unity.Tests
@@ -50,6 +51,18 @@ namespace FrostArk.Unity.Tests
             Assert.That(controller.Current.Count, Is.Zero);
         }
 
+        private sealed class TestActorProxy : TacticalActorProxy
+        {
+            public bool SimulateMoveSuccess = true;
+            public Vector3 LastDestination;
+
+            public override bool MoveTo(Vector3 destination)
+            {
+                LastDestination = destination;
+                return SimulateMoveSuccess;
+            }
+        }
+
         [Test]
         public void CommandController_MoveOrder_BuildsIntentAndDispatchesToActors()
         {
@@ -58,8 +71,9 @@ namespace FrostArk.Unity.Tests
             {
                 var actorObj = new GameObject("TestActor");
                 actorObj.transform.SetParent(root.transform);
-                var proxy = actorObj.AddComponent<TacticalActorProxy>();
+                var proxy = actorObj.AddComponent<TestActorProxy>();
                 proxy.SetActorId(EntityId.Parse("actor:hero"));
+                proxy.SimulateMoveSuccess = true;
 
                 var cmdObj = new GameObject("TestCommander");
                 cmdObj.transform.SetParent(root.transform);
@@ -75,6 +89,7 @@ namespace FrostArk.Unity.Tests
                 commander.SelectActor(EntityId.Parse("actor:hero"));
                 bool ordered = commander.IssueMoveOrder(new Vector3(10, 0, 20));
                 Assert.That(ordered, Is.True);
+                Assert.That(proxy.LastDestination, Is.EqualTo(new Vector3(10, 0, 20)));
                 Assert.That(commander.LastIssuedIntent, Is.Not.Null);
                 Assert.That(commander.LastIssuedIntent.Kind, Is.EqualTo(TacticalOrderKind.Move));
                 Assert.That(commander.LastIssuedIntent.DestinationX, Is.EqualTo(10.0));
@@ -112,7 +127,7 @@ namespace FrostArk.Unity.Tests
                 commander.RegisterInteractable(crate);
 
                 // Initialize with canonical session containing authored pickup
-                var session = new WorldSession(WorldSessionScope.CreateDefaultState());
+                var session = new WorldSession(TacticalSliceFixtureState.CreateDefaultState());
                 commander.SetSession(session);
 
                 commander.SelectActor(actor.ActorId);
@@ -127,6 +142,78 @@ namespace FrostArk.Unity.Tests
                 Assert.That(session.Revision, Is.EqualTo(1));
                 Assert.That(session.Capture().State.Inventory.IsCollected(EntityId.Parse("salvage:supply_cache")), Is.True);
                 Assert.That(crate.IsDepleted, Is.True);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void CommandController_MoveOrder_RejectsWhenNavMeshDispatchFails_WithoutProducingSuccessFeedback()
+        {
+            var root = new GameObject("TestRoot_FailedMove");
+            try
+            {
+                var actorObj = new GameObject("TestActor");
+                actorObj.transform.SetParent(root.transform);
+                var actor = actorObj.AddComponent<TestActorProxy>();
+                actor.SetActorId(EntityId.Parse("actor:hero"));
+                actor.SimulateMoveSuccess = false;
+
+                var cmdObj = new GameObject("TestCommander");
+                cmdObj.transform.SetParent(root.transform);
+                var commander = cmdObj.AddComponent<TacticalCommandController>();
+                commander.RegisterActor(actor);
+
+                commander.SelectActor(actor.ActorId);
+
+                // Actor has no NavMeshAgent placed on a baked mesh, so MoveTo returns false
+                bool ordered = commander.IssueMoveOrder(new Vector3(50f, 0, 50f));
+
+                Assert.That(ordered, Is.False, "IssueMoveOrder must return false when all dispatches fail.");
+                Assert.That(commander.LastIssuedIntent, Is.Null, "LastIssuedIntent must NOT be set on rejected order.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void CommandController_InteractOrder_WithoutSession_FailsWithoutDepletingInteractable()
+        {
+            var root = new GameObject("TestRoot_NoSession");
+            try
+            {
+                var actorObj = new GameObject("TestActor");
+                actorObj.transform.SetParent(root.transform);
+                var actor = actorObj.AddComponent<TacticalActorProxy>();
+                actor.SetActorId(EntityId.Parse("actor:hero"));
+
+                var crateObj = new GameObject("TestCrate");
+                crateObj.transform.SetParent(root.transform);
+                crateObj.transform.position = new Vector3(1.0f, 0, 0); // Within interaction range
+                var crate = crateObj.AddComponent<TacticalInteractableProxy>();
+                crate.SetTargetId(EntityId.Parse("salvage:supply_cache"));
+                crate.SetInteractionRange(2.0f);
+
+                var cmdObj = new GameObject("TestCommander");
+                cmdObj.transform.SetParent(root.transform);
+                var commander = cmdObj.AddComponent<TacticalCommandController>();
+                commander.RegisterActor(actor);
+                commander.RegisterInteractable(crate);
+
+                // Do NOT set WorldSession (commander._session == null)
+                string failReason = null;
+                commander.InteractionFailed += (_, _, reason) => failReason = reason;
+
+                commander.SelectActor(actor.ActorId);
+                bool ordered = commander.IssueInteractOrder(crate);
+
+                Assert.That(ordered, Is.True);
+                Assert.That(crate.IsDepleted, Is.False, "Salvage crate must NOT be depleted without authoritative session.");
+                Assert.That(failReason, Is.EqualTo("NoSessionBound"), "InteractionFailed must fire with NoSessionBound.");
             }
             finally
             {

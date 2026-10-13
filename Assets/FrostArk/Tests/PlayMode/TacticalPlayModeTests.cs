@@ -9,6 +9,9 @@ using NUnit.Framework;
 using Unity.AI.Navigation;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
@@ -101,6 +104,7 @@ namespace FrostArk.Unity.Tests
             _presenter = presenterObj.AddComponent<WorldSessionPresenter>();
 
             _scope = scopeObj.AddComponent<WorldSessionScope>();
+            _scope.SetInitialState(TacticalSliceFixtureState.CreateDefaultState());
 
             var commanderObj = new GameObject("Commander");
             commanderObj.transform.SetParent(_sceneRoot.transform, false);
@@ -275,6 +279,8 @@ namespace FrostArk.Unity.Tests
             Vector3 offMeshDestination = new Vector3(1000f, 100f, 1000f);
 
             bool moveResult = _commander.IssueMoveOrder(offMeshDestination);
+            Assert.That(moveResult, Is.False, "IssueMoveOrder must return false when NavMesh destination is invalid/unreachable.");
+            Assert.That(_commander.LastIssuedIntent, Is.Null, "LastIssuedIntent must NOT be set when move order is rejected.");
 
             yield return new WaitForSeconds(0.1f);
 
@@ -372,6 +378,129 @@ namespace FrostArk.Unity.Tests
                 "Protagonist must move in group order.");
             Assert.That(Vector3.Distance(_companion.transform.position, compStart), Is.GreaterThan(0.05f),
                 "Companion must move in group order.");
+        }
+
+        [UnityTest]
+        public IEnumerator Test08_RealInputSystem_PointerClickInjected_DispatchesThroughUpdate()
+        {
+            _commander.ClearSelection();
+            Assert.That(_commander.Selection.Count, Is.Zero);
+
+            // Compute screen position of protagonist from camera
+            Vector2 screenPos = _camera.WorldToScreenPoint(_protagonist.transform.position);
+
+            var prevBehavior = InputSystem.settings.editorInputBehaviorInPlayMode;
+            var prevBackground = InputSystem.settings.backgroundBehavior;
+            InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+
+            try
+            {
+                // Ensure InputSystem Mouse device exists
+                var mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+                Assert.That(mouse, Is.Not.Null, "Input System Mouse device must be present.");
+
+                // Queue pointer position update
+                using (DeltaStateEvent.From(mouse.position, out var posEvent))
+                {
+                    mouse.position.WriteValueIntoEvent(screenPos, posEvent);
+                    InputSystem.QueueEvent(posEvent);
+                }
+
+                // Queue left mouse button press
+                using (DeltaStateEvent.From(mouse.leftButton, out var pressEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(1f, pressEvent);
+                    InputSystem.QueueEvent(pressEvent);
+                }
+
+                // Yield a frame so InputSystem processes queued events and Update() executes
+                yield return null;
+
+                // Queue left mouse button release
+                using (DeltaStateEvent.From(mouse.leftButton, out var releaseEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(0f, releaseEvent);
+                    InputSystem.QueueEvent(releaseEvent);
+                }
+                yield return null;
+
+                // Protagonist must be selected through the real Update() -> Input System path
+                Assert.That(_commander.Selection.Count, Is.EqualTo(1), "Real pointer press must select protagonist via Update().");
+                Assert.That(_commander.Selection.IsSelected(_protagonist.ActorId), Is.True);
+                Assert.That(_protagonist.IsSelected, Is.True);
+            }
+            finally
+            {
+                InputSystem.settings.editorInputBehaviorInPlayMode = prevBehavior;
+                InputSystem.settings.backgroundBehavior = prevBackground;
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator Test09_SavedVerticalSliceScene_LoadsAndExecutesSmoke()
+        {
+            // Nullify programmatic fixture references as Single scene load unloads them
+            _scope = null;
+            _sceneRoot = null;
+
+            // Load the actual saved TacticalVerticalSlice scene
+            var loadOp = SceneManager.LoadSceneAsync("TacticalVerticalSlice", LoadSceneMode.Single);
+            Assert.That(loadOp, Is.Not.Null, "TacticalVerticalSlice scene must be registered in build settings and loadable.");
+
+            while (!loadOp.isDone)
+            {
+                yield return null;
+            }
+
+            // Yield an extra frame for scene Awake / Start / VContainer resolution
+            yield return null;
+
+            // Locate scene components
+            var commander = UnityEngine.Object.FindFirstObjectByType<TacticalCommandController>();
+            Assert.That(commander, Is.Not.Null, "TacticalCommandController must exist in saved scene.");
+
+            var presenter = UnityEngine.Object.FindFirstObjectByType<WorldSessionPresenter>();
+            Assert.That(presenter, Is.Not.Null, "WorldSessionPresenter must exist in saved scene.");
+            Assert.That(presenter.IsBound, Is.True, "Presenter must be bound to authoritative WorldSession.");
+            Assert.That(presenter.Read().Revision, Is.Zero, "Session must initialize at revision 0.");
+
+            var actors = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(FindObjectsSortMode.None);
+            Assert.That(actors.Length, Is.GreaterThanOrEqualTo(2), "Saved scene must contain protagonist and companion.");
+
+            var protagonist = System.Array.Find(actors, a => a.ActorId == EntityId.Parse("actor:protagonist"));
+            Assert.That(protagonist, Is.Not.Null, "Protagonist proxy must exist in saved scene.");
+            Assert.That(protagonist.Agent.isOnNavMesh, Is.True, "Protagonist must be placed on baked NavMesh.");
+
+            var salvage = UnityEngine.Object.FindFirstObjectByType<TacticalInteractableProxy>();
+            Assert.That(salvage, Is.Not.Null, "Salvage crate must exist in saved scene.");
+            Assert.That(salvage.IsDepleted, Is.False, "Salvage crate must be intact initially.");
+
+            // Select protagonist and issue move order on baked NavMesh
+            commander.SelectActor(protagonist.ActorId);
+            Assert.That(protagonist.IsSelected, Is.True);
+
+            Vector3 moveTarget = new Vector3(-2.5f, 0.0f, 2.0f);
+            bool moveIssued = commander.IssueMoveOrder(moveTarget);
+            Assert.That(moveIssued, Is.True, "Move order on baked NavMesh in saved scene must be accepted.");
+
+            // Let agent walk towards destination over several frames
+            yield return new WaitForSeconds(0.25f);
+            Assert.That(protagonist.Agent.hasPath, Is.True, "Agent must have active path in saved scene.");
+
+            // Order contextual interaction with salvage crate
+            bool interactIssued = commander.IssueInteractOrder(salvage);
+            Assert.That(interactIssued, Is.True, "Interact order in saved scene must be accepted.");
+
+            float timeout = 5.0f;
+            while (!salvage.IsDepleted && timeout > 0)
+            {
+                yield return null;
+                timeout -= Time.deltaTime;
+            }
+
+            Assert.That(salvage.IsDepleted, Is.True, "Salvage in saved scene must be depleted after collection.");
+            Assert.That(presenter.Read().Revision, Is.EqualTo(1), "WorldSession revision must advance in saved scene.");
         }
     }
 }

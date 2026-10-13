@@ -9,45 +9,51 @@ using EntityId = FrostArk.Core.World.EntityId;
 namespace FrostArk.Unity
 {
     /// <summary>
+    /// Contract for scene or fixture components capable of supplying an initial WorldState
+    /// before container composition without tight coupling to WorldSessionScope.
+    /// </summary>
+    public interface IInitialWorldStateProvider
+    {
+        WorldState ProvideInitialState();
+    }
+
+    /// <summary>
     /// Run/session composition root. No process-global state or scene-owned
     /// resource totals: one WorldSession is scoped to this LifetimeScope.
     /// A future persistent parent scope may provide infrastructure ports.
     /// </summary>
     public sealed class WorldSessionScope : LifetimeScope
     {
-        public static Func<WorldState> StateOverrideFactory { get; set; }
+        private WorldState _initialState;
 
-        public static WorldState CreateDefaultState()
+        /// <summary>
+        /// Explicitly configure the initial authoritative WorldState for this scope instance.
+        /// Must be called before LifetimeScope.Build() / container resolution.
+        /// </summary>
+        public void SetInitialState(WorldState state)
         {
-            if (StateOverrideFactory != null)
-                return StateOverrideFactory();
-
-            var item = new ItemDefinition(EntityId.Parse("item:scrap_metal"), 1, 100, 50);
-            var catalog = new ItemCatalog(new[] { item });
-            var pickup = new SalvagePickup(EntityId.Parse("salvage:supply_cache"), item.Id, 5);
-            var inventory = InventoryState.Create(catalog, new[] { pickup }, 50000, 20, 500000, 100);
-
-            var crew = new[]
-            {
-                EntityId.Parse("actor:protagonist"),
-                EntityId.Parse("actor:companion")
-            };
-            var supplies = new[]
-            {
-                new SupplyStock(EntityId.Parse("supply:fuel"), 100),
-                new SupplyStock(EntityId.Parse("supply:rations"), 50)
-            };
-
-            return WorldState.Create(WorldMinute.Zero, supplies, crew, inventory: inventory);
+            _initialState = state;
         }
 
         protected override void Configure(IContainerBuilder builder)
         {
-            // Explicit constructor selection: WorldSession initializes with canonical authoritative state
-            builder.Register<WorldSession>(_ => new WorldSession(CreateDefaultState()), Lifetime.Scoped);
+            if (_initialState == null)
+            {
+                var provider = GetComponent<IInitialWorldStateProvider>();
+                if (provider != null)
+                {
+                    _initialState = provider.ProvideInitialState();
+                }
+            }
+
+            // Explicit constructor selection: WorldSession initializes with the provided
+            // initial state or default foundation state (minute 0).
+            builder.Register<WorldSession>(_ => _initialState != null
+                ? new WorldSession(_initialState)
+                : new WorldSession(), Lifetime.Scoped);
             builder.RegisterComponentInHierarchy<WorldSessionPresenter>();
 
-            var commander = GetComponentInChildren<TacticalCommandController>() ?? FindFirstObjectByType<TacticalCommandController>();
+            var commander = GetComponentInChildren<TacticalCommandController>() ?? FindAnyObjectByType<TacticalCommandController>();
             if (commander != null)
             {
                 builder.RegisterComponent(commander);

@@ -108,6 +108,7 @@ namespace FrostArk.Unity.Editor
                 var scopeRoot = new GameObject("FrostArkSessionScope");
                 SceneManager.MoveGameObjectToScene(scopeRoot, fixtureScene);
                 var scope = scopeRoot.AddComponent<WorldSessionScope>();
+                scopeRoot.AddComponent<TacticalSliceBootstrap>();
 
                 var presenterObj = new GameObject("SessionPresenter");
                 presenterObj.transform.SetParent(scopeRoot.transform, false);
@@ -126,6 +127,16 @@ namespace FrostArk.Unity.Editor
 
                 if (!EditorSceneManager.SaveScene(fixtureScene, ScenePath))
                     throw new InvalidOperationException("Failed to save tactical vertical slice scene.");
+
+                // Ensure scene is registered in EditorBuildSettings for PlayMode test loading
+                var existingScenes = EditorBuildSettings.scenes;
+                if (!Array.Exists(existingScenes, s => s.path == ScenePath))
+                {
+                    var newScenes = new EditorBuildSettingsScene[existingScenes.Length + 1];
+                    Array.Copy(existingScenes, newScenes, existingScenes.Length);
+                    newScenes[existingScenes.Length] = new EditorBuildSettingsScene(ScenePath, true);
+                    EditorBuildSettings.scenes = newScenes;
+                }
 
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
