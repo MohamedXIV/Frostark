@@ -107,6 +107,44 @@ namespace FrostArk.Core.Tests
             }
         }
 
+
+        [Test]
+        public void StaleShorePartyCheckpointCannotBeSavedAfterActorReturns()
+        {
+            using (var session = Begin())
+            {
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Hero }, true,
+                    EntityId.Parse("transition:leave")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    ShoreScene, Island, ShoreAnchor, new[] { Hero }));
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Hero }, false,
+                    EntityId.Parse("transition:return")).Success, Is.True);
+                Assert.Throws<ArgumentException>(() => session.Capture(),
+                    "A stale shore checkpoint cannot silently serialize returned crew.");
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, ShipAnchor));
+                Assert.That(SaveCodec.TryDecode(SaveCodec.Encode(session.Capture())).Success, Is.True);
+            }
+        }
+
+        [Test]
+        public void ResignedInvalidV13CheckpointFlagIsNotAnEmptyLegacySave()
+        {
+            using (var session = Begin())
+            {
+                var blob = SaveCodec.Encode(session.Capture());
+                blob[blob.Length - 33] = 2; // Invalid trailing v13 presence flag.
+                using (var hash = SHA256.Create())
+                {
+                    var checksum = hash.ComputeHash(blob, 0, blob.Length - 32);
+                    Array.Copy(checksum, 0, blob, blob.Length - 32, 32);
+                }
+
+                var result = SaveCodec.TryDecode(blob);
+                Assert.That(result.Success, Is.False);
+                Assert.That(result.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+            }
+        }
+
         [Test]
         public void LegacyV12SavesHaveUnspecifiedPhysicalLocationNotInventedShipScene()
         {
