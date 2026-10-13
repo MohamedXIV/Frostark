@@ -99,7 +99,7 @@ namespace FrostArk.Core.Tests
             var blob = SaveCodec.Encode(SaveGameDto.Capture(world, timer));
             // v9 appends three empty Workshop collections (12 bytes) AFTER
             // the v8 credited heater quantity; target the actual credited row.
-            Array.Copy(BitConverter.GetBytes(0L), 0, blob, blob.Length - 32 - 44, 8);
+            Array.Copy(BitConverter.GetBytes(0L), 0, blob, blob.Length - 32 - 45, 8);
             using (var hash = System.Security.Cryptography.SHA256.Create())
                 Array.Copy(hash.ComputeHash(blob, 0, blob.Length - 32),
                     0, blob, blob.Length - 32, 32);
