@@ -1,4 +1,5 @@
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Crew;
 using FrostArk.Core.World;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -29,7 +30,15 @@ namespace FrostArk.Unity
                 new SupplyStock(EntityId.Parse("supply:rations"), 50)
             };
 
-            return WorldState.Create(WorldMinute.Zero, supplies, crew, inventory: inventory);
+            // R1 expedition fixture uses canonical crew records, not merely
+            // listed IDs: SetCrewAwayCommand must be able to dispatch/return.
+            var crewDuty = CrewState.Create(new[]
+            {
+                new CrewMember(crew[0], DutyRole.Watch, 900, 200, 0, 1440),
+                new CrewMember(crew[1], DutyRole.Repair, 850, 150, 0, 1440)
+            });
+            return WorldState.Create(WorldMinute.Zero, supplies, crew,
+                inventory: inventory, crewDuty: crewDuty);
         }
     }
 }
