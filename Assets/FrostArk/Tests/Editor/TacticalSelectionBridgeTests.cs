@@ -102,7 +102,7 @@ namespace FrostArk.Unity.Tests
                 crateObj.transform.SetParent(root.transform);
                 crateObj.transform.position = new Vector3(1.0f, 0, 0); // Within interaction range
                 var crate = crateObj.AddComponent<TacticalInteractableProxy>();
-                crate.SetTargetId(EntityId.Parse("salvage:box_01"));
+                crate.SetTargetId(EntityId.Parse("salvage:supply_cache"));
                 crate.SetInteractionRange(2.0f);
 
                 var cmdObj = new GameObject("TestCommander");
@@ -111,8 +111,8 @@ namespace FrostArk.Unity.Tests
                 commander.RegisterActor(actor);
                 commander.RegisterInteractable(crate);
 
-                // Track session command submission
-                var session = new WorldSession();
+                // Initialize with canonical session containing authored pickup
+                var session = new WorldSession(WorldSessionScope.CreateDefaultState());
                 commander.SetSession(session);
 
                 commander.SelectActor(actor.ActorId);
@@ -121,9 +121,11 @@ namespace FrostArk.Unity.Tests
                 Assert.That(ordered, Is.True);
                 Assert.That(commander.LastIssuedIntent, Is.Not.Null);
                 Assert.That(commander.LastIssuedIntent.Kind, Is.EqualTo(TacticalOrderKind.Interact));
-                Assert.That(commander.LastIssuedIntent.TargetId, Is.EqualTo(EntityId.Parse("salvage:box_01")));
+                Assert.That(commander.LastIssuedIntent.TargetId, Is.EqualTo(EntityId.Parse("salvage:supply_cache")));
 
-                // Because actor is within interaction range, interaction completes
+                // Because actor is within range and pickup exists in WorldSession, collection commits
+                Assert.That(session.Revision, Is.EqualTo(1));
+                Assert.That(session.Capture().State.Inventory.IsCollected(EntityId.Parse("salvage:supply_cache")), Is.True);
                 Assert.That(crate.IsDepleted, Is.True);
             }
             finally

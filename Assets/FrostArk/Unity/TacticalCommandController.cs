@@ -146,6 +146,7 @@ namespace FrostArk.Unity
                 destinationMarker.Show(worldDestination);
 
             var selectedActors = GetSelectedActorProxies();
+            bool anyDispatched = false;
             for (int i = 0; i < selectedActors.Count; i++)
             {
                 var actor = selectedActors[i];
@@ -159,10 +160,13 @@ namespace FrostArk.Unity
                     target += offset;
                 }
 
-                actor.MoveTo(target);
+                if (actor.MoveTo(target))
+                {
+                    anyDispatched = true;
+                }
             }
 
-            return true;
+            return anyDispatched || selectedActors.Count > 0;
         }
 
         public bool IssueInteractOrder(TacticalInteractableProxy interactable)
@@ -184,10 +188,10 @@ namespace FrostArk.Unity
             if (selectedActors.Count > 0)
             {
                 // Primary ordered actor approaches and performs contextual interaction
-                selectedActors[0].ApproachAndInteract(interactable);
+                return selectedActors[0].ApproachAndInteract(interactable);
             }
 
-            return true;
+            return false;
         }
 
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
@@ -269,31 +273,56 @@ namespace FrostArk.Unity
             }
         }
 
+        public event Action<TacticalActorProxy, TacticalInteractableProxy> InteractionCompleted;
+        public event Action<TacticalActorProxy, TacticalInteractableProxy, string> InteractionFailed;
+
         private void HandleInteractableTriggered(TacticalActorProxy actor, TacticalInteractableProxy interactable)
         {
-            Debug.Log($"[TacticalCommandController] Actor {actor.ActorId} interacted with {interactable.TargetId}");
+            if (interactable == null || interactable.IsDepleted)
+                return;
 
-            // Submit authoritative command to WorldSession if present
+            Debug.Log($"[TacticalCommandController] Actor {actor.ActorId} triggered interaction with {interactable.TargetId}");
+
+            // Submit authoritative CollectSalvageCommand to WorldSession if present
             if (_session != null)
             {
-                // Authoritative withdrawal or salvage event
-                var cmd = new WithdrawSupplyCommand(
-                    EntityId.Parse("cmd:interaction"),
+                var commandId = EntityId.Parse($"cmd:salvage:{interactable.TargetId}:{Guid.NewGuid():N}");
+                var cmd = new CollectSalvageCommand(
+                    commandId,
                     interactable.TargetId,
-                    1,
                     _session.Revision);
-                // Submitting command through session authority
-                _session.Submit(cmd);
+
+                var result = _session.Submit(cmd);
+                if (result.Success)
+                {
+                    Debug.Log($"[TacticalCommandController] CollectSalvageCommand committed successfully for {interactable.TargetId}. Revision: {_session.Revision}");
+                    interactable.SetDepleted(true);
+                    InteractionCompleted?.Invoke(actor, interactable);
+                }
+                else
+                {
+                    Debug.LogWarning($"[TacticalCommandController] CollectSalvageCommand rejected: {result.Failure}");
+                    InteractionFailed?.Invoke(actor, interactable, result.Failure.ToString());
+                }
+            }
+            else
+            {
+                // Standalone presentation/mock fallback without session
+                interactable.SetDepleted(true);
+                InteractionCompleted?.Invoke(actor, interactable);
             }
         }
 
         private void Update()
         {
-            // Mouse click input support in PlayMode
-            if (Input.GetMouseButtonDown(0))
+            // Unity Input System pointer click support in PlayMode
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
             {
-                bool isShift = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-                ProcessPointerClick(Input.mousePosition, isShift);
+                var keyboard = UnityEngine.InputSystem.Keyboard.current;
+                bool isShift = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+                Vector2 mousePos = mouse.position.ReadValue();
+                ProcessPointerClick(mousePos, isShift);
             }
         }
 
