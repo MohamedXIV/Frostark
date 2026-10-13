@@ -56,11 +56,22 @@ namespace FrostArk.Unity
         public void Construct(WorldSession session)
         {
             _session = session;
+            SyncPersistedSalvageVisuals();
         }
 
         public void SetSession(WorldSession session)
         {
             _session = session;
+            SyncPersistedSalvageVisuals();
+        }
+
+        private void SyncPersistedSalvageVisuals()
+        {
+            if (_session == null) return;
+            var inventory = _session.Capture().State.Inventory;
+            foreach (var target in _registeredInteractables)
+                if (target != null)
+                    target.SetDepleted(inventory.IsCollected(target.TargetId));
         }
 
         public void SetDestinationMarker(TacticalDestinationMarker marker)
@@ -113,6 +124,11 @@ namespace FrostArk.Unity
                 _registeredInteractables.Add(interactable);
                 interactable.OnInteracted -= HandleInteractableTriggered;
                 interactable.OnInteracted += HandleInteractableTriggered;
+                // An environment scene proxy is a view. Restored loot truth
+                // comes from the SAME WorldSession, never the prefab default.
+                if (_session != null)
+                    interactable.SetDepleted(
+                        _session.Capture().State.Inventory.IsCollected(interactable.TargetId));
             }
         }
 
