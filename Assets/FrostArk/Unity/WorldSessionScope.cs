@@ -45,6 +45,8 @@ namespace FrostArk.Unity
         /// </summary>
         public void SetRestoreSnapshot(SaveGameDto snapshot, Func<WorldMinute, long> ambientMilliC = null)
         {
+            if (Container != null)
+                throw new InvalidOperationException("Restored snapshot must be configured before VContainer builds.");
             _restoreSnapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
             _restoreAmbient = ambientMilliC;
         }
