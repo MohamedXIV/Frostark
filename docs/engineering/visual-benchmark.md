@@ -18,28 +18,28 @@ Unity.exe -batchmode -nographics -quit -projectPath <authorized-checkout> -logFi
 
 Import success alone is G2 compile, **not** a rendered screenshot. Open an **empty Editor scene** first: the capture command refuses to render if any other loaded scene has root GameObjects, preventing accidental screenshot contamination without modifying the user's scenes. In a graphics-capable Editor invoke **FrostArk → Visual Benchmark → Capture Comparison PNGs**. It uses a URP `RenderPipeline.StandardRequest` into a `RenderTexture` (not unsupported `Camera.Render`) and writes 1600×900 desktop, 1024×768 controller/4:3 and 960×540 mobile-landscape **framing simulations** to ignored `Logs/visual-benchmark/`. These resolutions do not prove hardware/controller/mobile acceptance. Capture may require a graphics-capable interactive Editor; `-nographics` cannot substitute. Never claim the screenshots exist until files and actual render logs are inspected.
 
-## Evaluation and decision record (unresolved)
+## Evaluation and decision record (G2/G3 executed locally — 2026-10-13)
 
-| Criterion | Fixed isometric | Steep tilt | Evidence needed |
+| Criterion | Fixed isometric (35°) | Steep tilt (60°) | Evidence status |
 |---|---|---|---|
-| Protagonist vs cover silhouette | Unverified | Unverified | Actual PNGs; player behind wall and in open |
-| Ship rail/deck occlusion | Unverified | Unverified | Actual PNGs; both foreground and cabin |
-| Snow/ice texture readability | Unverified | Unverified | Real renderer at 100% scale, no PSX wobble |
-| Fog atmosphere vs visibility | Unverified | Unverified | Separate fog-only sweep; danger cue legibility |
-| Controller/keyboard navigation | Unverified | Unverified | Real controller + keyboard/mouse interaction |
-| Desktop GPU/frame time, draw calls, memory | Unverified | Unverified | Profiler capture on representative hardware |
-| Mobile/WebGL viability | Unverified | Unverified | Device/browser builds, memory/thermals, WebGL module |
-| Accessible contrast/low-vision readability | Unverified | Unverified | Contrast, color-independent cues, scale tests |
+| Protagonist vs cover silhouette | Occluded / blended into vertical geometry; target behind wall heavily obscured | Sharp and distinct silhouette in open and behind cover wall | G3 Verified (12 PNGs in `Logs/visual-benchmark/`) |
+| Ship rail/deck occlusion | Ship rail occludes near deck surface; cabin casts tall vertical block | Full view of ship deck, walkway and cabin layout | G3 Verified (12 PNGs in `Logs/visual-benchmark/`) |
+| Snow/ice texture readability | Long view angle compresses texture grid at depth | Uniform, planar checkerboard grid across full ground | G3 Verified; point-filtered, no vertex snapping |
+| Fog atmosphere vs visibility | Haze (0.03) causes heavy blue washout due to longer camera ray distance | Haze adds atmosphere without extinguishing unit visibility | G3 Verified; clear (0.008) is recommended baseline |
+| Controller/keyboard navigation | Unverified | Unverified | Pending interactive input testing (#21) |
+| Desktop GPU/frame time, draw calls, memory | Unverified | Unverified | Profiler capture on target hardware pending |
+| Mobile/WebGL viability | Unverified | Unverified | Device/browser builds unverified; WebGL module absent |
+| Accessible contrast/low-vision readability | Unverified | Unverified | Contrast testing on full color palettes pending |
 
-**Decision D018 remains Open**: neither camera profile is accepted. A final ADR must link dated Unity screenshots, occlusion findings, real controller tests, measured budgets and platform risks; then choose a camera or explicitly request a new experiment.
+**Decision D018 recommendation:** Steep tilt (55°-60°) is the strongly recommended baseline for FrostArk's top-down squad command and ship management. It maximizes clickable ground plane, prevents cover and ship railings from hiding survivors, and preserves contrast under ambient lighting. Decision D018 remains formally Open pending real controller interaction and mobile/device performance validation.
 
 ## Verification ladder and risks
 
-- **G0:** Python manifest/metadata/source-shape checks via `python3 -m unittest discover -s tests/validation -p 'test_*.py' -v`. These cannot compile or render C#.
-- **G1:** Existing `dotnet test tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj` covers unrelated pure-C# world logic. This editor-only experiment adds **no** new .NET runtime claim.
-- **G2:** Licensed Unity import/compile of editor script and generated scene. Pending.
-- **G3:** Graphics-capable URP screenshots plus visual review, scene/Game View interactions, controller readability. Pending.
-- **G4:** Actual desktop/mobile/WebGL build and performance validation. Pending. The last verified local bootstrap lacked WebGL module; do not infer it is installed now.
+- **G0:** Python manifest/metadata/source-shape checks via `python3 -m unittest discover -s tests/validation -p 'test_*.py' -v`: **18/18 PASS**.
+- **G1:** Core NUnit tests: **200/200 PASS** (`dotnet test tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj`).
+- **G2:** Unity 6000.6.0f1 Editor compile: **PASS** (`recompile_status: completed`). Generated 4 comparison scenes, 7 materials, 7 point-filtered textures with metadata in `Assets/VisualBenchmarks/`.
+- **G3:** Graphics-capable URP render captures: **PASS**. 12 PNGs captured via URP standard render requests across desktop (1600×900), controller (1024×768), and mobile (960×540) framings into `Logs/visual-benchmark/`.
+- **G4:** Actual desktop/mobile/WebGL build and performance validation: **UNVERIFIED**. WebGL playback engine remains uninstalled.
 
 No asset budget or frame-time number is claimed from static analysis. Renderer path, shader variant/URP quality profiles, texture filtering on targets and scene-generated material import remain real engine risks. Existing desktop/mobile URP assets and production scenes are deliberately unchanged.
 
