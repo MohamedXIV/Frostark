@@ -38,15 +38,19 @@ namespace FrostArk.Core.Save
 
         public WorldState State { get; }
         public uint Seed { get; }
+        public PhysicalSceneCheckpoint SceneCheckpoint { get; }
         public IReadOnlyList<ProceduralOverride> ProceduralOverrides =>
             Array.AsReadOnly(_overrides);
 
         private SaveGameDto(WorldState state, uint seed,
             IEnumerable<ScheduledWorldEvent> pending, IEnumerable<EntityId> reserved,
-            IEnumerable<ProceduralOverride> overrides)
+            IEnumerable<ProceduralOverride> overrides,
+            PhysicalSceneCheckpoint sceneCheckpoint)
         {
             State = state ?? throw new ArgumentNullException(nameof(state));
             Seed = seed;
+            sceneCheckpoint?.ValidateAgainst(state);
+            SceneCheckpoint = sceneCheckpoint;
             // Ensure restored schedule data has the same strict validation
             // as a normally scheduled live session before it can be observed.
             var verifier = SimulationScheduler.FromSave(new WorldClock(state.Minute),
@@ -67,7 +71,8 @@ namespace FrostArk.Core.Save
         }
 
         public static SaveGameDto Capture(WorldState state, SimulationScheduler scheduler,
-            IEnumerable<ProceduralOverride> overrides = null)
+            IEnumerable<ProceduralOverride> overrides = null,
+            PhysicalSceneCheckpoint sceneCheckpoint = null)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
             if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
@@ -75,13 +80,14 @@ namespace FrostArk.Core.Save
                 throw new ArgumentException("The world state and scheduler must share the same authoritative minute.");
             return new SaveGameDto(state, scheduler.Seed,
                 scheduler.SnapshotPending(), scheduler.SnapshotReservedIds(),
-                overrides ?? Array.Empty<ProceduralOverride>());
+                overrides ?? Array.Empty<ProceduralOverride>(), sceneCheckpoint);
         }
 
         internal static SaveGameDto Rehydrate(WorldState state, uint seed,
             IEnumerable<ScheduledWorldEvent> pending, IEnumerable<EntityId> reserved,
-            IEnumerable<ProceduralOverride> overrides) =>
-            new SaveGameDto(state, seed, pending, reserved, overrides);
+            IEnumerable<ProceduralOverride> overrides,
+            PhysicalSceneCheckpoint sceneCheckpoint = null) =>
+            new SaveGameDto(state, seed, pending, reserved, overrides, sceneCheckpoint);
 
         internal IReadOnlyList<ScheduledWorldEvent> SnapshotPending() =>
             Array.AsReadOnly(_pending);

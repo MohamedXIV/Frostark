@@ -247,10 +247,25 @@ namespace FrostArk.Core.Tests
             var scheduler = new SimulationScheduler(new WorldClock(damaged.Minute),
                 Array.Empty<IWorldMinuteSystem>());
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(damaged, scheduler));
-            // The module reservation flag is the final byte in the v6 layout payload
-            // when there is exactly one module.
-            Assert.That(bytes[bytes.Length - 33], Is.Zero);
-            bytes[bytes.Length - 33] = 1;
+            // Locate the persisted module row itself, rather than mutating a
+            // trailing versioned extension (v13 adds a scene marker after v12).
+            var marker = System.Text.Encoding.UTF8.GetBytes(Engine.Value);
+            var position = -1;
+            for (int i = 0; i <= bytes.Length - 32 - marker.Length; i++)
+            {
+                bool matches = true;
+                for (int j = 0; j < marker.Length; j++)
+                    if (bytes[i + j] != marker[j]) { matches = false; break; }
+                if (matches) { position = i; break; }
+            }
+            Assert.That(position, Is.GreaterThan(0), "Saved module ID must exist.");
+            int cursor = position + marker.Length;
+            int blueprintLength = BitConverter.ToInt32(bytes, cursor);
+            cursor += 4 + blueprintLength;
+            int roomLength = BitConverter.ToInt32(bytes, cursor);
+            cursor += 4 + roomLength + 4 + 4 + 4; // room ID, x, y, integrity
+            Assert.That(bytes[cursor], Is.Zero, "Actual module repair-reserved flag.");
+            bytes[cursor] = 1;
             using (var sha = SHA256.Create())
                 Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32), 0,
                     bytes, bytes.Length - 32, 32);
@@ -292,8 +307,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var current = SaveCodec.Encode(SaveGameDto.Capture(state,
                 new SimulationScheduler(new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(current[8], Is.EqualTo(12));
-            var old = new byte[current.Length - 53];
+            Assert.That(current[8], Is.EqualTo(13));
+            var old = new byte[current.Length - 54];
             Array.Copy(current, old, old.Length - 32);
             old[8] = 5;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);

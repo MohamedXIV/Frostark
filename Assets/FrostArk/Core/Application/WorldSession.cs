@@ -21,6 +21,7 @@ namespace FrostArk.Core.Application
         private readonly SimulationScheduler _scheduler;
         private readonly WorldCommandBus _commands = new WorldCommandBus();
         private readonly IReadOnlyList<ProceduralOverride> _overrides;
+        private PhysicalSceneCheckpoint _sceneCheckpoint;
         private bool _disposed;
 
         public event Action<WorldSessionChange> Changed;
@@ -37,6 +38,7 @@ namespace FrostArk.Core.Application
             _scheduler = new SimulationScheduler(new WorldClock(state.Minute),
                 BindCanonicalSystems(systems, ambientMilliC), seed);
             _overrides = Array.Empty<ProceduralOverride>();
+            _sceneCheckpoint = null;
         }
 
         private WorldSession(SaveGameDto snapshot,
@@ -46,6 +48,7 @@ namespace FrostArk.Core.Application
             _state = snapshot.State;
             _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
             _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
+            _sceneCheckpoint = snapshot.SceneCheckpoint;
         }
 
         // Built-in reducers must read and commit through this ONE session-owned
@@ -75,6 +78,19 @@ namespace FrostArk.Core.Application
 
         public long Revision { get { Guard(); return _state.Revision; } }
         public WorldMinute Minute { get { Guard(); return _state.Minute; } }
+        public PhysicalSceneCheckpoint SceneCheckpoint { get { Guard(); return _sceneCheckpoint; } }
+
+        /// <summary>
+        /// Record an authored scene/anchor re-entry checkpoint without advancing
+        /// simulation time. Call after successful crew transfer and before saving.
+        /// A null checkpoint means physical re-entry has not been established.
+        /// </summary>
+        public void SetSceneCheckpoint(PhysicalSceneCheckpoint checkpoint)
+        {
+            Guard();
+            checkpoint?.ValidateAgainst(_state);
+            _sceneCheckpoint = checkpoint;
+        }
 
         public WorldSessionView Read()
         {
@@ -117,7 +133,7 @@ namespace FrostArk.Core.Application
         public SaveGameDto Capture()
         {
             Guard();
-            return SaveGameDto.Capture(_state, _scheduler, _overrides);
+            return SaveGameDto.Capture(_state, _scheduler, _overrides, _sceneCheckpoint);
         }
 
         public static WorldSession Restore(SaveGameDto snapshot,

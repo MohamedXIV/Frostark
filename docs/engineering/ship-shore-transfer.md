@@ -1,6 +1,6 @@
 # R1 ship ↔ shore persistent crew transfer — Core-first handoff (#22)
 
-**Status:** Pure-C# canonical crew transition contract implemented. **Unity scene switching, retained session lifetime and exact shore spawn are not yet implemented or validated.**
+**Status:** Pure-C# crew transfer **and v13 persistent physical scene checkpoint** implemented. **Unity scene switching, retained session lifetime, actual physical spawn and G2/G3 are not yet implemented or validated.**
 
 **Source of truth:** `WorldSession` / `WorldState.CrewDuty` / `SetCrewAwayCommand` and existing inventory, thermal, repairs, navigation, clock and SaveCodec. The application cannot infer a character's location from the Unity object instance, and must never clone the crew record when instantiating a proxy.
 
@@ -34,7 +34,9 @@ Returning uses a **different** transition ID and `toShore:false`. `WorldSession.
 
 **Verified at G1:** SaveCodec preserves `CrewDuty.IsAway` and crew identities, pending scheduler state, ship fuel/repair progress, and inventory/pickup collected status across a save **made while a crew member is away**. Resuming after loading and returning crew + unloading loot preserves item counts and prevents duplicate pickup. Continuous vs save/resumed canonical state and save bytes match for the tested sequence.
 
-**NOT yet persisted or proved:** which landing scene/site is physically active, each actor's position and path, ship vs shore active camera, transition animation or spawn-point selection. The existing save schema has no canonical `current physical theater + landing scene ID + spawn location`. `IsAway` alone is *not enough* to recover where a character is. Therefore **do not claim reliable mid-shore scene resume in the UI yet**: the front-end must either withhold a resume-to-physical-scene option for unfinished shore excursions or implement a separately specified persisted location checkpoint. Do **not** auto-return the crew when loading; that would fabricate a new domain event and erase the duty penalty.
+**v13 persisted re-entry metadata (Core / G1):** `PhysicalSceneCheckpoint` can now hold a typed `Ship` or `Shore` theater, stable `SceneId`, stable `SpawnAnchorId`, and for shore a `SiteId` plus a sorted, immutable set of persistent expedition crew IDs. `WorldSession.SetSceneCheckpoint(...)` checks shore party members against its canonical WorldState (`HasCrew`, `CrewDuty.IsAway`) and retains metadata through `Capture` and `Restore`. The checkpoint is part of `SaveGameDto` and a bounded trailing SaveCodec **v13** extension. Existing **v1–v12** saves decode with `SceneCheckpoint = null`, meaning **unknown physical location**, not a fabricated default ship or automatic crew return. Saves written without a checkpoint add only one absent-marker byte. Invalid flags/theater IDs/party manifests reject on decode, even when a checksum is valid.
+
+**Still NOT implemented/proved:** actual Unity scene loading/rebinding/spawn-anchor resolution, ship/shore camera, per-actor world position/path within a location, resumed actual physical gameplay or device testing. Stable authored anchor IDs are *not* numeric transforms. Engine adapters must recognize the active checkpoint and resolve the correct authored scene and anchor, reject missing assets gracefully and preserve the existing same-session authority. If exact positions during a shore excursion become necessary, evolve an explicit bounded position checkpoint later rather than serializing NavMesh paths, camera or Unity GameObjects. No G2/G3 claim is implied by a valid v13 save. Do **not** auto-return the crew when loading; that fabricates an event and erases the duty penalty.
 
 ## Unity handoff (remaining #22)
 
@@ -42,7 +44,7 @@ Returning uses a **different** transition ID and `toShore:false`. `WorldSession.
 2. Before scene switch, preflight the chosen expedition crew and issue the existing commands through `ShoreCrewTransfer`. On rejection, stay put and show feedback. On extraction, confirm survival/roster state, issue return commands, then unload through canonical inventory commands where requested.
 3. Scenes instantiate exactly one actor proxy per relevant stable `EntityId` for the current theater, and rebind through `WorldSession` after loading; destroy/disable former proxies. No separate scene-local authoritative health, loot or crew clock. A selected set is transient: on scene changes revalidate actor IDs; never use prior GameObject references or persist UI selection into WorldState.
 4. Time elapsed while on land should be fed explicitly into `WorldSession.Advance`, with winter fuel, staffing, repairs and injuries reprojected on the ship after return.
-5. Define a small authoritative location checkpoint/schema before enabling **mid-shore scene resume**: at minimum scene/site ID, active theater, party membership and spawn/reentry anchor. Avoid storing transient input/path/animation; test compatible SaveCodec migration. #22 cannot close without this or an explicit owner-approved R1 save restriction.
+5. **Persisted checkpoint delivered in v13:** set `PhysicalSceneCheckpoint.Shore(sceneId, siteId, anchorId, partyIds)` after a successful shore transfer and `PhysicalSceneCheckpoint.Ship(sceneId, anchorId)` after return. Use `WorldSession.SetSceneCheckpoint`, then `Capture`/`SaveCodec.Encode`. On `WorldSession.Restore`, inspect `SceneCheckpoint` and choose the authored scene/anchor. A null legacy checkpoint has no justified auto-scene reentry. Test real scene load/rebind and that missing or invalid scene/anchor IDs fail without creating duplicate actors.
 6. Unity G2 EditMode + G3 actual scene load/unload, click-to-loot, save/reopen/rebind, docked and shore return, and duplicate proxy detection are **NOT RUN** for this Core-only PR. G4 builds/devices are likewise not claimed.
 
 ## Test evidence
@@ -52,3 +54,11 @@ Returning uses a **different** transition ID and `toShore:false`. `WorldSession.
 - 5 new tests: canonical group ordering, preflight safety, invalid roster, salvage/ship repair/fuel/save-ashore/return, continuous-vs-save-resume byte identity.
 
 **Only the tested Core-first portion is ready to merge. Keep parent Issue #22 OPEN** until a real Unity scene transition and persisted physical theater reentry are proven.
+
+
+## v13 checkpoint G1 evidence and migration — 2026-10-13
+
+- `PhysicalSceneCheckpoint.Ship(sceneId, spawnAnchorId)` records a stable ship reentry point; `.Shore(sceneId, siteId, spawnAnchorId, partyIds)` requires nonempty valid IDs with deterministic ordinal ordering and immutable external snapshots.
+- `WorldSession.SetSceneCheckpoint` changes **save reentry metadata only**. It does not execute a crew command, advance time, mutate WorldState, create a second simulation or change authoritative revisions. The ship/shore crew transfer still requires prior successful `SetCrewAwayCommand` commits and is validated against the persisted duty flags when saving.
+- `SaveCodec.CurrentVersion = 13` appends a presence flag (0 = unspecified; 1 = typed checkpoint), followed by the bounded authored identifiers for known locations. Unknown former versions do not invent a location; legacy migrations retain their previous canonical world fingerprints.
+- Engine G2/G3 remains open under #22. An anchor must resolve to an authored scene object; a saved checkpoint's validity as C# data is **not** proof that the scene exists or an actor navigates into it.

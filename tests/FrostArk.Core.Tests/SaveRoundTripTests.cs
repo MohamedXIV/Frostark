@@ -153,7 +153,7 @@ namespace FrostArk.Core.Tests
             // v5 adds 8 bytes for an empty crew roster, v4 adds 28 bytes for
             // an empty thermal graph, v3 adds 44
             // for an empty inventory, and v2 adds 4 for overrides.
-            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 137);
+            byte[] legacy = DowngradeEmptyInventory(v4, version: 1, removedBytes: 138);
 
             var result = SaveCodec.TryDecode(legacy);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -168,8 +168,8 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
-            Assert.That(v4[8], Is.EqualTo(12));
-            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 133);
+            Assert.That(v4[8], Is.EqualTo(13));
+            byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 134);
             var loaded = SaveCodec.TryDecode(v2);
 
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
@@ -185,8 +185,8 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
-            Assert.That(v4[8], Is.EqualTo(12));
-            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 89);
+            Assert.That(v4[8], Is.EqualTo(13));
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 90);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
@@ -200,10 +200,10 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             var current = SaveCodec.Encode(original);
-            Assert.That(current[8], Is.EqualTo(12));
+            Assert.That(current[8], Is.EqualTo(13));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
-            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 40);
+            var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 41);
             var decoded = SaveCodec.TryDecode(old);
             Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
             Assert.That(decoded.Value.State.Inventory.SnapshotCredited(), Is.Empty);
@@ -217,10 +217,10 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v9 = SaveCodec.Encode(current);
-            Assert.That(v9[8], Is.EqualTo(12));
+            Assert.That(v9[8], Is.EqualTo(13));
             // V9 added 4 empty collection counts for recipes, stations,
             // pending prepaid jobs and finite merchants.
-            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 36);
+            var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 37);
             var restored = SaveCodec.TryDecode(v8);
             Assert.That(restored.Success, Is.True, restored.Error.ToString());
             Assert.That(restored.Value.State.Economy.Jobs, Is.Empty);
@@ -235,9 +235,9 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             var v10 = SaveCodec.Encode(original);
-            Assert.That(v10[8], Is.EqualTo(12));
+            Assert.That(v10[8], Is.EqualTo(13));
             // V10 appends one int64 tactical tick plus one empty weapon count.
-            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 20);
+            var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 21);
             var recovered = SaveCodec.TryDecode(v9);
             Assert.That(recovered.Success, Is.True, recovered.Error.ToString());
             Assert.That(recovered.Value.State.Combat.Tick, Is.Zero);
@@ -252,9 +252,9 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v11 = SaveCodec.Encode(current);
-            Assert.That(v11[8], Is.EqualTo(12));
+            Assert.That(v11[8], Is.EqualTo(13));
             // Empty v11 medical catalog = one 4-byte count after v10 combat.
-            var v10 = DowngradeEmptyInventory(v11, version: 10, removedBytes: 8);
+            var v10 = DowngradeEmptyInventory(v11, version: 10, removedBytes: 9);
             var result = SaveCodec.TryDecode(v10);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.CrewDuty.Treatments, Is.Empty);
@@ -268,9 +268,9 @@ namespace FrostArk.Core.Tests
         {
             var now = MakeSnapshot();
             var v12 = SaveCodec.Encode(now);
-            Assert.That(v12[8], Is.EqualTo(12));
-            // One empty site-registry count (4 bytes) was appended in v12.
-            var v11 = DowngradeEmptyInventory(v12, version: 11, removedBytes: 4);
+            Assert.That(v12[8], Is.EqualTo(13));
+            // V12 appended a 4-byte site count, plus the v13 1-byte absent-checkpoint flag.
+            var v11 = DowngradeEmptyInventory(v12, version: 11, removedBytes: 5);
             var loaded = SaveCodec.TryDecode(v11);
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
             Assert.That(loaded.Value.State.SiteProgress.Sites, Is.Empty);
