@@ -20,13 +20,21 @@ Import success alone is G2 compile, **not** a rendered screenshot. Open an **emp
 
 ## Evaluation and decision record (G2/G3 executed locally — 2026-10-13)
 
+### Accessible representative comparison captures (Desktop 16:9)
+
+Four representative captures are committed under `docs/images/visual-benchmark/` for autonomous and remote review:
+- **35° Fixed Isometric (Clear):** [`fixed_isometric_clear-desktop-16x9.png`](../images/visual-benchmark/fixed_isometric_clear-desktop-16x9.png)
+- **60° Steep Tilt (Clear):** [`steep_tilt_clear-desktop-16x9.png`](../images/visual-benchmark/steep_tilt_clear-desktop-16x9.png)
+- **35° Fixed Isometric (Haze):** [`fixed_isometric_haze-desktop-16x9.png`](../images/visual-benchmark/fixed_isometric_haze-desktop-16x9.png)
+- **60° Steep Tilt (Haze):** [`steep_tilt_haze-desktop-16x9.png`](../images/visual-benchmark/steep_tilt_haze-desktop-16x9.png)
+
 | Criterion | Fixed isometric (35°) | Steep tilt (60°) | Evidence status |
 |---|---|---|---|
-| Protagonist vs cover silhouette | Occluded / blended into vertical geometry; target behind wall heavily obscured | Sharp and distinct silhouette in open and behind cover wall | G3 Verified (12 PNGs in `Logs/visual-benchmark/`) |
-| Ship rail/deck occlusion | Ship rail occludes near deck surface; cabin casts tall vertical block | Full view of ship deck, walkway and cabin layout | G3 Verified (12 PNGs in `Logs/visual-benchmark/`) |
+| Protagonist vs cover silhouette | Occluded / blended into vertical geometry; target behind wall heavily obscured | Sharp and distinct silhouette in open and behind cover wall | G3 Verified ([images](../images/visual-benchmark/)) |
+| Ship rail/deck occlusion | Ship rail occludes near deck surface; cabin casts tall vertical block | Full view of ship deck, walkway and cabin layout | G3 Verified ([images](../images/visual-benchmark/)) |
 | Snow/ice texture readability | Long view angle compresses texture grid at depth | Uniform, planar checkerboard grid across full ground | G3 Verified; point-filtered, no vertex snapping |
 | Fog atmosphere vs visibility | Haze (0.03) causes heavy blue washout due to longer camera ray distance | Haze adds atmosphere without extinguishing unit visibility | G3 Verified; clear (0.008) is recommended baseline |
-| Controller/keyboard navigation | Unverified | Unverified | Pending interactive input testing (#21) |
+| Controller/keyboard navigation | Unverified | Unverified | Verified in PlayMode via #21 (#83) |
 | Desktop GPU/frame time, draw calls, memory | Unverified | Unverified | Profiler capture on target hardware pending |
 | Mobile/WebGL viability | Unverified | Unverified | Device/browser builds unverified; WebGL module absent |
 | Accessible contrast/low-vision readability | Unverified | Unverified | Contrast testing on full color palettes pending |
