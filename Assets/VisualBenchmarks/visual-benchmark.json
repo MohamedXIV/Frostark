@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "textureFilter": "Point",
+  "vertexSnapping": false,
+  "texturePixels": 32,
+  "tileWorldUnits": 2,
+  "features": [
+    "ship_deck",
+    "snow",
+    "sea_ice",
+    "industrial_cover",
+    "protagonist",
+    "foliage",
+    "artificial_light",
+    "fog"
+  ],
+  "profiles": [
+    {
+      "id": "fixed_isometric_clear",
+      "pitchDegrees": 35,
+      "yawDegrees": 45,
+      "orthographicSize": 11,
+      "fogDensity": 0.008
+    },
+    {
+      "id": "fixed_isometric_haze",
+      "pitchDegrees": 35,
+      "yawDegrees": 45,
+      "orthographicSize": 11,
+      "fogDensity": 0.03
+    },
+    {
+      "id": "steep_tilt_clear",
+      "pitchDegrees": 60,
+      "yawDegrees": 45,
+      "orthographicSize": 11,
+      "fogDensity": 0.008
+    },
+    {
+      "id": "steep_tilt_haze",
+      "pitchDegrees": 60,
+      "yawDegrees": 45,
+      "orthographicSize": 11,
+      "fogDensity": 0.03
+    }
+  ]
+}
