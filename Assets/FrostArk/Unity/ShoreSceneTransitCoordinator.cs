@@ -181,8 +181,8 @@ namespace FrostArk.Unity
                 var samplePoint = anchor.position +
                     new Vector3((i % 3 - 1) * 1.0f, 0f, (i / 3) * 1.0f);
                 if (!NavMesh.SamplePosition(samplePoint, out var hit, 2f, NavMesh.AllAreas) ||
-                    proxies[i].Agent == null || !proxies[i].Agent.isOnNavMesh ||
-                    !proxies[i].Agent.Warp(hit.position))
+                    proxies[i].Agent == null || !proxies[i].Agent.isActiveAndEnabled ||
+                    !proxies[i].Agent.Warp(hit.position) || !proxies[i].Agent.isOnNavMesh)
                 {
                     Reject("ActorSpawnNotOnNavMesh");
                     yield return SceneManager.UnloadSceneAsync(loaded);
