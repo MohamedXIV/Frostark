@@ -125,3 +125,7 @@ InitTestScene*.unity*
 # Python G0 verifier's generated caches (never commit).
 **/__pycache__/
 *.py[cod]
+
+# Test results XML
+test-results.xml
+

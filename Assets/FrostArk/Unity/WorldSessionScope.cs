@@ -17,6 +17,12 @@ namespace FrostArk.Unity
             // from an existing WorldState, which is not a DI dependency.
             builder.Register<WorldSession>(_ => new WorldSession(), Lifetime.Scoped);
             builder.RegisterComponentInHierarchy<WorldSessionPresenter>();
+
+            var commander = GetComponentInChildren<TacticalCommandController>() ?? FindFirstObjectByType<TacticalCommandController>();
+            if (commander != null)
+            {
+                builder.RegisterComponent(commander);
+            }
         }
     }
 }
