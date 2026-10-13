@@ -81,41 +81,41 @@ namespace FrostArk.Unity
                 selectionMarker.SetActive(IsSelected);
         }
 
-        public void MoveTo(Vector3 destination)
+        public bool MoveTo(Vector3 destination)
         {
             CancelPendingInteraction();
 
             if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
             {
                 Agent.isStopped = false;
-                Agent.SetDestination(destination);
+                Agent.stoppingDistance = 0.1f;
+                return Agent.SetDestination(destination);
             }
-            else
-            {
-                // Fallback for direct testing when NavMesh is disabled/not baked
-                transform.position = destination;
-            }
+
+            return false;
         }
 
-        public void ApproachAndInteract(TacticalInteractableProxy interactable)
+        public bool ApproachAndInteract(TacticalInteractableProxy interactable)
         {
             if (interactable == null || interactable.IsDepleted)
-                return;
+                return false;
 
             _pendingInteractable = interactable;
 
             if (interactable.CanInteract(this))
             {
                 ExecutePendingInteraction();
-                return;
+                return true;
             }
 
             if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
             {
                 Agent.isStopped = false;
                 Agent.stoppingDistance = Mathf.Max(0.5f, interactable.InteractionRange * 0.8f);
-                Agent.SetDestination(interactable.transform.position);
+                return Agent.SetDestination(interactable.transform.position);
             }
+
+            return false;
         }
 
         public void CancelPendingInteraction()

@@ -4,7 +4,8 @@
   "references": [
     "FrostArk.Unity",
     "FrostArk.Core",
-    "VContainer"
+    "VContainer",
+    "Unity.AI.Navigation"
   ],
   "includePlatforms": [
     "Editor"

@@ -6,6 +6,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.AI;
+using Unity.AI.Navigation;
 using UnityEngine.SceneManagement;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -98,7 +99,12 @@ namespace FrostArk.Unity.Editor
                 crateProxy.SetTargetId(EntityId.Parse("salvage:supply_cache"));
                 crateProxy.SetInteractionRange(2.5f);
 
-                // 9. Session Scope & Presenters
+                // 9. Bake NavMesh surface across walkable ground and cover obstacles
+                var navSurface = ground.AddComponent<NavMeshSurface>();
+                navSurface.collectObjects = CollectObjects.All;
+                navSurface.BuildNavMesh();
+
+                // 10. Session Scope & Presenters
                 var scopeRoot = new GameObject("FrostArkSessionScope");
                 SceneManager.MoveGameObjectToScene(scopeRoot, fixtureScene);
                 var scope = scopeRoot.AddComponent<WorldSessionScope>();

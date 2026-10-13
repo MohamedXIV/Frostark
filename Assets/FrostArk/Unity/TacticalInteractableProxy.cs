@@ -77,16 +77,20 @@ namespace FrostArk.Unity
             if (!CanInteract(actor))
                 return false;
 
-            IsDepleted = true;
-            UpdateVisuals();
+            // Notify commander/listeners to submit authoritative command; do not deplete preemptively
             OnInteracted?.Invoke(actor, this);
             return true;
         }
 
+        public void SetDepleted(bool depleted)
+        {
+            IsDepleted = depleted;
+            UpdateVisuals();
+        }
+
         public void ResetInteractable()
         {
-            IsDepleted = false;
-            UpdateVisuals();
+            SetDepleted(false);
         }
 
         private void UpdateVisuals()

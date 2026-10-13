@@ -3,7 +3,8 @@
   "rootNamespace": "FrostArk.Unity",
   "references": [
     "FrostArk.Core",
-    "VContainer"
+    "VContainer",
+    "Unity.InputSystem"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

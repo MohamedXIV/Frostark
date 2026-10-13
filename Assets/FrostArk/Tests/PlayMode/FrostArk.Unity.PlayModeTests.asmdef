@@ -1,0 +1,23 @@
+{
+  "name": "FrostArk.Unity.PlayModeTests",
+  "rootNamespace": "FrostArk.Unity.Tests",
+  "references": [
+    "FrostArk.Unity",
+    "FrostArk.Core",
+    "VContainer",
+    "Unity.InputSystem",
+    "Unity.AI.Navigation"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}
