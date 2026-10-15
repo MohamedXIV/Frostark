@@ -68,7 +68,12 @@ namespace FrostArk.Unity
                 ? WorldSession.Restore(_restoreSnapshot, ambientMilliC: _restoreAmbient)
                 : _initialState != null ? new WorldSession(_initialState)
                 : new WorldSession(), Lifetime.Scoped);
-            builder.RegisterComponentInHierarchy<WorldSessionPresenter>();
+            // Optional presenter registration (replaces unconditional RegisterComponentInHierarchy<WorldSessionPresenter>() to allow presenter-free test scopes)
+            var presenter = GetComponentInChildren<WorldSessionPresenter>() ?? FindAnyObjectByType<WorldSessionPresenter>();
+            if (presenter != null)
+            {
+                builder.RegisterComponent(presenter);
+            }
 
             // Entire run root may optionally opt into the ship/shore scene
             // adapter. Destination environment scenes must remain scope-free.
