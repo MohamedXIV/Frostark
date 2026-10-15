@@ -65,7 +65,7 @@ namespace FrostArk.Core.Save
             return CombatState.Restore(legacy.Tick, restored);
         }
 
-        private static CombatState ReadCombat(BinaryReader reader)
+        private static CombatState ReadCombat(BinaryReader reader, bool deferMagazineValidation = false)
         {
             long tick = reader.ReadInt64();
             var weapons = new List<WeaponRuntimeState>();
@@ -80,7 +80,7 @@ namespace FrostArk.Core.Save
                 var def = new WeaponDefinition(weaponId, ammoId, ammoPerShot, cooldown);
                 weapons.Add(new WeaponRuntimeState(def, nextReadyTick, shotCount));
             }
-            return CombatState.Restore(tick, weapons);
+            return CombatState.Restore(tick, weapons, validateRecovery: !deferMagazineValidation);
         }
     }
 }
