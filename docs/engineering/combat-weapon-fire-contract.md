@@ -23,3 +23,16 @@ SaveCodec v10 appends a bounded fixed-tactical-tick int64 and a deterministic so
 TDD RED started with absent Combat namespace on hosted G1 and later found persistent CombatState omitted by the old v9 codec. Tests include actual ammo deduction, gun possession, duplicate-command protection, cooldown across tactical ticks without advancing WorldMinute, stock exhaustion, save/reload continuation and backward migration. Additional checksummed negative/impossible weapon counter/cooldown payloads are intentionally rejected. Only inspect final exact-head GitHub Actions job logs before claiming green.
 
 G0 structural checks and G1 .NET NUnit do not establish Unity compilation, PlayMode physics, framerate correctness, controller aiming or any G4 target platform performance. **G2/G3/G4 NOT RUN.** Keep parent #27 blocked by #21 until real Unity evidence is available.
+
+
+## V14 magazine-state save fix — Issue #93 (2026-10-15)
+
+The original C01 magazine addition in PR #92 did **not** update the v13 `SaveCodecCombat` payload and its `CombatState.Fingerprint`. Its new `MagazineCapacity`, `ReloadTicks`, and `MagazineRounds` were silently discarded on save/load. Issue #93 fixes these persisted fields explicitly.
+
+- V14 writes the **unchanged** historical V10 combat body, the existing V11–V13 payloads, then an appended magazine extension: sorted weapon count plus three signed 64-bit values per weapon (authored capacity, reload duration, current loaded rounds). Definition order follows the canonical stable weapon ID ordering from `CombatState`.
+- Decode of v1–v13 still uses the exact historical layout. Pre-v14 saves cannot reconstruct magazine data that were never written; their weapons therefore retain the historical no-magazine semantics. Do not invent loaded rounds from pack inventory when migrating.
+- V14 validates extension weapon count, capacity, reload duration and round bounds, then reconstructs and validates weapon timing with `Math.Max(CooldownTicks, ReloadTicks)` for an in-progress reload.
+- Loaded rounds are charged to the existing pack only when the authoritative `ReloadWeaponCommand` commits; `FireWeaponCommand` for a magazine weapon consumes its loaded rounds. `CombatState.Fingerprint` now includes all three additional fields, making persistence regressions observable.
+- G1 tests cover full v14 save/restore, byte identity, partial/empty magazines, mid-reload recovery, signed forged amounts, old v13 decoding and deterministic continuation.
+
+**Status:** Core-only change. G0/G1 evidence required; no claim that Unity G2/G3 were re-run for this PR.
