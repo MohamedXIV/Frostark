@@ -37,7 +37,8 @@ namespace FrostArk.Core.Combat
             }));
         }
 
-        internal static CombatState Restore(long tick, IEnumerable<WeaponRuntimeState> weapons)
+        internal static CombatState Restore(long tick, IEnumerable<WeaponRuntimeState> weapons,
+            bool validateRecovery = true)
         {
             if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
             if (weapons == null) throw new ArgumentNullException(nameof(weapons));
@@ -47,6 +48,7 @@ namespace FrostArk.Core.Combat
             for (int i = 1; i < array.Length; i++)
                 if (array[i].Definition.Id == array[i - 1].Definition.Id)
                     throw new ArgumentException("Duplicate weapon identity.");
+            if (validateRecovery)
             foreach (var weapon in array)
             {
                 // NextReadyTick can originate from firing OR from a longer
