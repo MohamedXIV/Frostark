@@ -232,7 +232,7 @@ namespace FrostArk.Core.Save
             var navigation = version >= 7 ? ReadNavigation(reader) : ShipNavigationState.Empty;
             if (version >= 8) inventory = ReadCreditedInventory(reader, inventory);
             var economy = version >= 9 ? ReadEconomy(reader) : EconomyState.Empty;
-            var combat = version >= 10 ? ReadCombat(reader) : CombatState.Empty;
+            var combat = version >= 10 ? ReadCombat(reader, deferMagazineValidation: version >= 14) : CombatState.Empty;
             if (version >= 11) crewDuty = crewDuty.WithTreatments(ReadMedical(reader));
             var siteProgress = version >= 12 ? ReadSiteProgress(reader) : IslandSiteProgress.Empty;
             var sceneCheckpoint = version >= 13 ? ReadSceneCheckpoint(reader) : null;
