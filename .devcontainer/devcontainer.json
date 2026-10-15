@@ -1,0 +1,21 @@
+{
+  "name": "FrostArk - Unity Headless Probe",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "remoteUser": "vscode",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.watcherExclude": {
+          "**/Library/**": true,
+          "**/Temp/**": true,
+          "**/Logs/**": true
+        },
+        "search.exclude": {
+          "**/Library": true,
+          "**/Temp": true
+        }
+      }
+    }
+  },
+  "postCreateCommand": "bash tools/codespaces-unity-probe.sh check"
+}
