@@ -8,6 +8,10 @@ namespace FrostArk.Unity.Editor
 {
     public static class InteractivePlayModeRunner
     {
+        private static bool _originalSettingsRecorded;
+        private static bool _origEnterPlayModeOptionsEnabled;
+        private static EnterPlayModeOptions _origEnterPlayModeOptions;
+
         private class TestCallbacks : ICallbacks
         {
             private readonly string _outputPath;
@@ -43,7 +47,11 @@ namespace FrostArk.Unity.Editor
 
                 try
                 {
-                    EditorSettings.enterPlayModeOptions = EnterPlayModeOptions.DisableDomainReload | EnterPlayModeOptions.DisableSceneReload;
+                    if (_originalSettingsRecorded)
+                    {
+                        EditorSettings.enterPlayModeOptionsEnabled = _origEnterPlayModeOptionsEnabled;
+                        EditorSettings.enterPlayModeOptions = _origEnterPlayModeOptions;
+                    }
                 }
                 catch { }
 
@@ -83,6 +91,13 @@ namespace FrostArk.Unity.Editor
         {
             string resultsPath = Path.Combine(Directory.GetCurrentDirectory(), "Logs", resultFileName);
             Debug.Log($"[InteractivePlayModeRunner] Starting PlayMode test run for groups: {(groupNames != null ? string.Join(", ", groupNames) : "<ALL>")}");
+
+            if (!_originalSettingsRecorded)
+            {
+                _origEnterPlayModeOptionsEnabled = EditorSettings.enterPlayModeOptionsEnabled;
+                _origEnterPlayModeOptions = EditorSettings.enterPlayModeOptions;
+                _originalSettingsRecorded = true;
+            }
 
             // Disable Domain Reload to prevent losing batchmode coroutine execution.
             // Allow Scene Reload so PlaymodeTestsController.Start() executes and registers ActiveController.
