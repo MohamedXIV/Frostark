@@ -176,7 +176,6 @@ namespace FrostArk.Core.Save
             catch (Exception ex) when (ex is IOException || ex is InvalidDataException || ex is ArgumentException ||
                                         ex is OverflowException || ex is DecoderFallbackException)
             {
-                Console.Error.WriteLine("[TEMP DEBUG SAVE DECODE] " + ex);
                 return SaveDecodeResult.Failed(SaveDecodeError.InvalidData);
             }
         }
