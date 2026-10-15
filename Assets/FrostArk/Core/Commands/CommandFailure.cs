@@ -45,6 +45,9 @@ namespace FrostArk.Core.Commands
         UnknownSite = 40,
         SiteAlreadyLooted = 41,
         SiteFullyDamaged = 42,
-        CrewAlreadyIncapacitated = 43
+        CrewAlreadyIncapacitated = 43,
+        MagazineEmpty = 44,
+        MagazineAlreadyFull = 45,
+        WeaponCannotReload = 46
     }
 }

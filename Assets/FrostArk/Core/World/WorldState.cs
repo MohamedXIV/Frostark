@@ -222,6 +222,18 @@ namespace FrostArk.Core.World
                 inventory: paidAmmo, combat: Combat.Fired(weaponId));
         }
 
+        internal WorldState WithWeaponShotFromMagazine(EntityId weaponId, EntityId commandId) =>
+            CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                combat: Combat.Fired(weaponId));
+
+        internal WorldState WithWeaponReload(EntityId weaponId, long roundsLoaded,
+            InventoryState paidAmmo, EntityId commandId)
+        {
+            if (paidAmmo == null) throw new ArgumentNullException(nameof(paidAmmo));
+            return CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                inventory: paidAmmo, combat: Combat.Reloaded(weaponId, roundsLoaded));
+        }
+
         internal WorldState WithSiteChange(IslandSiteProgress next, EntityId commandId)
         {
             if (next == null) throw new ArgumentNullException(nameof(next));

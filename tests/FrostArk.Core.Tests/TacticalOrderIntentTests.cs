@@ -96,5 +96,18 @@ namespace FrostArk.Core.Tests
             Assert.That(first.Kind, Is.EqualTo(second.Kind));
             Assert.That(first.TargetId, Is.EqualTo(second.TargetId));
         }
+
+        [Test]
+        public void RetreatOrderSetsRetreatKindAndValidDestination()
+        {
+            var retreat = TacticalOrderIntent.RetreatTo(new[] { Hero, Medic }, worldX: 25.0, worldZ: -10.5);
+
+            Assert.That(retreat.Kind, Is.EqualTo(TacticalOrderKind.Retreat));
+            Assert.That(retreat.HasDestination, Is.True);
+            Assert.That(retreat.HasEntityTarget, Is.False);
+            Assert.That(retreat.DestinationX, Is.EqualTo(25.0));
+            Assert.That(retreat.DestinationZ, Is.EqualTo(-10.5));
+            Assert.That(retreat.ActorIds, Is.EqualTo(new[] { Hero, Medic }));
+        }
     }
 }
