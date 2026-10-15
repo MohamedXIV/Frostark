@@ -25,6 +25,46 @@ namespace FrostArk.Core.Save
             }
         }
 
+        // V14 append-only extension. The V10 combat body remains byte-identical
+        // for genuine V10-V13 migration; this extension supplies the magazine
+        // definition and ammo state that V13 could not persist.
+        private static void WriteCombatMagazineExtension(BinaryWriter writer, CombatState state)
+        {
+            WriteCount(writer, state.Weapons.Count);
+            foreach (var weapon in state.Weapons)
+            {
+                writer.Write(weapon.Definition.MagazineCapacity);
+                writer.Write(weapon.Definition.ReloadTicks);
+                writer.Write(weapon.MagazineRounds);
+            }
+        }
+
+        private static CombatState ReadCombatMagazineExtension(BinaryReader reader, CombatState legacy)
+        {
+            var count = ReadCount(reader);
+            if (count != legacy.Weapons.Count)
+                throw new InvalidDataException("Combat magazine extension weapon count mismatch.");
+
+            var restored = new List<WeaponRuntimeState>(count);
+            foreach (var old in legacy.Weapons)
+            {
+                long capacity = reader.ReadInt64();
+                long reloadTicks = reader.ReadInt64();
+                long rounds = reader.ReadInt64();
+                if (capacity < 0 || rounds < 0 ||
+                    (capacity == 0 && (reloadTicks != 0 || rounds != 0)) ||
+                    (capacity > 0 && (reloadTicks <= 0 || rounds > capacity)))
+                    throw new InvalidDataException("Invalid persisted weapon magazine parameters.");
+
+                var original = old.Definition;
+                var definition = new WeaponDefinition(original.Id, original.AmmoItemId,
+                    original.AmmoPerShot, original.CooldownTicks, capacity, reloadTicks);
+                restored.Add(new WeaponRuntimeState(definition, old.NextReadyTick,
+                    old.ShotCount, rounds));
+            }
+            return CombatState.Restore(legacy.Tick, restored);
+        }
+
         private static CombatState ReadCombat(BinaryReader reader)
         {
             long tick = reader.ReadInt64();
