@@ -36,6 +36,14 @@ $arguments = @('-batchmode', '-nographics', '-projectPath', ('"' + $project + '"
 
 if ($Mode -eq 'Import') {
     $arguments += @('-quit', '-executeMethod', 'FrostArk.Bootstrap.BootstrapSetup.ReportReadiness')
+} elseif ($Mode -eq 'PlayMode') {
+    $results = Join-Path $logs ('results-' + $Mode.ToLowerInvariant() + '.xml')
+    if (Test-Path -LiteralPath $results) { Remove-Item -LiteralPath $results }
+    if ($TestFilter -and $TestFilter -like '*CombatPlayModeTests*') {
+        $arguments += @('-executeMethod', 'FrostArk.Unity.Editor.InteractivePlayModeRunner.RunCombatPlayModeTests')
+    } else {
+        $arguments += @('-executeMethod', 'FrostArk.Unity.Editor.InteractivePlayModeRunner.RunAllPlayModeTests')
+    }
 } else {
     $results = Join-Path $logs ('results-' + $Mode.ToLowerInvariant() + '.xml')
     if (Test-Path -LiteralPath $results) { Remove-Item -LiteralPath $results }
@@ -52,6 +60,11 @@ if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
 }
 $process.Refresh()
 $code = $process.ExitCode
+
+# Ensure global EditorSettings is never left dirtied by in-memory runner overrides
+if ($Mode -eq 'PlayMode') {
+    git checkout ProjectSettings/EditorSettings.asset 2>$null
+}
 
 # Check compiler/package errors in log
 $errors = Select-String -LiteralPath $log -Pattern 'error CS\d{4}|Scripts have compiler errors|Failed to resolve packages'
