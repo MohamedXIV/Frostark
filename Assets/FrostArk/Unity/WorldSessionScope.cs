@@ -1,6 +1,7 @@
 using System;
 using FrostArk.Core.Application;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Save;
 using FrostArk.Core.World;
 using VContainer;
 using VContainer.Unity;
@@ -25,6 +26,8 @@ namespace FrostArk.Unity
     public sealed class WorldSessionScope : LifetimeScope
     {
         private WorldState _initialState;
+        private SaveGameDto _restoreSnapshot;
+        private Func<WorldMinute, long> _restoreAmbient;
 
         /// <summary>
         /// Explicitly configure the initial authoritative WorldState for this scope instance.
@@ -33,6 +36,19 @@ namespace FrostArk.Unity
         public void SetInitialState(WorldState state)
         {
             _initialState = state;
+        }
+
+        /// <summary>
+        /// Configure an already decoded, validated save before scope Build.
+        /// The scene bootstrap provider must not overwrite this restored run.
+        /// Authored thermal ships still require an explicit climate provider.
+        /// </summary>
+        public void SetRestoreSnapshot(SaveGameDto snapshot, Func<WorldMinute, long> ambientMilliC = null)
+        {
+            if (Container != null)
+                throw new InvalidOperationException("Restored snapshot must be configured before VContainer builds.");
+            _restoreSnapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+            _restoreAmbient = ambientMilliC;
         }
 
         protected override void Configure(IContainerBuilder builder)
@@ -48,10 +64,22 @@ namespace FrostArk.Unity
 
             // Explicit constructor selection: WorldSession initializes with the provided
             // initial state or default foundation state (minute 0).
-            builder.Register<WorldSession>(_ => _initialState != null
-                ? new WorldSession(_initialState)
+            builder.Register<WorldSession>(_ => _restoreSnapshot != null
+                ? WorldSession.Restore(_restoreSnapshot, ambientMilliC: _restoreAmbient)
+                : _initialState != null ? new WorldSession(_initialState)
                 : new WorldSession(), Lifetime.Scoped);
-            builder.RegisterComponentInHierarchy<WorldSessionPresenter>();
+            // Optional presenter registration (replaces unconditional RegisterComponentInHierarchy<WorldSessionPresenter>() to allow presenter-free test scopes)
+            var presenter = GetComponentInChildren<WorldSessionPresenter>() ?? FindAnyObjectByType<WorldSessionPresenter>();
+            if (presenter != null)
+            {
+                builder.RegisterComponent(presenter);
+            }
+
+            // Entire run root may optionally opt into the ship/shore scene
+            // adapter. Destination environment scenes must remain scope-free.
+            var transit = GetComponent<ShoreSceneTransitCoordinator>();
+            if (transit != null)
+                builder.RegisterComponent(transit);
 
             var commander = GetComponentInChildren<TacticalCommandController>() ?? FindAnyObjectByType<TacticalCommandController>();
             if (commander != null)

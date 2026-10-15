@@ -11,6 +11,15 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/FrostArk/Scenes/TacticalVerticalSlice.unity
     guid: 48702a58b2fa51940974088bc1be2109
+  - enabled: 1
+    path: Assets/FrostArk/Scenes/ShipShoreTransitLauncher.unity
+    guid: 39a32b089170fb0468fc6afd89ed8a4f
+  - enabled: 1
+    path: Assets/FrostArk/Scenes/ShipDeckEnvironment.unity
+    guid: 3e482fd75bc087f4e88ff504d1f3c003
+  - enabled: 1
+    path: Assets/FrostArk/Scenes/ShoreLandingEnvironment.unity
+    guid: 8b402c3efaa97554b9b1467a07b4ac4a
   m_configObjects:
     com.unity.addressableassets: {fileID: 11400000, guid: a258568c7e9ae9547a77ac49a7f26e57, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
