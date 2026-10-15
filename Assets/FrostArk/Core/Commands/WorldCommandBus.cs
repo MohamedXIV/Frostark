@@ -280,14 +280,57 @@ namespace FrostArk.Core.Commands
                 if (state.Combat.Tick < weapon.NextReadyTick)
                     return CommandResult.Rejected(state, CommandFailure.WeaponCoolingDown);
 
-                var paid = state.Inventory.TryConsumePack(weapon.Definition.AmmoItemId,
-                    weapon.Definition.AmmoPerShot);
+                if (weapon.Definition.MagazineCapacity > 0)
+                {
+                    if (weapon.MagazineRounds < weapon.Definition.AmmoPerShot)
+                        return CommandResult.Rejected(state, CommandFailure.MagazineEmpty);
+
+                    var next = state.WithWeaponShotFromMagazine(fire.WeaponId, command.Id);
+                    return CommandResult.Committed(next, new WorldEvent(command.Id,
+                        state.Minute, next.Revision, WorldEventKind.WeaponFired,
+                        fire.WeaponId, weapon.Definition.AmmoItemId, weapon.Definition.AmmoPerShot));
+                }
+                else
+                {
+                    var paid = state.Inventory.TryConsumePack(weapon.Definition.AmmoItemId,
+                        weapon.Definition.AmmoPerShot);
+                    if (!paid.Success)
+                        return CommandResult.Rejected(state, MapInventoryFailure(paid.Error));
+                    var next = state.WithWeaponShot(fire.WeaponId, paid.State, command.Id);
+                    return CommandResult.Committed(next, new WorldEvent(command.Id,
+                        state.Minute, next.Revision, WorldEventKind.WeaponFired,
+                        fire.WeaponId, weapon.Definition.AmmoItemId, weapon.Definition.AmmoPerShot));
+                }
+            }
+
+            if (command is ReloadWeaponCommand reload)
+            {
+                var weapon = state.Combat.Get(reload.WeaponId);
+                if (weapon == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownWeapon);
+                if (state.Inventory.GetAmount(InventoryContainer.Pack, reload.WeaponId) <= 0)
+                    return CommandResult.Rejected(state, CommandFailure.WeaponNotCarried);
+                if (state.Combat.Tick < weapon.NextReadyTick)
+                    return CommandResult.Rejected(state, CommandFailure.WeaponCoolingDown);
+                if (weapon.Definition.MagazineCapacity <= 0)
+                    return CommandResult.Rejected(state, CommandFailure.WeaponCannotReload);
+                if (weapon.MagazineRounds >= weapon.Definition.MagazineCapacity)
+                    return CommandResult.Rejected(state, CommandFailure.MagazineAlreadyFull);
+
+                long needed = weapon.Definition.MagazineCapacity - weapon.MagazineRounds;
+                long available = state.Inventory.GetAmount(InventoryContainer.Pack, weapon.Definition.AmmoItemId);
+                if (available <= 0)
+                    return CommandResult.Rejected(state, CommandFailure.InsufficientInventory);
+
+                long toLoad = Math.Min(needed, available);
+                var paid = state.Inventory.TryConsumePack(weapon.Definition.AmmoItemId, toLoad);
                 if (!paid.Success)
                     return CommandResult.Rejected(state, MapInventoryFailure(paid.Error));
-                var next = state.WithWeaponShot(fire.WeaponId, paid.State, command.Id);
+
+                var next = state.WithWeaponReload(reload.WeaponId, toLoad, paid.State, command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
-                    state.Minute, next.Revision, WorldEventKind.WeaponFired,
-                    fire.WeaponId, weapon.Definition.AmmoItemId, weapon.Definition.AmmoPerShot));
+                    state.Minute, next.Revision, WorldEventKind.WeaponReloaded,
+                    reload.WeaponId, weapon.Definition.AmmoItemId, toLoad));
             }
 
             if (command is TreatCrewWoundCommand treatment)

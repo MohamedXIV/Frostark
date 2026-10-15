@@ -471,5 +471,163 @@ namespace FrostArk.Unity.Tests
             target.SyncFromWounds(restoredSnapshot.State.CrewDuty.Get(enemyId)!.Wounds);
             Assert.That(target.CurrentHealth, Is.EqualTo(750), "Target proxy must project exact same health after restore.");
         }
+
+        [Test]
+        public void ArmorMitigation_PartialDamage_MitigatesAndAppliesToHealth()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            actorObj.transform.position = Vector3.zero;
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+            actor.SetWeapon(EntityId.Parse("item:weapon:rifle"), range: 15.0f, damage: 250);
+
+            var enemyTarget = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            enemyTarget.SetArmorPermille(500); // 50% mitigation
+            Physics.SyncTransforms();
+
+            var session = new WorldSession(TacticalSliceFixtureState.CreateDefaultState());
+            actor.SetSession(session);
+
+            int reportedDamage = -1;
+            actor.OnTargetHit += (_, _, dmg) => reportedDamage = dmg;
+
+            bool attackStarted = actor.AttackTarget(enemyTarget, session);
+
+            Assert.That(attackStarted, Is.True);
+            Assert.That(reportedDamage, Is.EqualTo(125), "250 damage with 500 permille armor must result in 125 effective wounds.");
+            Assert.That(enemyTarget.CurrentHealth, Is.EqualTo(875), "Target health must decrease by exactly 125.");
+        }
+
+        [Test]
+        public void ArmorMitigation_FullAbsorption_EmitsZeroDamageAndArmorAbsorbed()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            actorObj.transform.position = Vector3.zero;
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+            actor.SetWeapon(EntityId.Parse("item:weapon:rifle"), range: 15.0f, damage: 250);
+
+            var enemyTarget = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            enemyTarget.SetArmorPermille(1000); // 100% deflection
+            Physics.SyncTransforms();
+
+            var session = new WorldSession(TacticalSliceFixtureState.CreateDefaultState());
+            actor.SetSession(session);
+
+            int reportedDamage = -1;
+            string failReason = null;
+            actor.OnTargetHit += (_, _, dmg) => reportedDamage = dmg;
+            actor.OnAttackFailed += (_, reason) => failReason = reason;
+
+            bool attackStarted = actor.AttackTarget(enemyTarget, session);
+
+            Assert.That(attackStarted, Is.True);
+            Assert.That(reportedDamage, Is.EqualTo(0), "1000 permille armor must deflect all damage.");
+            Assert.That(failReason, Is.EqualTo("ArmorAbsorbed"));
+            Assert.That(enemyTarget.CurrentHealth, Is.EqualTo(1000), "Target health must remain 1000.");
+            Assert.That(session.Capture().State.CrewDuty.Get(enemyTarget.TargetId)!.Wounds, Is.Zero);
+        }
+
+        [Test]
+        public void WeaponMagazine_DischargeDepletesMagazine_AutoReloadsFromPack()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            actorObj.transform.position = Vector3.zero;
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+            actor.SetWeapon(EntityId.Parse("item:weapon:rifle"), range: 15.0f, damage: 250);
+
+            var enemyTarget = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            Physics.SyncTransforms();
+
+            // Magazine capacity 2, reload takes 4 ticks, cooldown 3 ticks
+            var session = new WorldSession(TacticalSliceFixtureState.CreateStateWithMagazineWeapon(magazineCapacity: 2, reloadTicks: 4));
+            actor.SetSession(session);
+
+            long reloadRounds = -1;
+            actor.OnWeaponReloaded += (_, count) => reloadRounds = count;
+
+            // AttackTarget fires Shot 1 from magazine (2 -> 1)
+            bool attackStarted = actor.AttackTarget(enemyTarget, session);
+            Assert.That(attackStarted, Is.True);
+            var state = session.Capture().State;
+            Assert.That(state.Combat.Get(actor.WeaponId)!.MagazineRounds, Is.EqualTo(1));
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId), Is.EqualTo(20));
+
+            // Advance combat ticks beyond cooldown
+            session.AdvanceCombatTick(4);
+
+            // Shot 2: fires from magazine (1 -> 0)
+            Assert.That(actor.TryExecuteShot(), Is.True);
+            state = session.Capture().State;
+            Assert.That(state.Combat.Get(actor.WeaponId)!.MagazineRounds, Is.EqualTo(0));
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId), Is.EqualTo(20));
+
+            // Advance combat ticks beyond cooldown
+            session.AdvanceCombatTick(8);
+
+            // Shot 3: Magazine is empty! Auto-reloads from pack
+            bool shotFired = actor.TryExecuteShot();
+            Assert.That(shotFired, Is.False, "Shot execution must yield during reload initiation.");
+            Assert.That(reloadRounds, Is.EqualTo(2), "Reload must load 2 rounds into magazine.");
+
+            state = session.Capture().State;
+            Assert.That(state.Combat.Get(actor.WeaponId)!.MagazineRounds, Is.EqualTo(2));
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId), Is.EqualTo(18), "Pack ammo must be reduced by 2.");
+        }
+
+        [Test]
+        public void ColdExposure_ReducesMovementSpeed()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+
+            float baseSpeed = actor.Agent.speed;
+            Assert.That(baseSpeed, Is.GreaterThan(0));
+
+            actor.SetColdExposurePermille(500);
+            Assert.That(actor.ColdExposurePermille, Is.EqualTo(500));
+            float expected500 = baseSpeed * ColdCombatModifiers.CalculateSpeedMultiplier(500);
+            Assert.That(actor.Agent.speed, Is.EqualTo(expected500).Within(0.001f));
+
+            actor.SetColdExposurePermille(1000);
+            float expected1000 = baseSpeed * ColdCombatModifiers.CalculateSpeedMultiplier(1000);
+            Assert.That(actor.Agent.speed, Is.EqualTo(expected1000).Within(0.001f));
+
+            actor.SetColdExposurePermille(0);
+            Assert.That(actor.Agent.speed, Is.EqualTo(baseSpeed).Within(0.001f));
+        }
+
+        [Test]
+        public void TacticalRetreat_IncreasesSpeedAndSetsRetreatState()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+
+            float baseSpeed = actor.Agent.speed;
+
+            bool retreatStarted = false;
+            actor.OnRetreatStarted += _ => retreatStarted = true;
+
+            actor.RetreatTo(new Vector3(10, 0, 10));
+            Assert.That(actor.IsRetreating, Is.True);
+            Assert.That(actor.Agent.speed, Is.EqualTo(baseSpeed * 1.25f).Within(0.001f));
+
+            actor.MoveTo(new Vector3(5, 0, 5));
+            Assert.That(actor.IsRetreating, Is.False);
+            Assert.That(actor.Agent.speed, Is.EqualTo(baseSpeed).Within(0.001f));
+        }
     }
 }

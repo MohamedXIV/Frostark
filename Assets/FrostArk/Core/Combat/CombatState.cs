@@ -32,7 +32,8 @@ namespace FrostArk.Core.Combat
             return Restore(0, weapons.Select(w =>
             {
                 if (w == null) throw new ArgumentException("Null weapon definition.", nameof(weapons));
-                return new WeaponRuntimeState(w, 0, 0);
+                long initialMag = w.MagazineCapacity > 0 ? w.MagazineCapacity : 0;
+                return new WeaponRuntimeState(w, 0, 0, initialMag);
             }));
         }
 
@@ -77,6 +78,24 @@ namespace FrostArk.Core.Combat
                 if (next[i].Definition.Id == weaponId)
                 {
                     next[i] = current.AfterFire(Tick);
+                    break;
+                }
+            return new CombatState(Tick, next);
+        }
+
+        internal CombatState Reloaded(EntityId weaponId, long roundsLoaded)
+        {
+            var current = Get(weaponId);
+            if (current == null) throw new ArgumentException("Unknown weapon.", nameof(weaponId));
+            if (Tick < current.NextReadyTick)
+                throw new InvalidOperationException("Reload called while cooling down.");
+            if (roundsLoaded <= 0)
+                throw new ArgumentOutOfRangeException(nameof(roundsLoaded));
+            var next = (WeaponRuntimeState[])_weapons.Clone();
+            for (int i = 0; i < next.Length; i++)
+                if (next[i].Definition.Id == weaponId)
+                {
+                    next[i] = current.AfterReload(Tick, roundsLoaded);
                     break;
                 }
             return new CombatState(Tick, next);

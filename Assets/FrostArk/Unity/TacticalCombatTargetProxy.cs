@@ -31,6 +31,10 @@ namespace FrostArk.Unity
         [SerializeField]
         private int currentHealth = 1000;
 
+        [SerializeField]
+        [Range(0, 1000)]
+        private int armorPermille = 0;
+
         private EntityId _targetIdEntity;
         private Renderer _renderer;
 
@@ -55,6 +59,7 @@ namespace FrostArk.Unity
         public int CurrentHealth => currentHealth;
         public int MaxHealth => maxHealth;
         public bool IsDead => currentHealth <= 0;
+        public int ArmorPermille => Mathf.Clamp(armorPermille, 0, 1000);
 
         public event Action<TacticalCombatTargetProxy, int> OnDamaged;
         public event Action<TacticalCombatTargetProxy> OnEliminated;
@@ -96,6 +101,11 @@ namespace FrostArk.Unity
             currentHealth = Mathf.Clamp(health, 0, maxHealth);
             if (IsDead && Hitbox != null)
                 Hitbox.enabled = false;
+        }
+
+        public void SetArmorPermille(int value)
+        {
+            armorPermille = Mathf.Clamp(value, 0, 1000);
         }
 
         public void SyncFromWounds(int wounds)

@@ -14,7 +14,8 @@ namespace FrostArk.Core.World
     {
         Move = 0,
         Interact = 1,
-        Attack = 2
+        Attack = 2,
+        Retreat = 3
     }
 
     /// <summary>
@@ -29,7 +30,7 @@ namespace FrostArk.Core.World
 
         public IReadOnlyList<EntityId> ActorIds => _actorIds;
         public TacticalOrderKind Kind { get; }
-        public bool HasDestination => Kind == TacticalOrderKind.Move;
+        public bool HasDestination => Kind == TacticalOrderKind.Move || Kind == TacticalOrderKind.Retreat;
         public double DestinationX { get; }
         public double DestinationZ { get; }
         public bool HasEntityTarget => Kind == TacticalOrderKind.Interact ||
@@ -72,6 +73,18 @@ namespace FrostArk.Core.World
                 throw new ArgumentOutOfRangeException(nameof(worldZ));
 
             return new TacticalOrderIntent(actorIds, TacticalOrderKind.Move,
+                worldX, worldZ, default);
+        }
+
+        public static TacticalOrderIntent RetreatTo(IEnumerable<EntityId> actorIds,
+            double worldX, double worldZ)
+        {
+            if (double.IsNaN(worldX) || double.IsInfinity(worldX))
+                throw new ArgumentOutOfRangeException(nameof(worldX));
+            if (double.IsNaN(worldZ) || double.IsInfinity(worldZ))
+                throw new ArgumentOutOfRangeException(nameof(worldZ));
+
+            return new TacticalOrderIntent(actorIds, TacticalOrderKind.Retreat,
                 worldX, worldZ, default);
         }
 

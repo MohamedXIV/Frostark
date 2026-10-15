@@ -1,3 +1,4 @@
+using System;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Commands
@@ -200,6 +201,23 @@ namespace FrostArk.Core.Commands
         public long ExpectedRevision { get; }
         public FireWeaponCommand(EntityId id, EntityId weaponId, long expectedRevision)
         {
+            Id = id;
+            WeaponId = weaponId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
+
+    public sealed class ReloadWeaponCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId WeaponId { get; }
+        public long ExpectedRevision { get; }
+
+        public ReloadWeaponCommand(EntityId id, EntityId weaponId, long expectedRevision)
+        {
+            if (!id.IsValid) throw new ArgumentException("Command ID required.", nameof(id));
+            if (!weaponId.IsValid) throw new ArgumentException("Weapon ID required.", nameof(weaponId));
+            if (expectedRevision < 0) throw new ArgumentOutOfRangeException(nameof(expectedRevision));
             Id = id;
             WeaponId = weaponId;
             ExpectedRevision = expectedRevision;

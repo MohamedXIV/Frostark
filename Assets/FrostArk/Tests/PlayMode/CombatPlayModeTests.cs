@@ -273,5 +273,111 @@ namespace FrostArk.Unity.Tests
             Assert.That(_enemy.Hitbox.enabled, Is.False, "Hitbox collider must be disabled upon elimination.");
             Assert.That(_protagonist.PendingTarget, Is.Null, "Actor must clear pending target when eliminated.");
         }
+
+        [UnityTest]
+        public IEnumerator Test05_ArmorMitigation_MitigatesBallisticDamageInRealPhysics()
+        {
+            // Position protagonist in clear range
+            _protagonist.transform.position = new Vector3(0, 0, 5.0f);
+            _protagonist.Agent.Warp(new Vector3(0, 0, 5.0f));
+            yield return null;
+
+            // Set target armor to 500 permille (50% mitigation)
+            _enemy.SetArmorPermille(500);
+
+            _commander.ClearSelection();
+            _commander.SelectActor(_protagonist.ActorId);
+
+            int reportedDamage = -1;
+            _protagonist.OnTargetHit += (_, _, dmg) => reportedDamage = dmg;
+
+            _commander.IssueAttackOrder(_enemy);
+
+            yield return new WaitForSeconds(0.25f);
+
+            Assert.That(reportedDamage, Is.EqualTo(125), "250 damage should mitigate to 125 with 500 permille armor.");
+            Assert.That(_enemy.CurrentHealth, Is.EqualTo(875), "Enemy health should be reduced by 125 (1000 -> 875).");
+            Assert.That(_session.Capture().State.CrewDuty.Get(_enemy.TargetId)!.Wounds, Is.EqualTo(125),
+                "Canonical session wounds must match mitigated damage.");
+        }
+
+        [UnityTest]
+        public IEnumerator Test06_MagazineDepletion_AutoReloadsAndResumesFiring()
+        {
+            // Use state with magazine capacity 2, reload takes 2 ticks
+            var magState = TacticalSliceFixtureState.CreateStateWithMagazineWeapon(magazineCapacity: 2, reloadTicks: 2);
+            _session = new WorldSession(magState);
+            _commander.SetSession(_session);
+            _protagonist.SetSession(_session);
+
+            var tickRunner = _sceneRoot.GetComponentInChildren<CombatTickRunner>();
+            if (tickRunner != null)
+            {
+                tickRunner.SetSession(_session);
+            }
+
+            _protagonist.transform.position = new Vector3(0, 0, 5.0f);
+            _protagonist.Agent.Warp(new Vector3(0, 0, 5.0f));
+            yield return null;
+
+            _commander.ClearSelection();
+            _commander.SelectActor(_protagonist.ActorId);
+
+            long reloadCount = 0;
+            _protagonist.OnWeaponReloaded += (_, loaded) => reloadCount += loaded;
+
+            _commander.IssueAttackOrder(_enemy);
+
+            // Wait for 3 shots to occur (shot 1, shot 2, reload, shot 3)
+            float timeout = 5.0f;
+            while ((_enemy.CurrentHealth > 250 || reloadCount == 0) && timeout > 0)
+            {
+                yield return null;
+                timeout -= Time.deltaTime;
+            }
+
+            Assert.That(_enemy.CurrentHealth, Is.LessThanOrEqualTo(250),
+                "Actor must fire 3 shots across magazine reload to reduce health to 250.");
+            Assert.That(reloadCount, Is.GreaterThanOrEqualTo(2),
+                "Actor must have reloaded at least once upon magazine depletion.");
+            Assert.That(_session.Capture().State.Inventory.GetAmount(
+                InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId), Is.LessThan(20),
+                "Pack ammunition must be consumed to replenish magazine.");
+        }
+
+        [UnityTest]
+        public IEnumerator Test07_TacticalRetreat_DisengagesCombatAndNavigatesToRetreatPoint()
+        {
+            _protagonist.transform.position = new Vector3(0, 0, 0);
+            _protagonist.Agent.Warp(new Vector3(0, 0, 0));
+            yield return null;
+
+            _commander.ClearSelection();
+            _commander.SelectActor(_protagonist.ActorId);
+
+            // Issue attack order first
+            _commander.IssueAttackOrder(_enemy);
+            Assert.That(_protagonist.PendingTarget, Is.Not.Null);
+
+            // Immediately issue retreat order to opposite direction
+            Vector3 retreatDest = new Vector3(0, 0, -10.0f);
+            bool retreatIssued = _commander.IssueRetreatOrder(retreatDest);
+            Assert.That(retreatIssued, Is.True);
+            Assert.That(_protagonist.IsRetreating, Is.True, "Actor must enter retreat state.");
+            Assert.That(_protagonist.PendingTarget, Is.Null, "Pending combat must cancel when retreating.");
+
+            // Wait for actor to navigate away from enemy towards retreat point
+            float timeout = 4.0f;
+            while (Vector3.Distance(_protagonist.transform.position, retreatDest) > 1.5f && timeout > 0)
+            {
+                yield return null;
+                timeout -= Time.deltaTime;
+            }
+
+            Assert.That(Vector3.Distance(_protagonist.transform.position, retreatDest), Is.LessThan(2.0f),
+                "Actor must have navigated to retreat destination.");
+            Assert.That(_protagonist.transform.position.z, Is.LessThan(-7.0f),
+                "Actor must be far away from enemy sentry.");
+        }
     }
 }
