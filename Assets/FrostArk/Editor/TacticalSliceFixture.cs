@@ -99,16 +99,30 @@ namespace FrostArk.Unity.Editor
                 crateProxy.SetTargetId(EntityId.Parse("salvage:supply_cache"));
                 crateProxy.SetInteractionRange(2.5f);
 
-                // 9. Bake NavMesh surface across walkable ground and cover obstacles
+                // 9. Hostile Combat Target Sentry
+                var enemyObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                enemyObj.name = "EnemySentry";
+                enemyObj.transform.SetParent(sceneRoot.transform, false);
+                enemyObj.transform.position = new Vector3(0, 1.0f, 10.0f);
+                enemyObj.transform.localScale = new Vector3(0.8f, 1.0f, 0.8f);
+                var enemyRenderer = enemyObj.GetComponent<Renderer>();
+                if (enemyRenderer != null) enemyRenderer.material.color = Color.red;
+                var enemyTarget = enemyObj.AddComponent<TacticalCombatTargetProxy>();
+                enemyTarget.SetTargetId(EntityId.Parse("actor:enemy"));
+                enemyTarget.SetHostile(true);
+                enemyTarget.SetHealth(1000, 1000);
+
+                // 10. Bake NavMesh surface across walkable ground and cover obstacles
                 var navSurface = ground.AddComponent<NavMeshSurface>();
                 navSurface.collectObjects = CollectObjects.All;
                 navSurface.BuildNavMesh();
 
-                // 10. Session Scope & Presenters
+                // 11. Session Scope & Presenters
                 var scopeRoot = new GameObject("FrostArkSessionScope");
                 SceneManager.MoveGameObjectToScene(scopeRoot, fixtureScene);
                 var scope = scopeRoot.AddComponent<WorldSessionScope>();
                 scopeRoot.AddComponent<TacticalSliceBootstrap>();
+                scopeRoot.AddComponent<CombatTickRunner>();
 
                 var presenterObj = new GameObject("SessionPresenter");
                 presenterObj.transform.SetParent(scopeRoot.transform, false);
@@ -183,6 +197,7 @@ namespace FrostArk.Unity.Editor
             var proxy = actorObj.AddComponent<TacticalActorProxy>();
             proxy.SetActorId(actorId);
             proxy.SetSelectionMarker(ring);
+            proxy.SetWeapon(EntityId.Parse("item:weapon:rifle"), 15.0f, 250);
 
             return proxy;
         }

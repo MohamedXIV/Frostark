@@ -12,7 +12,8 @@ namespace FrostArk.Unity
 {
     /// <summary>
     /// Tactical commander coordinating pointer interaction, selection state,
-    /// tactical order intent generation, and actor locomotion/interaction execution.
+    /// tactical order intent generation, actor locomotion/interaction execution,
+    /// and contextual hostile combat targeting.
     /// Bridges contextual scene interactions with authoritative WorldSession commands.
     /// </summary>
     public class TacticalCommandController : MonoBehaviour
@@ -28,15 +29,21 @@ namespace FrostArk.Unity
 
         private readonly List<TacticalActorProxy> _registeredActors = new List<TacticalActorProxy>();
         private readonly List<TacticalInteractableProxy> _registeredInteractables = new List<TacticalInteractableProxy>();
+        private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
         private WorldSession _session;
 
         public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
         public IReadOnlyList<TacticalInteractableProxy> Interactables => _registeredInteractables;
+        public IReadOnlyList<TacticalCombatTargetProxy> Targets => _registeredTargets;
         public TacticalOrderIntent LastIssuedIntent { get; private set; }
 
         public event Action<TacticalOrderIntent> OrderIssued;
+        public event Action<TacticalActorProxy, TacticalCombatTargetProxy> ShotFired;
+        public event Action<TacticalActorProxy, TacticalCombatTargetProxy, int> TargetHit;
+        public event Action<TacticalActorProxy, TacticalInteractableProxy> InteractionCompleted;
+        public event Action<TacticalActorProxy, TacticalInteractableProxy, string> InteractionFailed;
 
         private void Awake()
         {
@@ -48,21 +55,26 @@ namespace FrostArk.Unity
             _selectionController.SelectionChanged -= OnSelectionChanged;
             _selectionController.SelectionChanged += OnSelectionChanged;
 
-            // Automatically find scene actors and interactables
+            // Automatically find scene actors, interactables, and targets
             RefreshSceneRegistrations();
         }
 
         [Inject]
         public void Construct(WorldSession session)
         {
-            _session = session;
-            SyncPersistedSalvageVisuals();
+            SetSession(session);
         }
 
         public void SetSession(WorldSession session)
         {
             _session = session;
+            foreach (var actor in _registeredActors)
+            {
+                if (actor != null)
+                    actor.SetSession(_session);
+            }
             SyncPersistedSalvageVisuals();
+            SyncPersistedTargetVisuals();
         }
 
         private void SyncPersistedSalvageVisuals()
@@ -72,6 +84,21 @@ namespace FrostArk.Unity
             foreach (var target in _registeredInteractables)
                 if (target != null)
                     target.SetDepleted(inventory.IsCollected(target.TargetId));
+        }
+
+        private void SyncPersistedTargetVisuals()
+        {
+            if (_session == null) return;
+            var crew = _session.Capture().State.CrewDuty;
+            foreach (var target in _registeredTargets)
+            {
+                if (target != null)
+                {
+                    var member = crew.Get(target.TargetId);
+                    if (member != null)
+                        target.SyncFromWounds(member.Wounds);
+                }
+            }
         }
 
         public void SetDestinationMarker(TacticalDestinationMarker marker)
@@ -87,13 +114,24 @@ namespace FrostArk.Unity
         public void RefreshSceneRegistrations()
         {
             _registeredActors.Clear();
-            _registeredActors.AddRange(FindObjectsByType<TacticalActorProxy>());
+            var foundActors = FindObjectsByType<TacticalActorProxy>();
+            foreach (var actor in foundActors)
+            {
+                RegisterActor(actor);
+            }
 
             _registeredInteractables.Clear();
             var foundInteractables = FindObjectsByType<TacticalInteractableProxy>();
             foreach (var interactable in foundInteractables)
             {
                 RegisterInteractable(interactable);
+            }
+
+            _registeredTargets.Clear();
+            var foundTargets = FindObjectsByType<TacticalCombatTargetProxy>();
+            foreach (var target in foundTargets)
+            {
+                RegisterCombatTarget(target);
             }
 
             SyncActorSelectionVisuals();
@@ -104,6 +142,11 @@ namespace FrostArk.Unity
             if (actor != null && !_registeredActors.Contains(actor))
             {
                 _registeredActors.Add(actor);
+                actor.SetSession(_session);
+                actor.OnShotFired -= HandleActorShotFired;
+                actor.OnShotFired += HandleActorShotFired;
+                actor.OnTargetHit -= HandleActorTargetHit;
+                actor.OnTargetHit += HandleActorTargetHit;
                 actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
             }
         }
@@ -112,6 +155,8 @@ namespace FrostArk.Unity
         {
             if (actor != null)
             {
+                actor.OnShotFired -= HandleActorShotFired;
+                actor.OnTargetHit -= HandleActorTargetHit;
                 _registeredActors.Remove(actor);
                 _selectionController.Exclude(actor.ActorId);
             }
@@ -124,11 +169,23 @@ namespace FrostArk.Unity
                 _registeredInteractables.Add(interactable);
                 interactable.OnInteracted -= HandleInteractableTriggered;
                 interactable.OnInteracted += HandleInteractableTriggered;
-                // An environment scene proxy is a view. Restored loot truth
-                // comes from the SAME WorldSession, never the prefab default.
                 if (_session != null)
                     interactable.SetDepleted(
                         _session.Capture().State.Inventory.IsCollected(interactable.TargetId));
+            }
+        }
+
+        public void RegisterCombatTarget(TacticalCombatTargetProxy target)
+        {
+            if (target != null && !_registeredTargets.Contains(target))
+            {
+                _registeredTargets.Add(target);
+                if (_session != null)
+                {
+                    var member = _session.Capture().State.CrewDuty.Get(target.TargetId);
+                    if (member != null)
+                        target.SyncFromWounds(member.Wounds);
+                }
             }
         }
 
@@ -176,7 +233,6 @@ namespace FrostArk.Unity
 
             if (!anyDispatched)
             {
-                // When every NavMesh dispatch fails, do not produce success feedback
                 return false;
             }
 
@@ -203,7 +259,6 @@ namespace FrostArk.Unity
             if (selectedActors.Count == 0)
                 return false;
 
-            // Primary ordered actor approaches and performs contextual interaction
             bool dispatched = selectedActors[0].ApproachAndInteract(interactable);
             if (!dispatched)
                 return false;
@@ -221,6 +276,38 @@ namespace FrostArk.Unity
             return true;
         }
 
+        public bool IssueAttackOrder(TacticalCombatTargetProxy target)
+        {
+            if (target == null || target.IsDead || !target.IsHostile || _selectionController.Count == 0)
+                return false;
+
+            var selectedActors = GetSelectedActorProxies();
+            if (selectedActors.Count == 0)
+                return false;
+
+            bool anyDispatched = false;
+            foreach (var actor in selectedActors)
+            {
+                if (actor.AttackTarget(target, _session))
+                    anyDispatched = true;
+            }
+
+            if (!anyDispatched)
+                return false;
+
+            var intent = TacticalOrderIntent.AttackTarget(
+                _selectionController.SelectedActorIds,
+                target.TargetId);
+
+            LastIssuedIntent = intent;
+            OrderIssued?.Invoke(intent);
+
+            if (destinationMarker != null)
+                destinationMarker.Show(target.transform.position);
+
+            return true;
+        }
+
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
         {
             if (tacticalCamera == null)
@@ -229,10 +316,24 @@ namespace FrostArk.Unity
                 return false;
 
             Ray ray = tacticalCamera.ScreenPointToRay(screenPoint);
+            var hits = Physics.RaycastAll(ray, 100f);
+            var sortedHits = hits.OrderBy(h => h.distance).ToArray();
 
-            // 1. Check for clicking an actor
-            var actorHits = Physics.RaycastAll(ray, 100f);
-            foreach (var hit in actorHits.OrderBy(h => h.distance))
+            // 1. If actors are selected, check for clicking an attackable hostile target first
+            if (_selectionController.Count > 0)
+            {
+                foreach (var hit in sortedHits)
+                {
+                    var target = hit.collider.GetComponentInParent<TacticalCombatTargetProxy>();
+                    if (target != null && target.IsHostile && !target.IsDead)
+                    {
+                        return IssueAttackOrder(target);
+                    }
+                }
+            }
+
+            // 2. Check for clicking a friendly actor (selection)
+            foreach (var hit in sortedHits)
             {
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
                 if (actor != null)
@@ -242,10 +343,10 @@ namespace FrostArk.Unity
                 }
             }
 
-            // 2. Check for clicking an interactable (if actors are selected)
+            // 3. Check for clicking an interactable (if actors are selected)
             if (_selectionController.Count > 0)
             {
-                foreach (var hit in actorHits.OrderBy(h => h.distance))
+                foreach (var hit in sortedHits)
                 {
                     var interactable = hit.collider.GetComponentInParent<TacticalInteractableProxy>();
                     if (interactable != null && !interactable.IsDepleted)
@@ -255,7 +356,7 @@ namespace FrostArk.Unity
                 }
             }
 
-            // 3. Check for clicking ground
+            // 4. Check for clicking ground
             if (Physics.Raycast(ray, out RaycastHit groundHit, 100f, groundLayer))
             {
                 if (_selectionController.Count > 0)
@@ -264,7 +365,6 @@ namespace FrostArk.Unity
                 }
                 else
                 {
-                    // Clicked empty ground with no selection: clear
                     ClearSelection();
                 }
             }
@@ -300,8 +400,15 @@ namespace FrostArk.Unity
             }
         }
 
-        public event Action<TacticalActorProxy, TacticalInteractableProxy> InteractionCompleted;
-        public event Action<TacticalActorProxy, TacticalInteractableProxy, string> InteractionFailed;
+        private void HandleActorShotFired(TacticalActorProxy actor, TacticalCombatTargetProxy target)
+        {
+            ShotFired?.Invoke(actor, target);
+        }
+
+        private void HandleActorTargetHit(TacticalActorProxy actor, TacticalCombatTargetProxy target, int damage)
+        {
+            TargetHit?.Invoke(actor, target, damage);
+        }
 
         private void HandleInteractableTriggered(TacticalActorProxy actor, TacticalInteractableProxy interactable)
         {
@@ -310,7 +417,6 @@ namespace FrostArk.Unity
 
             Debug.Log($"[TacticalCommandController] Actor {actor.ActorId} triggered interaction with {interactable.TargetId}");
 
-            // Submit authoritative CollectSalvageCommand to WorldSession if present
             if (_session != null)
             {
                 var commandId = EntityId.Parse($"cmd:salvage:{interactable.TargetId}:{Guid.NewGuid():N}");
@@ -334,7 +440,6 @@ namespace FrostArk.Unity
             }
             else
             {
-                // Missing WorldSession cannot show depleted salvage or increment a presentation-only success event
                 Debug.LogWarning($"[TacticalCommandController] Interaction rejected for {interactable.TargetId}: No authoritative WorldSession is bound.");
                 InteractionFailed?.Invoke(actor, interactable, "NoSessionBound");
             }
@@ -342,7 +447,6 @@ namespace FrostArk.Unity
 
         private void Update()
         {
-            // Unity Input System pointer click support in PlayMode
             var mouse = UnityEngine.InputSystem.Mouse.current;
             if (mouse != null && mouse.leftButton.wasPressedThisFrame)
             {
@@ -358,6 +462,14 @@ namespace FrostArk.Unity
             if (_selectionController != null)
             {
                 _selectionController.SelectionChanged -= OnSelectionChanged;
+            }
+            foreach (var actor in _registeredActors)
+            {
+                if (actor != null)
+                {
+                    actor.OnShotFired -= HandleActorShotFired;
+                    actor.OnTargetHit -= HandleActorTargetHit;
+                }
             }
             foreach (var interactable in _registeredInteractables)
             {
