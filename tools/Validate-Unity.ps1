@@ -53,17 +53,41 @@ if ($Mode -eq 'Import') {
     }
 }
 
-$process = Start-Process -FilePath $EditorPath -ArgumentList $arguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
-if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-    Stop-Process -Id $process.Id -Force
-    throw "Unity validation timed out after $TimeoutSeconds seconds. Log: $log"
-}
-$process.Refresh()
-$code = $process.ExitCode
+$editorSettingsFile = Join-Path $project 'ProjectSettings/EditorSettings.asset'
+$origEditorSettingsBytes = if (Test-Path -LiteralPath $editorSettingsFile) { [IO.File]::ReadAllBytes($editorSettingsFile) } else { $null }
 
-# Ensure global EditorSettings is never left dirtied by in-memory runner overrides
-if ($Mode -eq 'PlayMode') {
-    git checkout ProjectSettings/EditorSettings.asset 2>$null
+try {
+    $process = Start-Process -FilePath $EditorPath -ArgumentList $arguments -WorkingDirectory $project -WindowStyle Hidden -PassThru
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        Stop-Process -Id $process.Id -Force
+        throw "Unity validation timed out after $TimeoutSeconds seconds. Log: $log"
+    }
+    $process.Refresh()
+    $code = $process.ExitCode
+} finally {
+    if ($null -ne $origEditorSettingsBytes) {
+        if (Test-Path -LiteralPath $editorSettingsFile) {
+            $currentBytes = [IO.File]::ReadAllBytes($editorSettingsFile)
+            $isSame = ($currentBytes.Length -eq $origEditorSettingsBytes.Length)
+            if ($isSame) {
+                for ($i = 0; $i -lt $currentBytes.Length; $i++) {
+                    if ($currentBytes[$i] -ne $origEditorSettingsBytes[$i]) {
+                        $isSame = $false
+                        break
+                    }
+                }
+            }
+            if (-not $isSame) {
+                [IO.File]::WriteAllBytes($editorSettingsFile, $origEditorSettingsBytes)
+            }
+        } else {
+            [IO.File]::WriteAllBytes($editorSettingsFile, $origEditorSettingsBytes)
+        }
+    } else {
+        if (Test-Path -LiteralPath $editorSettingsFile) {
+            Remove-Item -LiteralPath $editorSettingsFile -Force
+        }
+    }
 }
 
 # Check compiler/package errors in log

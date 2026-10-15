@@ -1,6 +1,6 @@
 # Tactical Combat and Physics Adapter — FrostArk (Issue #27)
 
-**Status:** Authored Core damage commands, Unity combat targeting proxies, ballistic raycasting, combat tick progression, and EditMode test suites. Verified G1 (.NET Core: 218/218 passed) and G2 (Unity EditMode: 23/23 passed). G3 PlayMode tests authored; headless execution pending interactive/GUI environment.
+**Status:** Authored Core damage commands, Unity combat targeting proxies, ballistic raycasting with confirmed hitbox contact, combat tick progression, and comprehensive EditMode and PlayMode test suites. Verified G0, G1 (.NET Core: 218/218 passed), G2 (Unity EditMode: 29/29 passed), and G3 (Unity PlayMode: 16/16 passed across combat integration, tactical navigation, and ship/shore transit suites).
 
 ---
 
@@ -38,10 +38,11 @@
 ### 2.2 Ballistic Raycast & Line of Fire (`TacticalCombatRaycast`)
 - Evaluates line-of-fire from weapon muzzle to target aim point.
 - Returns `CombatTargetingStatus`:
-  - `Clear`: Direct, uninhibited sightline to target collider.
+  - `Clear`: Direct, uninhibited sightline with verified hit on target collider.
+  - `Missed`: Raycast along aim line completed within range but did not contact target collider.
   - `OutOfRange`: Distance exceeds weapon range.
   - `Obstructed`: Raycast hit an intermediate collider (terrain, cover wall, or friendly actor).
-  - `InvalidTarget`: Target is null, dead, or friendly.
+  - `InvalidTarget`: Target is null, dead, friendly, or lacks an active hitbox collider.
 - Ignores triggers (`QueryTriggerInteraction.Ignore`).
 - Excludes shooter's own collider (`shooterCollider`) to eliminate self-collision artifacts.
 
@@ -53,13 +54,14 @@
 ### 2.4 Tactical Actor Combat (`TacticalActorProxy`)
 - Consumes `TacticalOrderIntent.AttackTarget`.
 - Evaluates line of fire via `TacticalCombatRaycast`.
-- If obstructed or out of range, engages NavMesh navigation towards target until clear line of fire is acquired.
+- If obstructed, missed, or out of range, engages NavMesh navigation towards target until clear line of fire is acquired.
 - When clear, faces target and executes `TryExecuteShot()`:
   - Verifies weapon cooldown in `CombatState`.
   - Submits authoritative `FireWeaponCommand` consuming ammo from `InventoryContainer.Pack`.
-  - Re-evaluates physical line of fire at moment of discharge.
+  - Re-evaluates physical line of fire at moment of discharge to confirm hitbox contact.
   - On confirmed ballistic hit, submits authoritative `DamageCrewCommand`.
-  - Updates target health and raises `OnShotFired` / `OnTargetHit`.
+  - Updates target health solely from confirmed authoritative damage; failed damage commands never reduce health or fabricate hit events.
+  - Raises `OnShotFired` / `OnTargetHit`.
 
 ### 2.5 Tactical Command Controller (`TacticalCommandController`)
 - Click-to-attack targeting from existing pointer selection model.
@@ -74,6 +76,6 @@
 |---|---|---|
 | **G0 (Schema & Meta)** | **PASS** | Valid `.meta` GUID pairs for all newly authored scripts and tests. |
 | **G1 (Pure C# Tests)** | **PASS** | `dotnet test tests/FrostArk.Core.Tests/FrostArk.Core.Tests.csproj`<br>Total: 218, Passed: 218, Failed: 0, Duration: 683 ms. |
-| **G2 (Unity EditMode)** | **PASS** | `tools/Validate-Unity.ps1 -Mode EditMode`<br>Total: 23, Passed: 23, Failed: 0, Duration: 0.79s. |
-| **G3 (Unity PlayMode)** | **PENDING** | Authored `CombatPlayModeTests.cs` (4 integration tests). Headless batchmode PlayMode execution deferred to interactive/GUI testing environment. |
+| **G2 (Unity EditMode)** | **PASS** | `tools/Validate-Unity.ps1 -Mode EditMode`<br>Total: 29, Passed: 29, Failed: 0, Duration: 0.81s. |
+| **G3 (Unity PlayMode)** | **PASS** | `tools/Validate-Unity.ps1 -Mode PlayMode`<br>Total: 16, Passed: 16, Failed: 0, Duration: 5.76s.<br>Suites: `CombatPlayModeTests` (4/4), `TacticalPlayModeTests` (9/9), `ShoreSceneTransitPlayModeTests` (2/2), `ShoreSceneRestorePlayModeTests` (1/1). |
 | **G4 (Platform & Builds)** | **NOT RUN** | Out of scope for this slice. |
