@@ -68,5 +68,25 @@ namespace FrostArk.Unity
             return WorldState.Create(WorldMinute.Zero, supplies, crew,
                 inventory: inventory, crewDuty: crewDuty, combat: combat);
         }
+
+        public static WorldState CreateStateWithMagazineWeapon(int magazineCapacity = 5, int reloadTicks = 4)
+        {
+            var baseState = CreateDefaultState();
+            var combat = CombatState.Create(new[]
+            {
+                new WeaponDefinition(RifleItemId, AmmoItemId, ammoPerShot: 1, cooldownTicks: 3,
+                    magazineCapacity: magazineCapacity, reloadTicks: reloadTicks)
+            });
+            return WorldState.Create(baseState.Minute,
+                new[]
+                {
+                    new SupplyStock(EntityId.Parse("supply:fuel"), 100),
+                    new SupplyStock(EntityId.Parse("supply:rations"), 50)
+                },
+                new[] { ProtagonistId, CompanionId, EnemyId },
+                inventory: baseState.Inventory,
+                crewDuty: baseState.CrewDuty,
+                combat: combat);
+        }
     }
 }

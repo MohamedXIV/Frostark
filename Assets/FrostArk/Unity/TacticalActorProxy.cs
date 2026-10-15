@@ -2,6 +2,7 @@ using System;
 using FrostArk.Core.Application;
 using FrostArk.Core.Combat;
 using FrostArk.Core.Commands;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.World;
 using UnityEngine;
 using UnityEngine.AI;
@@ -41,12 +42,18 @@ namespace FrostArk.Unity
         [SerializeField]
         private LayerMask lineOfFireMask = ~0;
 
+        [Header("Environmental & Tactical Configuration")]
+        [SerializeField]
+        [Range(0, 1000)]
+        private int coldExposurePermille = 0;
+
         private NavMeshAgent _agent;
         private TacticalInteractableProxy _pendingInteractable;
         private TacticalCombatTargetProxy _pendingTarget;
         private WorldSession _session;
         private EntityId _actorIdEntity;
         private EntityId _weaponIdEntity;
+        private float _baseSpeed = 3.5f;
 
         public EntityId ActorId
         {
@@ -79,6 +86,8 @@ namespace FrostArk.Unity
         }
 
         public bool IsSelected { get; private set; }
+        public bool IsRetreating { get; private set; }
+        public int ColdExposurePermille => coldExposurePermille;
         public NavMeshAgent Agent => _agent != null ? _agent : (_agent = GetComponent<NavMeshAgent>());
         public TacticalInteractableProxy PendingInteraction => _pendingInteractable;
         public TacticalCombatTargetProxy PendingTarget => _pendingTarget;
@@ -102,10 +111,16 @@ namespace FrostArk.Unity
         public event Action<TacticalActorProxy, TacticalCombatTargetProxy> OnShotFired;
         public event Action<TacticalActorProxy, TacticalCombatTargetProxy, int> OnTargetHit;
         public event Action<TacticalActorProxy, string> OnAttackFailed;
+        public event Action<TacticalActorProxy, long> OnWeaponReloaded;
+        public event Action<TacticalActorProxy, string> OnReloadFailed;
+        public event Action<TacticalActorProxy> OnRetreatStarted;
+        public event Action<TacticalActorProxy> OnRetreatArrived;
 
         private void Awake()
         {
             _agent = GetComponent<NavMeshAgent>();
+            if (_agent != null)
+                _baseSpeed = _agent.speed;
             var _ = ActorId;
             var __ = WeaponId;
             SetSelected(false);
@@ -154,10 +169,31 @@ namespace FrostArk.Unity
                 selectionMarker.SetActive(IsSelected);
         }
 
+        public void SetColdExposurePermille(int value)
+        {
+            coldExposurePermille = Mathf.Clamp(value, 0, 1000);
+            UpdateMovementSpeed();
+        }
+
+        private void UpdateMovementSpeed()
+        {
+            if (Agent != null)
+            {
+                float coldFactor = ColdCombatModifiers.CalculateSpeedMultiplier(coldExposurePermille);
+                float sprint = IsRetreating ? 1.25f : 1.0f;
+                Agent.speed = _baseSpeed * coldFactor * sprint;
+            }
+        }
+
         public virtual bool MoveTo(Vector3 destination)
         {
             CancelPendingInteraction();
             CancelPendingCombat();
+            if (IsRetreating)
+            {
+                IsRetreating = false;
+                UpdateMovementSpeed();
+            }
 
             if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
             {
@@ -169,12 +205,39 @@ namespace FrostArk.Unity
             return false;
         }
 
+        public virtual bool RetreatTo(Vector3 destination)
+        {
+            CancelPendingInteraction();
+            CancelPendingCombat();
+            IsRetreating = true;
+            UpdateMovementSpeed();
+
+            if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
+            {
+                Agent.isStopped = false;
+                Agent.stoppingDistance = 0.5f;
+                bool dispatched = Agent.SetDestination(destination);
+                if (dispatched)
+                {
+                    OnRetreatStarted?.Invoke(this);
+                }
+                return dispatched;
+            }
+
+            return false;
+        }
+
         public virtual bool ApproachAndInteract(TacticalInteractableProxy interactable)
         {
             if (interactable == null || interactable.IsDepleted)
                 return false;
 
             CancelPendingCombat();
+            if (IsRetreating)
+            {
+                IsRetreating = false;
+                UpdateMovementSpeed();
+            }
             _pendingInteractable = interactable;
 
             if (interactable.CanInteract(this))
@@ -208,6 +271,11 @@ namespace FrostArk.Unity
                 return false;
 
             CancelPendingInteraction();
+            if (IsRetreating)
+            {
+                IsRetreating = false;
+                UpdateMovementSpeed();
+            }
             _pendingTarget = target;
             if (session != null)
                 _session = session;
@@ -253,8 +321,25 @@ namespace FrostArk.Unity
 
         private void Update()
         {
+            UpdateRetreat();
             UpdateInteraction();
             UpdateCombat();
+        }
+
+        private void UpdateRetreat()
+        {
+            if (!IsRetreating)
+                return;
+
+            if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
+            {
+                if (!Agent.pathPending && Agent.remainingDistance <= Agent.stoppingDistance)
+                {
+                    IsRetreating = false;
+                    UpdateMovementSpeed();
+                    OnRetreatArrived?.Invoke(this);
+                }
+            }
         }
 
         private void UpdateInteraction()
@@ -318,6 +403,66 @@ namespace FrostArk.Unity
             }
         }
 
+        public bool TryExecuteReload()
+        {
+            if (_session == null)
+            {
+                OnReloadFailed?.Invoke(this, "NoSessionBound");
+                return false;
+            }
+
+            var combat = _session.Capture().State.Combat;
+            var weapon = combat.Get(WeaponId);
+            if (weapon == null)
+            {
+                OnReloadFailed?.Invoke(this, "UnknownWeapon");
+                return false;
+            }
+
+            if (weapon.Definition.MagazineCapacity <= 0)
+            {
+                OnReloadFailed?.Invoke(this, "WeaponCannotReload");
+                return false;
+            }
+
+            if (weapon.MagazineRounds >= weapon.Definition.MagazineCapacity)
+            {
+                OnReloadFailed?.Invoke(this, "MagazineAlreadyFull");
+                return false;
+            }
+
+            if (combat.Tick < weapon.NextReadyTick)
+            {
+                OnReloadFailed?.Invoke(this, "WeaponCoolingDown");
+                return false;
+            }
+
+            long needed = weapon.Definition.MagazineCapacity - weapon.MagazineRounds;
+            long packAmmo = _session.Capture().State.Inventory.GetAmount(
+                InventoryContainer.Pack, weapon.Definition.AmmoItemId);
+            if (packAmmo <= 0)
+            {
+                OnReloadFailed?.Invoke(this, "InsufficientInventory");
+                return false;
+            }
+
+            var cmdId = EntityId.Parse($"cmd:reload:{ActorId.Value}:{_session.Revision}:{Guid.NewGuid():N}");
+            var reloadCmd = new ReloadWeaponCommand(cmdId, WeaponId, _session.Revision);
+            var result = _session.Submit(reloadCmd);
+
+            if (result.Success)
+            {
+                long loaded = Math.Min(needed, packAmmo);
+                OnWeaponReloaded?.Invoke(this, loaded);
+                return true;
+            }
+            else
+            {
+                OnReloadFailed?.Invoke(this, result.Failure.ToString());
+                return false;
+            }
+        }
+
         public bool TryExecuteShot()
         {
             if (_pendingTarget == null || _pendingTarget.IsDead)
@@ -346,6 +491,19 @@ namespace FrostArk.Unity
                 return false;
             }
 
+            if (weapon.Definition.MagazineCapacity > 0 && weapon.MagazineRounds < weapon.Definition.AmmoPerShot)
+            {
+                // Auto-attempt reload if magazine is depleted
+                if (TryExecuteReload())
+                {
+                    return false;
+                }
+
+                OnAttackFailed?.Invoke(this, "MagazineEmpty");
+                CancelPendingCombat();
+                return false;
+            }
+
             // Submit authoritative FireWeaponCommand
             var cmdId = EntityId.Parse($"cmd:fire:{ActorId.Value}:{_session.Revision}:{Guid.NewGuid():N}");
             var fireCmd = new FireWeaponCommand(cmdId, WeaponId, _session.Revision);
@@ -355,7 +513,8 @@ namespace FrostArk.Unity
             {
                 OnAttackFailed?.Invoke(this, fireResult.Failure.ToString());
                 if (fireResult.Failure == CommandFailure.InsufficientInventory ||
-                    fireResult.Failure == CommandFailure.WeaponNotCarried)
+                    fireResult.Failure == CommandFailure.WeaponNotCarried ||
+                    fireResult.Failure == CommandFailure.MagazineEmpty)
                 {
                     CancelPendingCombat();
                 }
@@ -370,34 +529,45 @@ namespace FrostArk.Unity
 
             if (hitConfirmed)
             {
-                // Ballistic raycast hit target hitbox! Submit authoritative damage command
-                var dmgCmdId = EntityId.Parse($"cmd:dmg:{_pendingTarget.TargetId.Value}:{_session.Revision}:{Guid.NewGuid():N}");
-                var dmgCmd = new DamageCrewCommand(dmgCmdId, _pendingTarget.TargetId, damagePerShot, _session.Revision);
-                var dmgResult = _session.Submit(dmgCmd);
+                int effectiveDamage = CombatMitigation.CalculateMitigatedWounds(damagePerShot, _pendingTarget.ArmorPermille);
 
-                if (dmgResult.Success)
+                if (effectiveDamage > 0)
                 {
-                    var crew = dmgResult.State.CrewDuty.Get(_pendingTarget.TargetId);
-                    if (crew != null)
+                    // Ballistic raycast hit target hitbox! Submit authoritative damage command
+                    var dmgCmdId = EntityId.Parse($"cmd:dmg:{_pendingTarget.TargetId.Value}:{_session.Revision}:{Guid.NewGuid():N}");
+                    var dmgCmd = new DamageCrewCommand(dmgCmdId, _pendingTarget.TargetId, effectiveDamage, _session.Revision);
+                    var dmgResult = _session.Submit(dmgCmd);
+
+                    if (dmgResult.Success)
                     {
-                        _pendingTarget.SyncFromWounds(crew.Wounds);
+                        var crew = dmgResult.State.CrewDuty.Get(_pendingTarget.TargetId);
+                        if (crew != null)
+                        {
+                            _pendingTarget.SyncFromWounds(crew.Wounds);
+                        }
+
+                        OnTargetHit?.Invoke(this, _pendingTarget, effectiveDamage);
+
+                        if (_pendingTarget.IsDead)
+                        {
+                            CancelPendingCombat();
+                        }
                     }
-
-                    OnTargetHit?.Invoke(this, _pendingTarget, damagePerShot);
-
-                    if (_pendingTarget.IsDead)
+                    else
                     {
-                        CancelPendingCombat();
+                        // Failed authoritative damage MUST NEVER reduce HP, kill targets, or emit successful hit events
+                        OnAttackFailed?.Invoke(this, dmgResult.Failure.ToString());
+                        if (dmgResult.Failure == CommandFailure.CrewAlreadyIncapacitated)
+                        {
+                            CancelPendingCombat();
+                        }
                     }
                 }
                 else
                 {
-                    // Failed authoritative damage MUST NEVER reduce HP, kill targets, or emit successful hit events
-                    OnAttackFailed?.Invoke(this, dmgResult.Failure.ToString());
-                    if (dmgResult.Failure == CommandFailure.CrewAlreadyIncapacitated)
-                    {
-                        CancelPendingCombat();
-                    }
+                    // Full physical armor deflection
+                    OnAttackFailed?.Invoke(this, "ArmorAbsorbed");
+                    OnTargetHit?.Invoke(this, _pendingTarget, 0);
                 }
             }
             else

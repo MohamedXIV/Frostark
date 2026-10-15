@@ -308,6 +308,70 @@ namespace FrostArk.Unity
             return true;
         }
 
+        public bool IssueRetreatOrder(Vector3 retreatDestination)
+        {
+            if (_selectionController.Count == 0)
+                return false;
+
+            var selectedActors = GetSelectedActorProxies();
+            if (selectedActors.Count == 0)
+                return false;
+
+            bool anyDispatched = false;
+            for (int i = 0; i < selectedActors.Count; i++)
+            {
+                var actor = selectedActors[i];
+                Vector3 target = retreatDestination;
+
+                if (selectedActors.Count > 1)
+                {
+                    float angle = (i * 360f / selectedActors.Count) * Mathf.Deg2Rad;
+                    Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle)) * 1.0f;
+                    target += offset;
+                }
+
+                if (actor.RetreatTo(target))
+                {
+                    anyDispatched = true;
+                }
+            }
+
+            if (!anyDispatched)
+                return false;
+
+            var intent = TacticalOrderIntent.RetreatTo(
+                _selectionController.SelectedActorIds,
+                retreatDestination.x,
+                retreatDestination.z);
+
+            LastIssuedIntent = intent;
+            OrderIssued?.Invoke(intent);
+
+            if (destinationMarker != null)
+                destinationMarker.Show(retreatDestination);
+
+            return true;
+        }
+
+        public bool IssueReloadOrder()
+        {
+            if (_selectionController.Count == 0)
+                return false;
+
+            var selectedActors = GetSelectedActorProxies();
+            if (selectedActors.Count == 0)
+                return false;
+
+            bool anyReloaded = false;
+            foreach (var actor in selectedActors)
+            {
+                if (actor.TryExecuteReload())
+                    anyReloaded = true;
+            }
+
+            return anyReloaded;
+        }
+
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
         {
             if (tacticalCamera == null)
