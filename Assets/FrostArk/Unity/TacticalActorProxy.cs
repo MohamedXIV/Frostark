@@ -223,12 +223,12 @@ namespace FrostArk.Unity
                 return true;
             }
 
-            if (status == CombatTargetingStatus.OutOfRange || status == CombatTargetingStatus.Obstructed)
+            if (status == CombatTargetingStatus.OutOfRange || status == CombatTargetingStatus.Obstructed || status == CombatTargetingStatus.Missed)
             {
                 if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
                 {
                     Agent.isStopped = false;
-                    Agent.stoppingDistance = Mathf.Max(1.0f, weaponRange * 0.75f);
+                    Agent.stoppingDistance = (status == CombatTargetingStatus.Obstructed) ? 1.0f : Mathf.Max(1.0f, weaponRange * 0.75f);
                     return Agent.SetDestination(target.transform.position);
                 }
             }
@@ -299,14 +299,15 @@ namespace FrostArk.Unity
                 FaceTarget(_pendingTarget);
                 TryExecuteShot();
             }
-            else if (status == CombatTargetingStatus.OutOfRange || status == CombatTargetingStatus.Obstructed)
+            else if (status == CombatTargetingStatus.OutOfRange || status == CombatTargetingStatus.Obstructed || status == CombatTargetingStatus.Missed)
             {
                 if (Agent != null && Agent.isActiveAndEnabled && Agent.isOnNavMesh)
                 {
-                    if (!Agent.hasPath || Vector3.Distance(Agent.destination, _pendingTarget.transform.position) > 1.0f)
+                    float stopDist = (status == CombatTargetingStatus.Obstructed) ? 1.0f : Mathf.Max(1.0f, weaponRange * 0.75f);
+                    if (!Agent.hasPath || Vector3.Distance(Agent.destination, _pendingTarget.transform.position) > 1.0f || Mathf.Abs(Agent.stoppingDistance - stopDist) > 0.05f)
                     {
                         Agent.isStopped = false;
-                        Agent.stoppingDistance = Mathf.Max(1.0f, weaponRange * 0.75f);
+                        Agent.stoppingDistance = stopDist;
                         Agent.SetDestination(_pendingTarget.transform.position);
                     }
                 }
@@ -363,13 +364,13 @@ namespace FrostArk.Unity
 
             OnShotFired?.Invoke(this, _pendingTarget);
 
-            // Re-evaluate physical line of fire at moment of discharge
-            var hitStatus = TacticalCombatRaycast.EvaluateLineOfFire(
+            // Ballistic raycast: require actual target hitbox collision to authorize damage
+            bool hitConfirmed = TacticalCombatRaycast.TryVerifyProjectileHit(
                 MuzzlePosition, _pendingTarget, weaponRange, lineOfFireMask, GetComponent<Collider>(), out _);
 
-            if (hitStatus == CombatTargetingStatus.Clear)
+            if (hitConfirmed)
             {
-                // Ballistic raycast hit target! Submit authoritative damage command
+                // Ballistic raycast hit target hitbox! Submit authoritative damage command
                 var dmgCmdId = EntityId.Parse($"cmd:dmg:{_pendingTarget.TargetId.Value}:{_session.Revision}:{Guid.NewGuid():N}");
                 var dmgCmd = new DamageCrewCommand(dmgCmdId, _pendingTarget.TargetId, damagePerShot, _session.Revision);
                 var dmgResult = _session.Submit(dmgCmd);
@@ -378,22 +379,30 @@ namespace FrostArk.Unity
                 {
                     var crew = dmgResult.State.CrewDuty.Get(_pendingTarget.TargetId);
                     if (crew != null)
+                    {
                         _pendingTarget.SyncFromWounds(crew.Wounds);
-                    else
-                        _pendingTarget.TakeDamage(damagePerShot);
+                    }
+
+                    OnTargetHit?.Invoke(this, _pendingTarget, damagePerShot);
+
+                    if (_pendingTarget.IsDead)
+                    {
+                        CancelPendingCombat();
+                    }
                 }
                 else
                 {
-                    // Target might be an entity proxy outside the crew duty roster
-                    _pendingTarget.TakeDamage(damagePerShot);
+                    // Failed authoritative damage MUST NEVER reduce HP, kill targets, or emit successful hit events
+                    OnAttackFailed?.Invoke(this, dmgResult.Failure.ToString());
+                    if (dmgResult.Failure == CommandFailure.CrewAlreadyIncapacitated)
+                    {
+                        CancelPendingCombat();
+                    }
                 }
-
-                OnTargetHit?.Invoke(this, _pendingTarget, damagePerShot);
-
-                if (_pendingTarget.IsDead)
-                {
-                    CancelPendingCombat();
-                }
+            }
+            else
+            {
+                OnAttackFailed?.Invoke(this, "BallisticMiss");
             }
 
             return true;

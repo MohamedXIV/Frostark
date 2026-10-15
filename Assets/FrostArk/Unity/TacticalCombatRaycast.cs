@@ -8,7 +8,8 @@ namespace FrostArk.Unity
         Clear = 0,
         OutOfRange = 1,
         Obstructed = 2,
-        InvalidTarget = 3
+        InvalidTarget = 3,
+        Missed = 4
     }
 
     /// <summary>
@@ -18,6 +19,59 @@ namespace FrostArk.Unity
     /// </summary>
     public static class TacticalCombatRaycast
     {
+        /// <summary>
+        /// Evaluates whether the line-of-sight between muzzle and target aim point is free
+        /// of physical obstructions (cover, obstacles, friendly squad members).
+        /// </summary>
+        public static bool HasClearLineOfSight(
+            Vector3 muzzlePosition,
+            TacticalCombatTargetProxy target,
+            float maxRange,
+            LayerMask blockingMask,
+            Collider shooterCollider)
+        {
+            if (target == null || target.IsDead || !target.IsHostile)
+                return false;
+
+            Vector3 targetPoint = target.AimPoint != null
+                ? target.AimPoint.position
+                : target.transform.position + Vector3.up * 1.0f;
+
+            Vector3 delta = targetPoint - muzzlePosition;
+            float distance = delta.magnitude;
+            if (distance > maxRange || distance < 0.001f)
+                return false;
+
+            Vector3 direction = delta / distance;
+            var hits = Physics.RaycastAll(muzzlePosition, direction, distance, blockingMask, QueryTriggerInteraction.Ignore);
+            if (hits.Length == 0)
+                return true;
+
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (var candidate in hits)
+            {
+                if (shooterCollider != null && (candidate.collider == shooterCollider || candidate.collider.transform.IsChildOf(shooterCollider.transform)))
+                    continue;
+
+                if (candidate.collider == target.Hitbox ||
+                    candidate.collider.transform == target.transform ||
+                    candidate.collider.transform.IsChildOf(target.transform))
+                {
+                    return true;
+                }
+
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Evaluates ballistic line of fire and requires actual target hitbox contact
+        /// to report CombatTargetingStatus.Clear. If blocked by intermediate geometry,
+        /// returns Obstructed. If the ray encounters no obstruction but fails to strike
+        /// the target hitbox (e.g. aim point misaligned/outside collider), returns Missed.
+        /// </summary>
         public static CombatTargetingStatus EvaluateLineOfFire(
             Vector3 muzzlePosition,
             TacticalCombatTargetProxy target,
@@ -28,7 +82,7 @@ namespace FrostArk.Unity
         {
             hit = default;
 
-            if (target == null || target.IsDead || !target.IsHostile)
+            if (target == null || target.IsDead || !target.IsHostile || target.Hitbox == null || !target.Hitbox.enabled)
                 return CombatTargetingStatus.InvalidTarget;
 
             Vector3 targetPoint = target.AimPoint != null
@@ -42,7 +96,7 @@ namespace FrostArk.Unity
                 return CombatTargetingStatus.OutOfRange;
 
             if (distance < 0.001f)
-                return CombatTargetingStatus.Clear;
+                return CombatTargetingStatus.InvalidTarget;
 
             Vector3 direction = delta / distance;
 
@@ -50,8 +104,8 @@ namespace FrostArk.Unity
             var hits = Physics.RaycastAll(muzzlePosition, direction, distance, blockingMask, QueryTriggerInteraction.Ignore);
             if (hits.Length == 0)
             {
-                // No geometry between muzzle and target point
-                return CombatTargetingStatus.Clear;
+                // No geometry between muzzle and target point hit; missed target hitbox
+                return CombatTargetingStatus.Missed;
             }
 
             // Sort hits by distance
@@ -77,7 +131,27 @@ namespace FrostArk.Unity
                 return CombatTargetingStatus.Obstructed;
             }
 
-            return CombatTargetingStatus.Clear;
+            return CombatTargetingStatus.Missed;
+        }
+
+        /// <summary>
+        /// Explicitly verifies whether a ballistic discharge strikes the target's hitbox.
+        /// Distinguishes unobstructed line of sight from a confirmed physical hit.
+        /// </summary>
+        public static bool TryVerifyProjectileHit(
+            Vector3 muzzlePosition,
+            TacticalCombatTargetProxy target,
+            float maxRange,
+            LayerMask blockingMask,
+            Collider shooterCollider,
+            out RaycastHit hit)
+        {
+            var status = EvaluateLineOfFire(muzzlePosition, target, maxRange, blockingMask, shooterCollider, out hit);
+            return status == CombatTargetingStatus.Clear &&
+                   hit.collider != null &&
+                   (hit.collider == target.Hitbox ||
+                    hit.collider.transform == target.transform ||
+                    hit.collider.transform.IsChildOf(target.transform));
         }
     }
 }
