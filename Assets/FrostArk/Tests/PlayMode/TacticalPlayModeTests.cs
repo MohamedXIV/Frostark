@@ -34,6 +34,13 @@ namespace FrostArk.Unity.Tests
         [UnitySetUp]
         public IEnumerator SetUp()
         {
+            var activeScene = SceneManager.GetActiveScene();
+            foreach (var go in activeScene.GetRootGameObjects())
+            {
+                UnityEngine.Object.Destroy(go);
+            }
+            yield return null;
+
             _sceneRoot = new GameObject("PlayModeTestEnvironment");
 
             // 1. Walkable Ground

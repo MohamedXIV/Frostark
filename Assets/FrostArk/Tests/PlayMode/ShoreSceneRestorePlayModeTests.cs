@@ -133,7 +133,14 @@ namespace FrostArk.Unity.Tests
             }
             finally
             {
-                UnityEngine.Object.Destroy(replacementRoot);
+                if (replacementRoot != null)
+                    UnityEngine.Object.Destroy(replacementRoot);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                        UnityEngine.Object.Destroy(go);
+                }
             }
         }
     }
