@@ -139,7 +139,11 @@ namespace FrostArk.Unity.Tests
                 if (activeScene.IsValid())
                 {
                     foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
                         UnityEngine.Object.Destroy(go);
+                    }
                 }
             }
         }

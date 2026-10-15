@@ -349,6 +349,23 @@ namespace FrostArk.Core.Commands
                     siteDamage.SiteId, site.IslandId, siteDamage.DamagePermille));
             }
 
+            if (command is DamageCrewCommand damageCrew)
+            {
+                if (damageCrew.WoundPermille <= 0 || damageCrew.WoundPermille > 1000)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidQuantity);
+                var member = state.CrewDuty.Get(damageCrew.CrewId);
+                if (member == null || !state.HasCrew(damageCrew.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (member.Wounds >= 1000)
+                    return CommandResult.Rejected(state, CommandFailure.CrewAlreadyIncapacitated);
+
+                var wounded = state.CrewDuty.Wound(damageCrew.CrewId, damageCrew.WoundPermille);
+                var next = state.WithCrewWound(wounded, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewWounded,
+                    damageCrew.CrewId, default, damageCrew.WoundPermille));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
         }
 

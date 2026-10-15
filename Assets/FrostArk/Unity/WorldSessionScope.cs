@@ -86,6 +86,12 @@ namespace FrostArk.Unity
             {
                 builder.RegisterComponent(commander);
             }
+
+            var tickRunner = GetComponentInChildren<CombatTickRunner>() ?? FindAnyObjectByType<CombatTickRunner>();
+            if (tickRunner != null)
+            {
+                builder.RegisterComponent(tickRunner);
+            }
         }
     }
 }

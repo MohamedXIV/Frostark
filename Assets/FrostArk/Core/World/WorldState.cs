@@ -177,6 +177,13 @@ namespace FrostArk.Core.World
                 inventory: paid, crewDuty: healed);
         }
 
+        internal WorldState WithCrewWound(CrewState wounded, EntityId commandId)
+        {
+            if (wounded == null) throw new ArgumentNullException(nameof(wounded));
+            return CopyWithCommand(commandId.Value, _supplies, _crewStations,
+                crewDuty: wounded);
+        }
+
         internal WorldState WithCrewAway(EntityId crewId, bool away, EntityId commandId) =>
             CopyWithCommand(commandId.Value, _supplies, _crewStations,
                 crewDuty: CrewDuty.SetAway(crewId, away));
