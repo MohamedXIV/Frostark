@@ -1,5 +1,6 @@
 using System;
 using System.Security.Cryptography;
+using FrostArk.Core.Application;
 using FrostArk.Core.Combat;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Inventory;
