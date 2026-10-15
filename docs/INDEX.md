@@ -12,6 +12,7 @@
 ## Engineering
 - [Architecture and module boundaries](engineering/architecture.md)
 - [Pure-C# tactical order intent and Unity click-control adapter handoff](engineering/tactical-order-intent.md)
+- [Tactical combat, ballistic physics, and line-of-fire adapter](engineering/tactical-combat-physics.md)
 - [World time, scheduling and simulation LOD](engineering/time-simulation.md)
 - [R1 ship/shore crew transfer (Core) and Unity scene/save handoff](engineering/ship-shore-transfer.md)
 - [Unity ship/shore scene transit adapter and pending engine tests](engineering/unity-scene-transit-adapter.md)
