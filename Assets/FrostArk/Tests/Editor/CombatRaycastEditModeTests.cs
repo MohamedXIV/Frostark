@@ -1,11 +1,14 @@
 using System;
 using FrostArk.Core.Application;
 using FrostArk.Core.Combat;
+using FrostArk.Core.Commands;
 using FrostArk.Core.Inventory;
+using FrostArk.Core.Save;
 using FrostArk.Core.World;
 using FrostArk.Unity;
 using NUnit.Framework;
 using UnityEngine;
+using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
 
 namespace FrostArk.Unity.Tests
@@ -271,6 +274,202 @@ namespace FrostArk.Unity.Tests
             runner.Step(5);
             Assert.That(runner.CurrentTick, Is.EqualTo(5));
             Assert.That(session.Capture().State.Combat.Tick, Is.EqualTo(5));
+        }
+
+        [Test]
+        public void LineOfFire_MissingOrDisabledHitbox_ReturnsInvalidTarget()
+        {
+            var target = CreateTarget(new Vector3(0, 1.0f, 6.0f));
+            target.Hitbox.enabled = false;
+            Physics.SyncTransforms();
+
+            Vector3 muzzle = new Vector3(0, 1.2f, 0);
+            var status = TacticalCombatRaycast.EvaluateLineOfFire(
+                muzzle, target, maxRange: 15.0f, blockingMask: ~0, shooterCollider: null, out var hit);
+
+            Assert.That(status, Is.EqualTo(CombatTargetingStatus.InvalidTarget));
+            Assert.That(hit.collider, Is.Null);
+
+            bool verified = TacticalCombatRaycast.TryVerifyProjectileHit(
+                muzzle, target, maxRange: 15.0f, blockingMask: ~0, shooterCollider: null, out _);
+            Assert.That(verified, Is.False);
+        }
+
+        [Test]
+        public void LineOfFire_AimPointOutsideCollider_ReturnsMissed_AndDistinguishesSightline()
+        {
+            var target = CreateTarget(new Vector3(0, 1.0f, 6.0f));
+
+            // Aim point placed far above the capsule collider
+            var highAim = new GameObject("HighAimPoint");
+            highAim.transform.SetParent(target.transform);
+            highAim.transform.position = target.transform.position + Vector3.up * 8.0f;
+            target.SetAimPoint(highAim.transform);
+            Physics.SyncTransforms();
+
+            Vector3 muzzle = new Vector3(0, 1.2f, 0);
+
+            // Sightline to the high point is free of walls/obstacles
+            bool hasLos = TacticalCombatRaycast.HasClearLineOfSight(
+                muzzle, target, maxRange: 15.0f, blockingMask: ~0, shooterCollider: null);
+            Assert.That(hasLos, Is.True, "Unobstructed LOS must be true when no obstacles block the lane.");
+
+            // But the ballistic projectile misses the actual target collider
+            var status = TacticalCombatRaycast.EvaluateLineOfFire(
+                muzzle, target, maxRange: 15.0f, blockingMask: ~0, shooterCollider: null, out var hit);
+            Assert.That(status, Is.EqualTo(CombatTargetingStatus.Missed), "Empty raycast missing collider must report Missed.");
+            Assert.That(hit.collider, Is.Null);
+
+            bool verified = TacticalCombatRaycast.TryVerifyProjectileHit(
+                muzzle, target, maxRange: 15.0f, blockingMask: ~0, shooterCollider: null, out _);
+            Assert.That(verified, Is.False, "Missed projectile must NOT be authorized as a confirmed hit.");
+        }
+
+        [Test]
+        public void Actor_RejectedDamage_DoesNotReduceHealthOrEmitTargetHit()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            actorObj.transform.position = Vector3.zero;
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+            actor.SetWeapon(EntityId.Parse("item:weapon:rifle"), range: 15.0f, damage: 250);
+
+            var enemyTarget = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            Physics.SyncTransforms();
+
+            var session = new WorldSession(TacticalSliceFixtureState.CreateDefaultState());
+
+            // Fully incapacitate enemy in canonical session (1000 wounds)
+            var incapacitateCmd = new DamageCrewCommand(
+                EntityId.Parse($"cmd:dmg:incap:{session.Revision}"),
+                enemyTarget.TargetId,
+                1000,
+                session.Revision);
+            var incapResult = session.Submit(incapacitateCmd);
+            Assert.That(incapResult.Success, Is.True);
+
+            // Keep enemyTarget proxy at non-zero local health to test that rejected damage doesn't touch it
+            enemyTarget.SetHealth(500, 1000);
+            int healthBefore = enemyTarget.CurrentHealth;
+
+            bool targetHitRaised = false;
+            string attackFailReason = null;
+            actor.OnTargetHit += (_, _, _) => targetHitRaised = true;
+            actor.OnAttackFailed += (_, reason) => attackFailReason = reason;
+
+            actor.SetSession(session);
+            bool attackStarted = actor.AttackTarget(enemyTarget, session);
+
+            Assert.That(attackStarted, Is.True, "Attack target accepted order.");
+            Assert.That(session.Capture().State.Inventory.GetAmount(InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId), Is.EqualTo(19), "Shot fired and paid.");
+            Assert.That(targetHitRaised, Is.False, "OnTargetHit MUST NEVER be raised when damage command is rejected.");
+            Assert.That(enemyTarget.CurrentHealth, Is.EqualTo(healthBefore), "Enemy health MUST NOT decrease on rejected damage.");
+            Assert.That(attackFailReason, Is.EqualTo(CommandFailure.CrewAlreadyIncapacitated.ToString()));
+        }
+
+        [Test]
+        public void Actor_UnpaidShot_DoesNotInflictDamageOrMutateState()
+        {
+            var actorObj = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            actorObj.name = "Protagonist";
+            actorObj.transform.SetParent(_testRoot.transform);
+            actorObj.transform.position = Vector3.zero;
+            var actor = actorObj.AddComponent<TacticalActorProxy>();
+            actor.SetActorId(EntityId.Parse("actor:protagonist"));
+            actor.SetWeapon(EntityId.Parse("item:weapon:rifle"), range: 15.0f, damage: 250);
+
+            var enemyTarget = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            Physics.SyncTransforms();
+
+            var defaultState = TacticalSliceFixtureState.CreateDefaultState();
+            // Consume all 20 rifle rounds from pack
+            var consumed = defaultState.Inventory.TryConsumePack(TacticalSliceFixtureState.AmmoItemId, 20);
+            Assert.That(consumed.Success, Is.True);
+
+            var dryState = WorldState.Create(
+                defaultState.Minute,
+                Array.Empty<SupplyStock>(),
+                new[] { actor.ActorId, EntityId.Parse("actor:companion"), enemyTarget.TargetId },
+                inventory: consumed.State,
+                crewDuty: defaultState.CrewDuty,
+                combat: defaultState.Combat);
+
+            var session = new WorldSession(dryState);
+            actor.SetSession(session);
+
+            bool targetHitRaised = false;
+            string attackFailReason = null;
+            actor.OnTargetHit += (_, _, _) => targetHitRaised = true;
+            actor.OnAttackFailed += (_, reason) => attackFailReason = reason;
+
+            actor.AttackTarget(enemyTarget, session);
+            bool shotResult = actor.TryExecuteShot();
+
+            Assert.That(shotResult, Is.False, "Shot without ammunition must return false.");
+            Assert.That(targetHitRaised, Is.False, "OnTargetHit must not be raised for unpaid shot.");
+            Assert.That(enemyTarget.CurrentHealth, Is.EqualTo(1000), "Target health must remain untouched.");
+            Assert.That(session.Revision, Is.Zero, "Session revision must not advance for unpaid shot.");
+            Assert.That(attackFailReason, Is.EqualTo(CommandFailure.InsufficientInventory.ToString()));
+        }
+
+        [Test]
+        public void CombatTicks_SingleAuthoritativeRunnerPerScope()
+        {
+            var scopeObj = new GameObject("SessionScope");
+            scopeObj.transform.SetParent(_testRoot.transform);
+            var scope = scopeObj.AddComponent<WorldSessionScope>();
+            scope.SetInitialState(TacticalSliceFixtureState.CreateDefaultState());
+            var runner = scopeObj.AddComponent<CombatTickRunner>();
+
+            scope.Build();
+            var resolvedSession = scope.Container.Resolve<WorldSession>();
+            var resolvedRunner = scope.Container.Resolve<CombatTickRunner>();
+
+            Assert.That(resolvedRunner, Is.SameAs(runner), "Scope container must resolve exactly the single configured tick runner.");
+            Assert.That(resolvedSession.Capture().State.Combat.Tick, Is.EqualTo(0));
+
+            resolvedRunner.Step(3);
+            Assert.That(resolvedRunner.CurrentTick, Is.EqualTo(3));
+            Assert.That(resolvedSession.Capture().State.Combat.Tick, Is.EqualTo(3),
+                "Combat ticks must advance authoritative WorldSession without parallel clocks.");
+
+            scope.DisposeCore();
+        }
+
+        [Test]
+        public void CombatDamage_SaveLoadConsistency()
+        {
+            var session = new WorldSession(TacticalSliceFixtureState.CreateDefaultState());
+            var enemyId = EntityId.Parse("actor:enemy");
+
+            var dmgCmd = new DamageCrewCommand(
+                EntityId.Parse($"cmd:dmg:{session.Revision}"),
+                enemyId,
+                250,
+                session.Revision);
+            var result = session.Submit(dmgCmd);
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.State.CrewDuty.Get(enemyId)!.Wounds, Is.EqualTo(250));
+
+            // Serialize to v13 binary
+            var snapshot = session.Capture();
+            byte[] encoded = SaveCodec.Encode(snapshot);
+            Assert.That(encoded, Is.Not.Null);
+
+            // Restore from bytes
+            var decodeResult = SaveCodec.TryDecode(encoded);
+            Assert.That(decodeResult.Success, Is.True);
+            var restoredSnapshot = decodeResult.Value;
+            Assert.That(restoredSnapshot, Is.Not.Null);
+            Assert.That(restoredSnapshot.State.Combat.Tick, Is.EqualTo(result.State.Combat.Tick));
+            Assert.That(restoredSnapshot.State.CrewDuty.Get(enemyId)!.Wounds, Is.EqualTo(250));
+
+            // Validate proxy representation after sync
+            var target = CreateTarget(new Vector3(0, 1.0f, 5.0f), id: "actor:enemy");
+            target.SyncFromWounds(restoredSnapshot.State.CrewDuty.Get(enemyId)!.Wounds);
+            Assert.That(target.CurrentHealth, Is.EqualTo(750), "Target proxy must project exact same health after restore.");
         }
     }
 }

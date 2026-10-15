@@ -33,6 +33,8 @@ namespace FrostArk.Unity.Tests
             var activeScene = SceneManager.GetActiveScene();
             foreach (var go in activeScene.GetRootGameObjects())
             {
+                if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                    continue;
                 UnityEngine.Object.Destroy(go);
             }
             yield return null;
@@ -248,8 +250,16 @@ namespace FrostArk.Unity.Tests
             _protagonist.Agent.Warp(new Vector3(0, 0, 5.0f));
             yield return null;
 
-            // Set enemy health to 250 (1 shot away from elimination)
-            _enemy.SetHealth(250, 1000);
+            // Authorize near-death condition in canonical WorldSession (750 wounds = 250 HP remaining)
+            var preDmgCmd = new DamageCrewCommand(
+                EntityId.Parse($"cmd:dmg:setup:{_session.Revision}:{Guid.NewGuid():N}"),
+                _enemy.TargetId,
+                750,
+                _session.Revision);
+            var preDmgResult = _session.Submit(preDmgCmd);
+            Assert.That(preDmgResult.Success, Is.True);
+            _enemy.SyncFromWounds(750);
+            Assert.That(_enemy.CurrentHealth, Is.EqualTo(250), "Enemy health must be 250 after canonical 750 wounds.");
 
             _commander.ClearSelection();
             _commander.SelectActor(_protagonist.ActorId);
