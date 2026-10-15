@@ -307,8 +307,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var current = SaveCodec.Encode(SaveGameDto.Capture(state,
                 new SimulationScheduler(new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(current[8], Is.EqualTo(13));
-            var old = new byte[current.Length - 54];
+            Assert.That(current[8], Is.EqualTo(14));
+            var old = new byte[current.Length - 58];
             Array.Copy(current, old, old.Length - 32);
             old[8] = 5;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);

@@ -37,7 +37,8 @@ namespace FrostArk.Core.Combat
             }));
         }
 
-        internal static CombatState Restore(long tick, IEnumerable<WeaponRuntimeState> weapons)
+        internal static CombatState Restore(long tick, IEnumerable<WeaponRuntimeState> weapons,
+            bool validateRecovery = true)
         {
             if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
             if (weapons == null) throw new ArgumentNullException(nameof(weapons));
@@ -47,12 +48,19 @@ namespace FrostArk.Core.Combat
             for (int i = 1; i < array.Length; i++)
                 if (array[i].Definition.Id == array[i - 1].Definition.Id)
                     throw new ArgumentException("Duplicate weapon identity.");
+            if (validateRecovery)
             foreach (var weapon in array)
             {
-                if (weapon.ShotCount > 0 &&
-                    (weapon.NextReadyTick < weapon.Definition.CooldownTicks ||
-                     weapon.NextReadyTick - weapon.Definition.CooldownTicks > tick))
-                    throw new ArgumentException("Invalid cooldown checkpoint: last shot is in the future.");
+                // NextReadyTick can originate from firing OR from a longer
+                // magazine reload. The prior validation incorrectly rejected
+                // authentic saves captured mid-reload after a previous shot.
+                long longestRecovery = Math.Max(weapon.Definition.CooldownTicks,
+                    weapon.Definition.ReloadTicks);
+                if (weapon.NextReadyTick > tick &&
+                    weapon.NextReadyTick - tick > longestRecovery)
+                    throw new ArgumentException("Invalid weapon recovery checkpoint: recovery starts in the future.");
+                if (weapon.ShotCount > 0 && weapon.NextReadyTick == 0)
+                    throw new ArgumentException("Fired weapon lost its cooldown checkpoint.");
             }
             return new CombatState(tick, array);
         }
@@ -113,6 +121,9 @@ namespace FrostArk.Core.Combat
                 Add(weapon.Definition.AmmoItemId.Value);
                 Add(weapon.Definition.AmmoPerShot.ToString(CultureInfo.InvariantCulture));
                 Add(weapon.Definition.CooldownTicks.ToString(CultureInfo.InvariantCulture));
+                Add(weapon.Definition.MagazineCapacity.ToString(CultureInfo.InvariantCulture));
+                Add(weapon.Definition.ReloadTicks.ToString(CultureInfo.InvariantCulture));
+                Add(weapon.MagazineRounds.ToString(CultureInfo.InvariantCulture));
                 Add(weapon.NextReadyTick.ToString(CultureInfo.InvariantCulture));
                 Add(weapon.ShotCount.ToString(CultureInfo.InvariantCulture));
             }

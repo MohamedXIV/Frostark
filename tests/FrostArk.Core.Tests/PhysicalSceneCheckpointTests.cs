@@ -132,7 +132,7 @@ namespace FrostArk.Core.Tests
             using (var session = Begin())
             {
                 var blob = SaveCodec.Encode(session.Capture());
-                blob[blob.Length - 33] = 2; // Invalid trailing v13 presence flag.
+                blob[blob.Length - 37] = 2; // Invalid trailing v13 presence flag.
                 using (var hash = SHA256.Create())
                 {
                     var checksum = hash.ComputeHash(blob, 0, blob.Length - 32);
@@ -151,10 +151,10 @@ namespace FrostArk.Core.Tests
             using (var session = Begin())
             {
                 var current = SaveCodec.Encode(session.Capture());
-                Assert.That(BitConverter.ToUInt16(current, 8), Is.EqualTo(13));
+                Assert.That(BitConverter.ToUInt16(current, 8), Is.EqualTo(14));
                 // Version 13 adds precisely one 0-byte marker when no physical
                 // checkpoint exists. A genuine v12 ends immediately before it.
-                int length = BitConverter.ToInt32(current, 10) - 1;
+                int length = BitConverter.ToInt32(current, 10) - 5;
                 var v12 = new byte[14 + length + 32];
                 Array.Copy(current, v12, 14 + length);
                 v12[8] = 12;
