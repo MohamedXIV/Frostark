@@ -130,6 +130,18 @@ namespace FrostArk.Core.Application
             return CommitAdvance(_scheduler.AdvanceUntil(target, policy));
         }
 
+        public void AdvanceCombatTick(long tick)
+        {
+            Guard();
+            var next = _state.AtCombatTick(tick);
+            if (!ReferenceEquals(next, _state))
+            {
+                _state = next;
+                Notify(new WorldSessionChange(WorldSessionChangeKind.Time,
+                    new WorldSessionView(_state), Array.Empty<FrostArk.Core.Events.WorldEvent>()));
+            }
+        }
+
         public SaveGameDto Capture()
         {
             Guard();

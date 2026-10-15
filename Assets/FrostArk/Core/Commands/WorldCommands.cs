@@ -243,4 +243,22 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+
+    /// <summary>Authoritative combat consequence inflicts persistent wounds on crew.</summary>
+    public sealed class DamageCrewCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public int WoundPermille { get; }
+        public long ExpectedRevision { get; }
+
+        public DamageCrewCommand(EntityId id, EntityId crewId, int woundPermille,
+            long expectedRevision)
+        {
+            Id = id;
+            CrewId = crewId;
+            WoundPermille = woundPermille;
+            ExpectedRevision = expectedRevision;
+        }
+    }
 }

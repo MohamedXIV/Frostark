@@ -96,6 +96,18 @@ namespace FrostArk.Core.Crew
                 : m).ToArray(), _jobs, _treatments);
         }
 
+        internal CrewState Wound(EntityId crewId, int woundPermille)
+        {
+            if (woundPermille <= 0 || woundPermille > 1000)
+                throw new ArgumentOutOfRangeException(nameof(woundPermille));
+            var member = Get(crewId);
+            if (member == null)
+                throw new ArgumentException("Crew member is not in the authored roster.", nameof(crewId));
+            return new CrewState(_members.Select(m => m.Id == crewId
+                ? m.WithWounds(Math.Min(1000, m.Wounds + woundPermille))
+                : m).ToArray(), _jobs, _treatments);
+        }
+
         public RepairJob? GetRepair(EntityId id) =>
             id.IsValid ? Array.Find(_jobs, x => x.Id == id) : null;
 
