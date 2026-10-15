@@ -186,7 +186,7 @@ namespace FrostArk.Core.Tests
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
             Assert.That(v4[8], Is.EqualTo(14));
-            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 134);
+            var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 94);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(result.Value.State.Thermal.Rooms, Is.Empty);
