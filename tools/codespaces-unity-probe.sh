@@ -4,7 +4,13 @@ set -Eeuo pipefail
 
 action="${1:-check}"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="$(sed -n 's/^m_EditorVersion: //p' "$root/ProjectSettings/ProjectVersion.txt" | head -n 1)"
+project_version="$(sed -n 's/^m_EditorVersion: //p' "$root/ProjectSettings/ProjectVersion.txt" | head -n 1)"
+# Latest verified official 6000.6 patch as of 2026-10-16; override for future patches.
+version="${UNITY_EDITOR_VERSION:-6000.6.6f1}"
+if [[ "$version" != "${project_version%.*}."* ]]; then
+  echo "Editor $version must stay within project's ${project_version%.*}.x line." >&2
+  exit 2
+fi
 revision="$(sed -n 's/^m_EditorVersionWithRevision: .* (\(.*\))/\1/p' "$root/ProjectSettings/ProjectVersion.txt" | head -n 1)"
 logs="$root/Logs"
 mkdir -p "$logs"
@@ -20,6 +26,8 @@ FrostArk Codespaces Unity probe
 
 Prerequisites for tests: Unity Editor matching ProjectVersion.txt, an active
 license, and compatible Linux libraries. See docs/engineering/codespaces-unity-probe.md.
+Default cloud Editor: 6000.6.6f1 (latest published 6000.6 patch on 2026-10-16).
+Set UNITY_EDITOR_VERSION to override to a newer 6000.6.x patch later.
 Set UNITY_EDITOR_BIN to the Linux Editor executable if discovery fails.
 Set UNITY_TIMEOUT_SECONDS to override the 900-second test timeout.
 HELP
@@ -56,7 +64,8 @@ case "$action" in
   check)
     echo "FrostArk Unity cloud probe (read-only)"
     echo "Repository: $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo unknown)"
-    echo "Unity version: $version"
+    echo "Project-pinned Unity: $project_version"
+    echo "Cloud test Unity: $version"
     echo "Unity changeset: $revision"
     echo "OS: $(uname -sm)"
     if command -v free >/dev/null; then free -h | head -n 2; fi
@@ -91,13 +100,21 @@ timeout_seconds="${UNITY_TIMEOUT_SECONDS:-900}"
 }
 
 settings="$root/ProjectSettings/EditorSettings.asset"
+project_version_file="$root/ProjectSettings/ProjectVersion.txt"
 tmp="$(mktemp -d)"
+cp -p "$project_version_file" "$tmp/ProjectVersion.txt"
 original_exists=0
 if [[ -f "$settings" ]]; then
   cp -p "$settings" "$tmp/EditorSettings.asset"
   original_exists=1
 fi
 restore_settings() {
+  # Unity can rewrite ProjectVersion.txt when opening with a newer patch.
+  # This is a *cloud experiment*, so keep the user's pinned version unchanged.
+  if [[ -f "$project_version_file" ]] && ! cmp -s "$project_version_file" "$tmp/ProjectVersion.txt"; then
+    cp -p "$tmp/ProjectVersion.txt" "$project_version_file"
+    echo "Restored pre-run ProjectVersion.txt bytes."
+  fi
   # Never git checkout/reset; preserve the user's exact pre-run bytes.
   if ((original_exists)) && ! cmp -s "$settings" "$tmp/EditorSettings.asset"; then
     cp -p "$tmp/EditorSettings.asset" "$settings"
