@@ -135,6 +135,22 @@ bash tools/codespaces-unity-probe.sh editmode
 
 The probe now detects directly missing ELF libraries and reports an actionable error instead of running the Editor blindly. If another library is missing, install its matching package based on the exact `ldd` result; do not install a full desktop environment or broad graphics-driver stack speculatively. The project's first actual Unity Import, licensing state after rebuilding, G2/G3 NUnit XML and any remaining runtime libraries are **not yet verified**.
 
+## Subsequent Linux ELF dependencies (GTK 3 and X11)
+
+After installing the initial `libgl1`/`libglu1-mesa` packages, the real user `ldd "$UNITY_EDITOR_BIN"` still reported missing `libXcursor.so.1`, `libXrandr.so.2`, `libgtk-3.so.0`, GLib/GIO/GObject, GDK Pixbuf, Cairo, Pango, Fontconfig, ATK and HarfBuzz. These are **runtime libraries** linked by Unity Editor, even when the Editor itself is run headlessly; this does not justify desktop-lite or a display server.
+
+On Ubuntu 24.04 (Noble), the GTK 3 runtime uses the `t64` package name and pulls the remaining GLib, Cairo, Pango and GDK components transitively:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libgtk-3-0t64 libxcursor1 libxrandr2 libfontconfig1
+ldd "$UNITY_EDITOR_BIN" | grep 'not found' || echo 'All direct libraries resolved'
+```
+
+If the linker is clean, retry `bash tools/codespaces-unity-probe.sh editmode`. A clean `ldd` proves only the direct linker prerequisites; still collect the Editor log and authentic NUnit XML. **No successful Unity project import or G2/G3 result has yet been reported.**
+
+Ubuntu 24.04 package dependency reference: https://packages.ubuntu.com/noble/libgtk-3-0t64
+
 ## Safety and cost boundaries
 
 - Unity install/download and tests are **opt-in** and cannot start from `postCreateCommand`.
