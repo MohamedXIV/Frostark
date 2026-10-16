@@ -151,6 +151,51 @@ If the linker is clean, retry `bash tools/codespaces-unity-probe.sh editmode`. A
 
 Ubuntu 24.04 package dependency reference: https://packages.ubuntu.com/noble/libgtk-3-0t64
 
+## Exit 198 after container rebuild: Unity Editor licensing
+
+The latest real Codespaces smoke got beyond shared memory and Linux runtime libraries but terminated with **Editor exit 198**, before project import or NUnit. The `Logs/codespaces-editmode.log` explicitly states:
+
+```text
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Module] Error: 'com.unity.editor.headless' was not found.
+No valid Unity Editor license found. Please activate your license.
+```
+
+Rebuilding the devcontainer removed the separately installed standalone CLI (`unity: command not found`) and its previous authenticated session. The Editor binary **survived** under `/tmp/frostark-unity-editors/6000.6.6f1/Editor/Unity`, so do not download it again. The editor also reported that `~/.local/share/unity3d` could not be created: inspect the home-directory ownership and create the user-owned directory if possible before retrying.
+
+Restore the CLI and personal licensing (interactive authentication through the user's own Unity account):
+
+```bash
+mkdir -p "$HOME/.local/share/unity3d"
+curl -fsSL https://public-cdn.cloud.unity3d.com/hub/prod/cli/install.sh -o /tmp/unity-cli-install.sh
+UNITY_CLI_CHANNEL=beta bash /tmp/unity-cli-install.sh
+export PATH="$HOME/.local/bin:$PATH"
+unity --version
+sudo apt-get install -y dbus-x11 gnome-keyring libsecret-tools
+dbus-run-session -- bash
+# The lines below execute in the new D-Bus-enabled bash shell.
+export PATH="$HOME/.local/bin:$PATH"
+unity auth status
+unity auth login
+unity license activate --personal --accept-eula
+unity license status
+```
+
+If Unity CLI reports `KEYRING_WRITE_FAILED`, ensure that the gnome-keyring-daemon secret-service component has started and the login keyring is unlocked in the *same* D-Bus session. Never paste a keyring password, Unity OAuth redirect/token, or entitlement file into logs or chat. An active Unity Personal license reported by CLI is necessary but not sufficient evidence that the independently launched batch-mode Editor can use it. Only retry the EditMode smoke after sign-in and license activation; if it still exits 198, investigate the CLI-vs-Editor identity bridge rather than repeating installation.
+
+From that same authenticated shell:
+
+```bash
+export UNITY_EDITOR_BIN=/tmp/frostark-unity-editors/6000.6.6f1/Editor/Unity
+bash tools/codespaces-unity-probe.sh editmode
+```
+
+The original sample runner launches the Editor directly. If the Editor still cannot see an otherwise active license, compare launching from the official Unity CLI (`unity test --help`, `unity editors add --help`, `unity open --help`) to distinguish an auth-broker/identity-server issue from an actual entitlement limit. Do not claim a successful test based only on `unity license status` or a successful CLI command.
+
+Sources:
+- https://docs.unity.com/en-us/unity-cli/use-unity-cli
+- https://github.com/Unity-Technologies/skills/blob/main/skills/unity-cli/references/auth-license-cloud.md
+
 ## Safety and cost boundaries
 
 - Unity install/download and tests are **opt-in** and cannot start from `postCreateCommand`.
