@@ -2,6 +2,7 @@
   "name": "FrostArk - Unity Headless Probe",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "remoteUser": "vscode",
+  "runArgs": ["--shm-size=2g"],
   "customizations": {
     "vscode": {
       "settings": {
