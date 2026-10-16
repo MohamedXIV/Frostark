@@ -1,6 +1,6 @@
 # FrostArk — Codespaces Unity headless feasibility probe
 
-**Experiment only.** Nothing in this PR claims a successful Codespaces Unity run or changes the game's production runtime. The primary objective is to answer whether the **real Linux Unity Editor 6000.6.0f1** can run a representative FrostArk physics test inside a GitHub Codespace.
+**Experiment only.** Nothing in this PR claims a successful Codespaces Unity run or changes the game's production runtime. The primary objective is to answer whether the **real Linux Unity Editor on the newest verified 6000.6.x patch** can run a representative FrostArk physics test inside a GitHub Codespace.
 
 ## Why no desktop-lite?
 
@@ -41,12 +41,19 @@ unity license activate --help
 
 **Licensing limitation:** Unity's Editor documentation says Unity Personal normally requires a signed-in Unity Hub; the newer experimental Unity CLI advertises Personal activation. Do not assume either route works on a Codespaces container. If CLI sign-in or Personal activation fails, record the precise non-secret error and **stop before large downloads**. You may need to revisit authentication on a supported desktop/hub environment. Never paste account passwords, OAuth tokens, license files or service-account secrets into logs, git, or chat.
 
-After confirming licensing and enough disk space, install exactly the project's pinned Editor version and revision (not a random LTS version):
+After confirming licensing and enough disk space, prefer the latest stable patch in the SAME 6000.6 line; on October 16, 2026 the official archive lists **6000.6.6f1 (released October 15)**. First perform a non-downloading dry run (verify available disk):
 
 ```bash
-unity install 6000.6.0f1 -c f7f8ed4d1e24
+unity editors info 6000.6.6f1
+unity install 6000.6.6f1 --dry-run
+```
+
+If capacity and license are sufficient, opt in to actual Editor installation (no extra build-platform modules):
+
+```bash
+unity install 6000.6.6f1
 unity editors --installed
-unity editors path 6000.6.0f1
+unity editors path 6000.6.6f1
 ```
 
 If installation needs additional Linux shared libraries, install only documented missing dependencies; don't blindly install large build-support modules (Android, iOS, WebGL). A brand-new Codespace can have 2 CPU cores / 8 GB RAM / 32 GB storage; that might be insufficient for the Editor plus its first import/cache. The initial import may be substantially slower than on the local Windows machine.
@@ -71,7 +78,7 @@ This calls the project's existing `FrostArk.Unity.Editor.InteractivePlayModeRunn
 bash tools/codespaces-unity-probe.sh full
 ```
 
-If Unity is installed in a nonstandard location, set `UNITY_EDITOR_BIN` to its **Linux executable** before the smoke command.
+The cloud probe now defaults to Unity **6000.6.6f1** and keeps the original `ProjectVersion.txt` bytes intact after any test. This does **not** update the repository's project-pinned `6000.6.0f1` on main; only adopt a newer patch for all developers after the smoke tests pass and a separate upgrade decision. Set `UNITY_EDITOR_VERSION` to a future 6000.6.x patch when released; other minor versions are rejected. If Unity is installed in a nonstandard location, set `UNITY_EDITOR_BIN` to its **Linux executable** before the smoke command.
 
 **Evidence to retain:** project `main`/branch SHA, exact Editor revision, mode, exit code, `Logs/codespaces-*.log`, `Logs/codespaces-editmode.xml` or `Logs/results-playmode.xml`, and the Codespace machine specs. Don't claim `G2/G3 PASS` without valid XML and a successful process exit. Don't merge this setup PR merely because GitHub G0/G1 passes; Codespaces runtime remains unverified until a real Codespaces execution.
 
@@ -85,6 +92,7 @@ If Unity is installed in a nonstandard location, set `UNITY_EDITOR_BIN` to its *
 - Avoid spending GitHub Actions minutes on Unity; this is a manually triggered Codespace experiment and does not change existing CI.
 
 References:
+- https://unity.com/releases/editor/archive
 - https://docs.unity.com/en-us/unity-cli/use-unity-cli
 - https://docs.unity.com/en-us/unity-cli/release-notes
 - https://docs.unity.com/en-us/engine/6000.6/manual/get-started/install-and-upgrade/licenses-and-activation/managing-your-unity-license
