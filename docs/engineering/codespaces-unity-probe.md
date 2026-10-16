@@ -82,6 +82,37 @@ The cloud probe now defaults to Unity **6000.6.6f1** and keeps the original `Pro
 
 **Evidence to retain:** project `main`/branch SHA, exact Editor revision, mode, exit code, `Logs/codespaces-*.log`, `Logs/codespaces-editmode.xml` or `Logs/results-playmode.xml`, and the Codespace machine specs. Don't claim `G2/G3 PASS` without valid XML and a successful process exit. Don't merge this setup PR merely because GitHub G0/G1 passes; Codespaces runtime remains unverified until a real Codespaces execution.
 
+## Unity 6.6 DataStore/UDS startup: container shared memory
+
+A real user smoke on `6000.6.6f1` under Codespaces exited `134` before tests:
+
+```text
+Aborting batchmode due to fatal error:
+Failed to initialise UDS client in the Editor
+```
+
+**Probable cause (confirm locally):** Unity 6.6 requires over 1 GiB of container shared memory; stock Docker `/dev/shm` is only 64 MiB. GameCI documents this exact new Unity 6.6 resource requirement and defaults to `1025m`. For headroom the Codespaces devcontainer in this branch now configures `"runArgs": ["--shm-size=2g"]`. This is shared-memory capacity, **not** a reserved 2 GiB block. Do not conflate Unity's DataStore (UDS) subsystem with Linux D-Bus/keyring auth, which has already been separately resolved.
+
+Before rebuilding, confirm the probable cause:
+
+```bash
+df -h /dev/shm
+tail -n 50 Logs/codespaces-editmode.log
+```
+
+If `/dev/shm` is 64 MiB:
+1. Commit/stash any local code changes; no existing code edits are required.
+2. `git pull --ff-only` this experiment branch.
+3. Use **Command Palette → Codespaces: Rebuild Container** (or the UI rebuild control) to apply `runArgs`. Just restarting the terminal is insufficient. **Warning:** `/tmp` and keyring/session state may not survive a container rebuild, so verify before reinstalling the Editor.
+4. `df -h /dev/shm` must now show about **2.0 GiB**. If Codespaces refuses the runtime flag or still shows 64 MiB, stop and report the result instead of repeatedly crashing Unity.
+5. `unity license status` and `unity editors list` should confirm the previous activation and installation. If the binary in `/tmp` vanished, reinstall only after verifying storage and license state.
+6. Re-run `bash tools/codespaces-unity-probe.sh editmode`.
+
+Sources:
+- https://game.ci/docs/github/builder/ (Unity 6.6 shm requirement)
+- https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/desktop-lite.md (documented `--shm-size` devcontainer flag)
+- https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers
+
 ## Safety and cost boundaries
 
 - Unity install/download and tests are **opt-in** and cannot start from `postCreateCommand`.
