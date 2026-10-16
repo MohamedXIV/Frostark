@@ -70,6 +70,9 @@ case "$action" in
     echo "OS: $(uname -sm)"
     if command -v free >/dev/null; then free -h | head -n 2; fi
     df -h "$root" | tail -n 1
+    echo "Shared memory /dev/shm (Unity 6.6 requires >1 GiB):"
+    df -h /dev/shm
+    echo "If this is 64M, pull the branch and rebuild the devcontainer to apply runArgs --shm-size=2g."
     echo "Unity CLI: $(command -v unity || echo 'not installed')"
     if command -v unity >/dev/null; then
       unity --version || true
@@ -90,6 +93,13 @@ esac
 if [[ "$(uname -s)" != Linux ]]; then
   echo "This probe is only for Linux. Use tools/Validate-Unity.ps1 on Windows." >&2
   exit 2
+fi
+
+shm_bytes="$(df -B1 --output=size /dev/shm | tail -n 1 | tr -d '[:space:]')"
+if [[ "$shm_bytes" =~ ^[0-9]+$ ]] && (( shm_bytes < 1074790400 )); then
+  echo "BLOCKED: /dev/shm is $(df -h /dev/shm | tail -n 1), less than Unity 6.6's >1 GiB requirement." >&2
+  echo "Pull .devcontainer/devcontainer.json with runArgs --shm-size=2g, rebuild the container, then verify df -h /dev/shm." >&2
+  exit 3
 fi
 
 bin="$(editor_path)"
