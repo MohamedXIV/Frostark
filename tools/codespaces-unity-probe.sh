@@ -175,6 +175,11 @@ timeout --kill-after=15s "${timeout_seconds}s" \
   "$bin" -batchmode -nographics -projectPath "$root" \
   -logFile "$log" "${args[@]}" || status=$?
 if ((status != 0)); then
+  if ((status == 198)) && [[ -f "$log" ]] && grep -q "No valid Unity Editor license found" "$log"; then
+    echo "Unity Editor rejected the license (exit 198). This can happen after a devcontainer rebuild." >&2
+    echo "The standalone Editor does not inherit proof of Unity CLI sign-in automatically." >&2
+    echo "Reinstall/re-authenticate Unity CLI, activate the Personal license, and retry. See docs/engineering/codespaces-unity-probe.md." >&2
+  fi
   echo "Unity returned $status. Inspect: tail -n 100 '$log'" >&2
   exit "$status"
 fi
