@@ -113,6 +113,28 @@ Sources:
 - https://github.com/microsoft/vscode-dev-containers/blob/main/script-library/docs/desktop-lite.md (documented `--shm-size` devcontainer flag)
 - https://docs.github.com/en/codespaces/setting-up-your-project-for-codespaces/adding-a-dev-container-configuration/introduction-to-dev-containers
 
+## Verified shared-memory fix; next Linux runtime-library hurdle (2026-10-16)
+
+The live Codespace log confirmed this was a real startup blocker: `Requested 1073741824 bytes, but only 67108864 bytes available`. After applying `--shm-size=2g` through a devcontainer rebuild, `df -h /dev/shm` now correctly displays **2.0G**. The Linux Editor binary installed under `/tmp/frostark-unity-editors/6000.6.6f1/Editor/Unity` survived the rebuild, although the Unity CLI shell command did not.
+
+On the next EditMode smoke, the Editor failed **before project import and before NUnit** with exit 127, reporting:
+
+```text
+error while loading shared libraries: libGL.so.1: cannot open shared object file
+```
+
+This is a missing Linux runtime library, **not** evidence that `-nographics` needs desktop-lite, nor a failing raycast test. No new Editor download or devcontainer rebuild is needed for this step. In the same Codespaces terminal:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libgl1 libglu1-mesa
+export UNITY_EDITOR_BIN=/tmp/frostark-unity-editors/6000.6.6f1/Editor/Unity
+ldd "$UNITY_EDITOR_BIN" | grep "not found" || echo "No missing direct libraries"
+bash tools/codespaces-unity-probe.sh editmode
+```
+
+The probe now detects directly missing ELF libraries and reports an actionable error instead of running the Editor blindly. If another library is missing, install its matching package based on the exact `ldd` result; do not install a full desktop environment or broad graphics-driver stack speculatively. The project's first actual Unity Import, licensing state after rebuilding, G2/G3 NUnit XML and any remaining runtime libraries are **not yet verified**.
+
 ## Safety and cost boundaries
 
 - Unity install/download and tests are **opt-in** and cannot start from `postCreateCommand`.
