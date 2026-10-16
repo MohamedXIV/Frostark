@@ -103,6 +103,19 @@ if [[ "$shm_bytes" =~ ^[0-9]+$ ]] && (( shm_bytes < 1074790400 )); then
 fi
 
 bin="$(editor_path)"
+# On minimal Ubuntu devcontainers, the Linux Editor can be installed correctly
+# yet fail with exit 127 before the NUnit runner starts (e.g. libGL.so.1).
+# Diagnose directly linked ELF dependencies before launching Unity.
+if command -v ldd >/dev/null 2>&1; then
+  missing_libs="$(ldd "$bin" 2>&1 | grep 'not found' || true)"
+  if [[ -n "$missing_libs" ]]; then
+    echo "BLOCKED: Unity Linux Editor is missing shared libraries:" >&2
+    printf '%s\n' "$missing_libs" >&2
+    echo "For libGL.so.1 on Ubuntu 24.04, install: sudo apt-get install -y libgl1 libglu1-mesa" >&2
+    echo "Check dependencies again: ldd \"$bin\" | grep 'not found'" >&2
+    exit 4
+  fi
+fi
 timeout_seconds="${UNITY_TIMEOUT_SECONDS:-900}"
 [[ "$timeout_seconds" =~ ^[0-9]+$ ]] && ((timeout_seconds >= 30)) || {
   echo "UNITY_TIMEOUT_SECONDS must be an integer >= 30" >&2
