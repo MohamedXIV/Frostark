@@ -4,12 +4,24 @@ Applies to AI agents and contributors across the repository. Read `docs/INDEX.md
 
 ## Scope and authority
 
-1. **GitHub main is the source of truth** after validating the latest live head, open PRs, issues and related dependencies. Do not overwrite unpushed local changes or invent completion evidence.
+1. **GitHub main is the source of truth for implementation and engineering evidence** after validating the latest live head, open PRs, issues and related dependencies. **Miro is the single authoritative home of FrostArk game-design decisions**, as defined below. Do not overwrite unpushed local changes or invent completion evidence.
 2. This is a **full game, not a prototype**. Deliver production-shaped, modular vertical slices. Temporary art/fixtures are acceptable when explicitly named and replaceable; throwaway architecture is not.
 3. Preserve the hierarchy: desktop → mobile → web → PC handheld → console. Avoid a feature that silently breaks an earlier target.
 4. The user's local Unity project may contain unpushed work. Never silently reset, delete, or reconfigure local files. `Assets/TutorialInfo` is known removable starter content; clean it only as a deliberate separate commit.
 5. **GitHub Actions explicitly approved for public FrostArk on 2026-10-10.** Use targeted, read-only hosted CI for G0/Python and G1/.NET NUnit tests (currently `.github/workflows/core-checks.yml`) and inspect real job logs before merging. Do not run privileged PR workflows, expose secrets, introduce paid runners, or claim Unity G2/PlayMode/target platform proof from G1.
 6. Never assume ShellWarden grants Unity execution. The 2026-10-10 bootstrap verified local Unity CLI/headless import and two package tests, but the installed ShellWarden broker still permits only git. See `docs/engineering/local-bootstrap-handoff.md`; new engine checks remain **not run** until execution evidence exists for that change.
+
+## Cross-app single-source-of-truth rule (FrostArk Design Lab)
+
+**Each piece of information has exactly one authoritative owner; every other system links to it. Never create or maintain competing copies of the same design decision.**
+
+- **Miro owns game-design truth** for FrostArk: original ideas, discussion, rejected alternatives and rationale, accepted/deferred directions, unresolved questions, visual references, screenshots and sketches. Canonical board: [FrostArk — Design Lab](https://miro.com/app/board/uXjVEYctyzg=/). Read the relevant detailed Miro design record before interpreting or changing a design decision; one-line canvas cards are navigation only, not complete requirements.
+- **GitHub owns implementation/engineering truth**: source code, technical interfaces/contracts, actionable Issues, PRs, tests, checks, releases and real implementation status. An Issue should link to its authoritative Miro decision and contain only its specific implementation scope, acceptance criteria and technical details, not a second independent narrative of that decision.
+- **RepoPilot is coordination, not a third authority**: surface and link the live Miro/GitHub truth; keep only RepoPilot-specific execution state, bindings and handoffs. Do not copy design decisions into RepoPilot/Convex or GitHub Project Draft Issues as an alternate design database.
+- **Design status and implementation status are separate.** Miro can mark an idea Proposed / Researching / Accepted / Rejected / Deferred. Do not manually assign `Implemented` as a Miro design status: derive completion from verified live GitHub engineering evidence. **Accepted does not mean implemented.**
+- If Miro design and GitHub implementation disagree, explicitly identify the divergence, reconcile with the user, then update the appropriate authoritative owner. Do not silently sync, reword, replace or "fix" one system based on the other.
+- Historical GitHub design files, older decisions and discussion transcripts remain useful *sources and snapshots*; do not delete them wholesale or treat their old proposals as equally authoritative to later accepted Miro decisions. During adoption/migration, reference source history and mark superseded material clearly rather than creating two living design specifications.
+- If Miro is unavailable in an execution environment, state that the design record was **not verified**; do not invent a current decision from stale docs or memory. GitHub remains independently authoritative for actual code and tested outcomes.
 
 ## Engineering style
 
@@ -47,7 +59,7 @@ Code reviewed; requirements and regression tests met; serialization/migrations a
 
 ## Decision governance
 
-`docs/production/decisions.md` records adopted decisions, proposals and undecided questions. Proposals (squad cap, succession/permadeath, clock ratios, direct companion control, AI library selection, save format) remain proposals until approved or a documented implementation experiment decides them.
+`docs/production/decisions.md` remains a historical/engineering decisions record. For **current and future game-design rationale**, use the canonical Miro Design Lab record; link to it from GitHub engineering work rather than authoring a parallel design specification. Treat older proposed options (squad cap, succession/permadeath, clock ratios, direct companion control, AI library selection, save format) as proposals unless the current design record or verified implementation evidence explicitly resolves them.
 
 ## Continuous worker protocol
 
