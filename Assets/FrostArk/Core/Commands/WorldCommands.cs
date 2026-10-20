@@ -295,4 +295,36 @@ namespace FrostArk.Core.Commands
         }
     }
 
+    /// <summary>Claim one authored interaction position before navigation.</summary>
+    public sealed class ClaimCrewInteractionCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId SlotId { get; }
+        public int LifetimeMinutes { get; }
+        public long ExpectedRevision { get; }
+
+        public ClaimCrewInteractionCommand(EntityId id, EntityId crewId,
+            EntityId slotId, int lifetimeMinutes, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; SlotId = slotId;
+            LifetimeMinutes = lifetimeMinutes; ExpectedRevision = expectedRevision;
+        }
+    }
+
+    /// <summary>Cancel/complete occupancy; only the current claim owner can release.</summary>
+    public sealed class ReleaseCrewInteractionCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId SlotId { get; }
+        public long ExpectedRevision { get; }
+        public ReleaseCrewInteractionCommand(EntityId id, EntityId crewId,
+            EntityId slotId, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; SlotId = slotId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
+
 }
