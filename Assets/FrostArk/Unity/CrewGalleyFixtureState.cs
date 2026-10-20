@@ -76,16 +76,4 @@ namespace FrostArk.Unity
         }
     }
 
-    /// <summary>Configures the same fixture WorldState before VContainer Build.</summary>
-    [DefaultExecutionOrder(-1000)]
-    public sealed class CrewGalleyFixtureBootstrap : MonoBehaviour, IInitialWorldStateProvider
-    {
-        public WorldState ProvideInitialState() => CrewGalleyFixtureState.CreateDefaultState();
-
-        private void Awake()
-        {
-            var scope = GetComponent<WorldSessionScope>();
-            if (scope != null) scope.SetInitialState(ProvideInitialState());
-        }
-    }
 }
