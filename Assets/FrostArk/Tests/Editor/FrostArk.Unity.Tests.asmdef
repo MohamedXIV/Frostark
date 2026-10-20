@@ -4,7 +4,11 @@
     "FrostArk.Unity",
     "FrostArk.Core",
     "VContainer",
-    "Unity.AI.Navigation"
+    "Unity.AI.Navigation",
+    "CrashKonijn.Goap.Runtime",
+    "CrashKonijn.Agent.Runtime",
+    "CrashKonijn.Agent.Core",
+    "CrashKonijn.Goap.Core"
   ],
   "includePlatforms": [
     "Editor"
