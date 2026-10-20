@@ -2,6 +2,7 @@ using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Unity;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 using VContainer;
 
@@ -13,6 +14,29 @@ namespace FrostArk.Unity.Tests
     /// </summary>
     public sealed class CrewGalleySessionEditModeTests
     {
+        [Test]
+        public void GalleyBootstrapHasItsOwnLoadableMonoScriptAsset()
+        {
+            const string path = "Assets/FrostArk/Unity/CrewGalleyFixtureBootstrap.cs";
+            var script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+            Assert.That(script, Is.Not.Null,
+                "Serialized fixture components require a matching .cs asset.");
+            Assert.That(script.GetClass(), Is.EqualTo(typeof(CrewGalleyFixtureBootstrap)),
+                "The MonoBehaviour must not share a differently named source file.");
+
+            var root = new GameObject("GalleyBootstrapMonoScriptSmoke");
+            try
+            {
+                var component = root.AddComponent<CrewGalleyFixtureBootstrap>();
+                Assert.That(AssetDatabase.GetAssetPath(
+                    MonoScript.FromMonoBehaviour(component)), Is.EqualTo(path));
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
         [Test]
         public void GalleyReceivesTheSameScopedWorldAndItsCanonicalFixtureState()
         {
