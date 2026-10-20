@@ -43,6 +43,24 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void ManualPickGridRejectsBulkheadsAndSmoothCurveCannotCutWalls()
+        {
+            var grid = CrewGalleyFixtureState.Grid();
+            var start = grid.WorldCenter(CrewGalleyFixtureState.StartCell, 1f);
+            var wall = grid.WorldCenter(new Vector2Int(4, 2), 1f);
+            Assert.That(grid.WorldToCell(start), Is.EqualTo(
+                CrewGalleyFixtureState.StartCell));
+            Assert.That(grid.CanTraverse(start, wall), Is.False,
+                "A smoothed diagonal or manual shortcut cannot walk through a bulkhead.");
+            Assert.That(grid.CanTraverse(start, grid.WorldCenter(new Vector2Int(2, 1), 1f)),
+                Is.True);
+            Assert.That(grid.CanStand(grid.WorldToCell(
+                grid.WorldCenter(CrewGalleyFixtureState.GalleyCell))), Is.False,
+                "Clicking on top of a physical Galley machine is not a walk target.");
+            Assert.That(grid.CanStand(grid.WorldToCell(new Vector3(200, 0, 200))), Is.False);
+        }
+
+        [Test]
         public void PathIsRepeatableAndAllCoordinatesStayOnGrid()
         {
             var grid = CrewGalleyFixtureState.Grid();
