@@ -87,6 +87,13 @@ namespace FrostArk.Unity
                 builder.RegisterComponent(commander);
             }
 
+            // Opt-in ship scene authoring adapter uses the exact same scoped
+            // WorldSession as the commander; it must not create a second run.
+            var shipRts = GetComponentInChildren<ShipTacticalSceneBootstrap>() ??
+                FindAnyObjectByType<ShipTacticalSceneBootstrap>();
+            if (shipRts != null)
+                builder.RegisterComponent(shipRts);
+
             var tickRunner = GetComponentInChildren<CombatTickRunner>() ?? FindAnyObjectByType<CombatTickRunner>();
             if (tickRunner != null)
             {
