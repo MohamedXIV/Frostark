@@ -150,7 +150,11 @@ namespace FrostArk.Core.Tests
             int recoveryBytes = 4;
             foreach (var member in state.CrewDuty.Members)
                 recoveryBytes += 4 + Encoding.UTF8.GetByteCount(member.Id.Value) + 1;
-            int minimumSkillOffset = encoded.Length - 32 - recoveryBytes - 4 - 1 - 4 - 4;
+            int v16Needs = 8;
+            foreach (var member in state.CrewDuty.Members)
+                v16Needs += 12 + Encoding.UTF8.GetByteCount(member.Id.Value);
+            int minimumSkillOffset = encoded.Length - 32 - v16Needs
+                - recoveryBytes - 4 - 1 - 4 - 4;
             Array.Copy(BitConverter.GetBytes(1001), 0,
                 encoded, minimumSkillOffset, sizeof(int));
             using (var hash = System.Security.Cryptography.SHA256.Create())
