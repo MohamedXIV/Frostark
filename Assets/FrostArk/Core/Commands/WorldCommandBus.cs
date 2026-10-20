@@ -333,6 +333,29 @@ namespace FrostArk.Core.Commands
                     reload.WeaponId, weapon.Definition.AmmoItemId, toLoad));
             }
 
+            if (command is ConsumeCrewProvisionCommand consumption)
+            {
+                var member = state.CrewDuty.Get(consumption.CrewId);
+                if (member == null || !state.HasCrew(consumption.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (member.IsAway)
+                    return CommandResult.Rejected(state, CommandFailure.CrewNotOnShip);
+                var effect = state.CrewDuty.GetConsumable(consumption.ItemId);
+                if (effect == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownProvision);
+                if ((effect.Nutrition == 0 || member.Hunger == 0) &&
+                    (effect.Hydration == 0 || member.Thirst == 0))
+                    return CommandResult.Rejected(state, CommandFailure.NeedAlreadySatisfied);
+                var stock = state.Inventory.TryConsumeShip(consumption.ItemId, 1);
+                if (!stock.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(stock.Error));
+                var crew = state.CrewDuty.Consume(consumption.CrewId, effect);
+                var next = state.WithCrewProvision(crew, stock.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewProvisionConsumed,
+                    consumption.CrewId, consumption.ItemId, quantity: 1));
+            }
+
             if (command is TreatCrewWoundCommand treatment)
             {
                 var patient = state.CrewDuty.Get(treatment.CrewId);
