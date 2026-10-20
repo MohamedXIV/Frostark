@@ -123,7 +123,8 @@ namespace FrostArk.Unity
 
         public bool TryStart()
         {
-            if (!_started || _session == null || engineer == null || _moving) return false;
+            if (!_started || _session == null || engineer == null || _moving ||
+                _selected) return false;
             _paused = false;
             _goingHome = false;
             _manualMove = false;
@@ -133,6 +134,14 @@ namespace FrostArk.Unity
         private bool PlanNext()
         {
             if (_session == null) return false;
+            // Selection is a temporary player-control priority, not a persistent
+            // job or a switch that disables authoritative Needs progression.
+            if (_selected)
+            {
+                _paused = true;
+                _status = "Crew selected — awaiting orders; needs still advance";
+                return false;
+            }
             var world = _session.Capture().State;
             var actor = world.CrewDuty.Get(CrewGalleyFixtureState.Engineer);
             if (actor == null || actor.IsAway || actor.Wounds >= 1000)
@@ -194,7 +203,16 @@ namespace FrostArk.Unity
         /// Player commands preempt the autonomous claim and leave Needs intact.
         /// </summary>
         public void SelectEngineer() => _selected = engineer != null;
-        public void ClearSelection() => _selected = false;
+
+        public void ClearSelection()
+        {
+            if (!_selected) return;
+            _selected = false;
+            // Do not interrupt an accepted player Move by deselecting.
+            // If already idle, immediately restore ordinary Need decisions.
+            if (!_moving && _started && _session != null && engineer != null)
+                TryStart();
+        }
 
         public bool IssueMoveOrder(Vector2Int destination)
         {
@@ -218,7 +236,7 @@ namespace FrostArk.Unity
             _manualMove = true;
             _moving = true;
             _paused = false;
-            _status = "Manual move ordered — autonomy paused until Resume Auto";
+            _status = "Player move active — selection only suppresses new idle goals";
             return true;
         }
 
@@ -233,7 +251,8 @@ namespace FrostArk.Unity
             {
                 bool clickedEngineer = Physics.Raycast(ray, out var hit, 200f) &&
                     (hit.transform == engineer || hit.transform.IsChildOf(engineer));
-                _selected = clickedEngineer;
+                if (clickedEngineer) SelectEngineer();
+                else ClearSelection();
                 return clickedEngineer;
             }
             if (!_selected || _grid == null) return false;
@@ -367,7 +386,10 @@ namespace FrostArk.Unity
             {
                 _manualMove = false;
                 _paused = true;
-                _status = "Move order complete — autonomy paused; Resume Auto to continue";
+                _paused = true;
+                _status = "Player move completed — standing duties kept";
+                if (!_selected)
+                    TryStart(); // Deselect restores idle autonomy, no Resume button.
                 return;
             }
             if (_goingHome)
@@ -493,11 +515,10 @@ namespace FrostArk.Unity
             GUILayout.Label("Claim: " + (_claimedSlot.IsValid ? _claimedSlot.Value : "none"));
             GUILayout.Label(_status);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Resume Auto")) TryStart();
             if (GUILayout.Button("Cancel")) CancelTrip();
             if (GUILayout.Button("Advance 10 min")) _session.Advance(10);
             GUILayout.EndHorizontal();
-            GUILayout.Label("RTS: left-click Engineer to select; right-click deck to move.");
+            GUILayout.Label("RTS: left-select / blank-click deselect; right-click Move.");
             GUILayout.Label("Selected: " + (_selected ? "Engineer" : "none") +
                 (_manualMove ? " | Manual order" : ""));
             GUILayout.Label("Clock advances only via explicit button (fixture).");
