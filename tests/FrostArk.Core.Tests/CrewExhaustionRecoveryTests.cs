@@ -1,4 +1,6 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
@@ -99,7 +101,7 @@ namespace FrostArk.Core.Tests
             {
                 new CrewMember(Engineer, DutyRole.Engineering, 1000, 100, 0, 1440,
                     fatigue: 600, isRecovering: true),
-                recovering.Get(Backup)
+                recovering.Get(Backup)!
             });
             var available = Roster(600);
             Assert.That(recovering.Fingerprint(), Is.Not.EqualTo(available.Fingerprint()));
@@ -114,6 +116,66 @@ namespace FrostArk.Core.Tests
             Assert.That(SaveCodec.Encode(SaveGameDto.Capture(read.Value.State,
                 read.Value.CreateScheduler(Array.Empty<IWorldMinuteSystem>()))),
                 Is.EqualTo(encoded));
+        }
+
+        [Test]
+        public void InvalidRecoveryFlagIsRejectedEvenWithRecomputedChecksum()
+        {
+            var roster = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 900, 0, 0, 1440,
+                    fatigue: 600, isRecovering: true)
+            });
+            var state = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), new[] { Engineer }, crewDuty: roster);
+            var scheduler = new SimulationScheduler(new WorldClock(state.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
+
+            // The v15 recovery extension is the final payload section,
+            // immediately before the 32-byte SHA-256 checksum.
+            bytes[bytes.Length - 33] = 2;
+            using (var sha = SHA256.Create())
+            {
+                var checksum = sha.ComputeHash(bytes, 0, bytes.Length - 32);
+                Array.Copy(checksum, 0, bytes, bytes.Length - 32, 32);
+            }
+            var result = SaveCodec.TryDecode(bytes);
+            Assert.That(result.Success, Is.False);
+        }
+
+        [Test]
+        public void V14PayloadWithoutLatchExtensionInfersSafetyForAlreadyExhaustedCrew()
+        {
+            var roster = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 900, 0, 0, 1440,
+                    fatigue: 950)
+            });
+            var state = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), new[] { Engineer }, crewDuty: roster);
+            var scheduler = new SimulationScheduler(new WorldClock(state.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var newest = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
+
+            // Strip the trailing v15 recovery section and construct a valid
+            // v14 envelope, as shipped v14 has no recovery-latch field.
+            int extensionLength = 4 + 4 + Encoding.UTF8.GetByteCount(Engineer.Value) + 1;
+            int payloadLength = BitConverter.ToInt32(newest, 10) - extensionLength;
+            var legacy = new byte[14 + payloadLength + 32];
+            Array.Copy(newest, legacy, legacy.Length - 32);
+            legacy[8] = 14;
+            legacy[9] = 0;
+            Array.Copy(BitConverter.GetBytes(payloadLength), 0, legacy, 10, 4);
+            using (var sha = SHA256.Create())
+            {
+                var checksum = sha.ComputeHash(legacy, 0, legacy.Length - 32);
+                Array.Copy(checksum, 0, legacy, legacy.Length - 32, 32);
+            }
+            var migrated = SaveCodec.TryDecode(legacy);
+            Assert.That(migrated.Success, Is.True, migrated.Error.ToString());
+            Assert.That(migrated.Value.State.CrewDuty.Get(Engineer).IsRecovering,
+                Is.True, "An exhausted legacy crewmember must not be staffed immediately.");
         }
 
         [Test]
