@@ -124,6 +124,30 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ClaimedStandingSlotDoesNotReserveConstructionFootprintElsewhere()
+        {
+            var crewId = EntityId.Parse("crew:worker");
+            var interactions = CrewInteractionState.Create(
+                new[] { new CrewInteractionSlot(SlotId, Station,
+                    CrewInteractionVerb.Work, 0, -1, 0) },
+                new[] { new CrewInteractionClaim(SlotId, crewId, new WorldMinute(10)) });
+            var initial = Begin(Layout(), Slots());
+            var duty = CrewState.Create(new[]
+            {
+                new CrewMember(crewId, DutyRole.Engineering, 700, 300, 0, 1440)
+            }, interactions: interactions);
+            var world = WorldState.Create(initial.Minute,
+                Array.Empty<SupplyStock>(), new[] { crewId },
+                inventory: initial.Inventory, crewDuty: duty, layout: initial.Layout);
+            var result = new WorldCommandBus().Execute(world, Build(Other, 4, 4));
+            Assert.That(result.Success, Is.True, result.Failure.ToString());
+            Assert.That(result.State.CrewDuty.Interactions.GetClaim(SlotId), Is.Not.Null,
+                "Build validation must not cancel an unrelated temporary slot claim.");
+            Assert.That(result.State.Inventory.GetAmount(InventoryContainer.ShipHold, Parts),
+                Is.EqualTo(12));
+        }
+
+        [Test]
         public void SavedStationSourceAndStandingSlotRemainProtectedAfterRestore()
         {
             byte[] save;
