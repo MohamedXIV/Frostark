@@ -128,13 +128,13 @@ namespace FrostArk.Core.Tests
         {
             var other = EntityId.Parse("module:other");
             var layout = Layout(
-                new ShipModule(Engine, Blueprint, B, 1, 2),
-                new ShipModule(other, Blueprint, B, 1, 0));
+                new ShipModule(Engine, Blueprint, B, 1, 3),
+                new ShipModule(other, Blueprint, B, 1, 1));
             var map = ShipSpatialMap.Derive(layout, new[] { Machine() },
                 Array.Empty<ShipRoomPortal>());
             Assert.That(map.ModuleClearanceAvailable(Engine), Is.False,
                 "The old construction validator does not yet prevent this placement.");
-            Assert.That(map.BuildReserved(C(B, 1, 1)), Is.True);
+            Assert.That(map.BuildReserved(C(B, 1, 2)), Is.True);
         }
 
         [Test]
