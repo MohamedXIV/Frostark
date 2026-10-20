@@ -48,6 +48,7 @@ namespace FrostArk.Unity
     public interface ICrewTheaterMoveExecutor
     {
         EntityId ActorId { get; }
+        EntityId SceneId { get; }
         PhysicalTheater Theater { get; }
         bool TryMove(CrewMoveGoal destination);
     }
@@ -60,13 +61,17 @@ namespace FrostArk.Unity
     {
         private readonly TacticalActorProxy _actor;
 
-        public ShoreNavMeshCrewExecutor(TacticalActorProxy actor)
+        public ShoreNavMeshCrewExecutor(TacticalActorProxy actor, EntityId sceneId)
         {
             _actor = actor != null ? actor :
                 throw new ArgumentNullException(nameof(actor));
+            if (!sceneId.IsValid)
+                throw new ArgumentException("Authored scene ID required.", nameof(sceneId));
+            SceneId = sceneId;
         }
 
         public EntityId ActorId => _actor.ActorId;
+        public EntityId SceneId { get; }
         public PhysicalTheater Theater => PhysicalTheater.Shore;
 
         public bool TryMove(CrewMoveGoal destination) =>
@@ -80,6 +85,7 @@ namespace FrostArk.Unity
         Accepted = 0,
         RouteRejected,
         NoSceneExecutor,
+        StaleSceneExecutor,
         DuplicateSceneExecutor,
         ExecutorRejected
     }
@@ -127,10 +133,14 @@ namespace FrostArk.Unity
                 var status = CrewMoveDispatchStatus.RouteRejected;
                 if (route.Ready)
                 {
-                    var matches = executors.Where(e =>
+                    var sameTheater = executors.Where(e =>
                         e.ActorId == route.ActorId && e.Theater == goal.Theater).ToArray();
+                    var matches = sameTheater.Where(e =>
+                        e.SceneId == snapshot.SceneCheckpoint.SceneId).ToArray();
                     if (matches.Length == 0)
-                        status = CrewMoveDispatchStatus.NoSceneExecutor;
+                        status = sameTheater.Length > 0 ?
+                            CrewMoveDispatchStatus.StaleSceneExecutor :
+                            CrewMoveDispatchStatus.NoSceneExecutor;
                     else if (matches.Length > 1)
                         status = CrewMoveDispatchStatus.DuplicateSceneExecutor;
                     else
