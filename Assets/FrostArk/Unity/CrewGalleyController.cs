@@ -386,7 +386,6 @@ namespace FrostArk.Unity
             {
                 _manualMove = false;
                 _paused = true;
-                _paused = true;
                 _status = "Player move completed — standing duties kept";
                 if (!_selected)
                     TryStart(); // Deselect restores idle autonomy, no Resume button.
