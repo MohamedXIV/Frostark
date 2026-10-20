@@ -100,9 +100,11 @@ namespace FrostArk.Unity.Editor
                 sun.color = new Color(0.80f, 0.89f, 1.0f);
 
                 var scopeRoot = new GameObject("FrostArkSessionScope");
+                scopeRoot.SetActive(false);
                 if (scopeRoot.scene != scene)
                     SceneManager.MoveGameObjectToScene(scopeRoot, scene);
-                scopeRoot.AddComponent<WorldSessionScope>();
+                // Compose all serialized providers/children before LifetimeScope
+                // can run Awake or build the container.
                 scopeRoot.AddComponent<CrewGalleyFixtureBootstrap>();
 
                 var presenter = new GameObject("WorldSessionPresenter");
@@ -113,6 +115,8 @@ namespace FrostArk.Unity.Editor
                 controllerObject.transform.SetParent(scopeRoot.transform, false);
                 var controller = controllerObject.AddComponent<CrewGalleyController>();
                 controller.Configure(engineer.transform, source.transform);
+                scopeRoot.AddComponent<WorldSessionScope>();
+                scopeRoot.SetActive(true);
 
                 var dir = Path.GetDirectoryName(ScenePath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
@@ -120,14 +124,8 @@ namespace FrostArk.Unity.Editor
                 if (!EditorSceneManager.SaveScene(scene, ScenePath))
                     throw new InvalidOperationException("Could not save generated crew galley fixture.");
 
-                var existing = EditorBuildSettings.scenes;
-                if (!Array.Exists(existing, s => s.path == ScenePath))
-                {
-                    var updated = new EditorBuildSettingsScene[existing.Length + 1];
-                    Array.Copy(existing, updated, existing.Length);
-                    updated[existing.Length] = new EditorBuildSettingsScene(ScenePath, true);
-                    EditorBuildSettings.scenes = updated;
-                }
+                // This is a manually opened testing fixture, not a production
+                // scene. Do not silently change project Build Settings.
                 AssetDatabase.SaveAssets();
                 AssetDatabase.Refresh();
                 Debug.Log("[CrewGalleyFixture] Generated scene: " + ScenePath +
