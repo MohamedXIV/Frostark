@@ -161,10 +161,11 @@ namespace FrostArk.Core.Crew
                     _jobs, _treatments, _consumables);
         }
 
-        internal CrewState Consume(EntityId crewId, CrewConsumable provision)
+        internal CrewState Consume(EntityId crewId, EntityId itemId)
         {
-            if (provision == null || GetConsumable(provision.ItemId) == null)
-                throw new ArgumentException("Unapproved consumable.", nameof(provision));
+            var provision = GetConsumable(itemId);
+            if (provision == null)
+                throw new ArgumentException("Unapproved consumable.", nameof(itemId));
             var member = Get(crewId);
             if (member == null || member.IsAway)
                 throw new ArgumentException("Crew member not on ship.", nameof(crewId));
