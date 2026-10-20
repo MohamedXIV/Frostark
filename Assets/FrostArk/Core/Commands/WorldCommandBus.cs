@@ -349,7 +349,7 @@ namespace FrostArk.Core.Commands
                 var stock = state.Inventory.TryConsumeShip(consumption.ItemId, 1);
                 if (!stock.Success)
                     return CommandResult.Rejected(state, MapInventoryFailure(stock.Error));
-                var crew = state.CrewDuty.Consume(consumption.CrewId, effect);
+                var crew = state.CrewDuty.Consume(consumption.CrewId, consumption.ItemId);
                 var next = state.WithCrewProvision(crew, stock.State, command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
                     state.Minute, next.Revision, WorldEventKind.CrewProvisionConsumed,
