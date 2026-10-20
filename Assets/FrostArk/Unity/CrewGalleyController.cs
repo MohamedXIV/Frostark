@@ -91,7 +91,8 @@ namespace FrostArk.Unity
         {
             if (_session == null) return false;
             var slot = _session.Capture().State.CrewDuty.Interactions.GetSlot(slotId);
-            return slot != null && slot.SourceId == CrewGalleyFixtureState.Galley &&
+            return galleySource != null && slot != null &&
+                slot.SourceId == CrewGalleyFixtureState.Galley &&
                 target == CrewGalleyFixtureState.GalleyCell +
                     new Vector2Int(slot.LocalX, slot.LocalY) &&
                 _grid.CanStand(target) &&
@@ -171,6 +172,16 @@ namespace FrostArk.Unity
                 return;
             if (!_goingHome)
             {
+                var destinationCell = _claimedSlot == CrewGalleyFixtureState.Eat
+                    ? CrewGalleyFixtureState.EatCell
+                    : CrewGalleyFixtureState.DrinkCell;
+                if (galleySource == null ||
+                    !SlotAnchorMatchesSource(_claimedSlot, destinationCell))
+                {
+                    CancelTrip("Galley source or authored slot disappeared", pause: true);
+                    return;
+                }
+
                 var claim = _session.Capture().State.CrewDuty.Interactions.GetClaim(_claimedSlot);
                 if (claim == null || claim.CrewId != CrewGalleyFixtureState.Engineer ||
                     claim.ExpiresAt <= _session.Minute)
