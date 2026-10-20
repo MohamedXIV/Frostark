@@ -262,7 +262,9 @@ namespace FrostArk.Unity
             ProcessRtsMouse();
             if (!_moving || _session == null || engineer == null || _grid == null)
                 return;
-            if (!_goingHome)
+            // Free RTS move orders and return-to-work routes are not Galley
+            // interactions. Only autonomous uses require a Core slot claim.
+            if (!_goingHome && !_manualMove)
             {
                 var destinationCell = _claimedSlot == CrewGalleyFixtureState.Eat
                     ? CrewGalleyFixtureState.EatCell
