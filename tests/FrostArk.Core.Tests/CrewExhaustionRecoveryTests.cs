@@ -179,6 +179,36 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void MismatchedRecoveryRosterIdRejectsEvenWithValidChecksum()
+        {
+            var crew = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 950, 0, 0, 1440,
+                    fatigue: 650, isRecovering: true)
+            });
+            var state = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), new[] { Engineer }, crewDuty: crew);
+            var scheduler = new SimulationScheduler(new WorldClock(state.Minute),
+                Array.Empty<IWorldMinuteSystem>());
+            var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
+
+            // v15 extension: count (4), length-prefixed UTF-8 ID (4 + N),
+            // state flag (1), then the checksum (32). Replace the first ID
+            // character without changing its length, then re-sign.
+            int idLength = Encoding.UTF8.GetByteCount(Engineer.Value);
+            int extensionBytes = 4 + 4 + idLength + 1;
+            int firstIdCharacter = bytes.Length - 32 - extensionBytes + 8;
+            bytes[firstIdCharacter] = (byte)'x';
+            using (var sha = SHA256.Create())
+                Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32),
+                    0, bytes, bytes.Length - 32, 32);
+
+            var result = SaveCodec.TryDecode(bytes);
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void SaveResumeAcrossRecoveryThresholdMatchesUninterruptedRun()
         {
             var full = World(Roster());
