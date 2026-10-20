@@ -1,0 +1,146 @@
+using System;
+using FrostArk.Core.Crew;
+using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
+using FrostArk.Core.Time;
+using FrostArk.Core.World;
+using NUnit.Framework;
+
+namespace FrostArk.Core.Tests
+{
+    public sealed class CrewExhaustionRecoveryTests
+    {
+        private static readonly EntityId Engineer = EntityId.Parse("crew:engineer");
+        private static readonly EntityId Backup = EntityId.Parse("crew:backup");
+
+        private static CrewState Roster(int initialFatigue = 899) => CrewState.Create(new[]
+        {
+            new CrewMember(Engineer, DutyRole.Engineering, 1000, 100, 0, 1440,
+                fatigue: initialFatigue),
+            new CrewMember(Backup, DutyRole.Watch, 800, 600, 0, 1440)
+        });
+
+        private static WorldState World(CrewState crew) =>
+            WorldState.Create(WorldMinute.Zero, Array.Empty<SupplyStock>(),
+                new[] { Engineer, Backup }, crewDuty: crew);
+
+        private static SimulationScheduler Bind(Func<WorldState> read, Action<WorldState> write) =>
+            new SimulationScheduler(new WorldClock(read().Minute), new IWorldMinuteSystem[]
+            {
+                new ShipCrewMinuteSystem(read, write),
+                new ShipThermalMinuteSystem(read, write, _ => 0)
+            }, seed: 11);
+
+        [Test]
+        public void ExhaustedEngineerYieldsToAvailableBackupAndRejoinsAfterFullRest()
+        {
+            var crew = Roster();
+            Assert.That(crew.Get(Engineer).IsRecovering, Is.False);
+            Assert.That(crew.EffectiveSkill(DutyRole.Engineering, new WorldMinute(1)),
+                Is.GreaterThan(0));
+
+            crew = crew.Tick(new WorldMinute(1)); // 899 -> 900; recovery latches.
+            Assert.That(crew.Get(Engineer).Fatigue, Is.EqualTo(900));
+            Assert.That(crew.Get(Engineer).IsRecovering, Is.True);
+            Assert.That(crew.EffectiveSkill(DutyRole.Engineering, new WorldMinute(2)),
+                Is.GreaterThan(0), "A real trained backup should take the watch.");
+            Assert.That(crew.EffectiveSkill(DutyRole.Watch, new WorldMinute(2)),
+                Is.Zero, "The one backup cannot staff two duties.");
+
+            // Recovery takes 250 unassigned minutes: 900 -> 400.
+            for (int minute = 2; minute <= 251; minute++)
+                crew = crew.Tick(new WorldMinute(minute));
+
+            Assert.That(crew.Get(Engineer).Fatigue, Is.EqualTo(400));
+            Assert.That(crew.Get(Engineer).IsRecovering, Is.False);
+            Assert.That(crew.EffectiveSkill(DutyRole.Engineering, new WorldMinute(252)),
+                Is.EqualTo(800));
+        }
+
+        [Test]
+        public void NoAvailableReliefMeansUnstaffedDutyNotImaginaryWorker()
+        {
+            var only = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 1000, 0, 0, 1440,
+                    fatigue: 900)
+            });
+            Assert.That(only.Get(Engineer).IsRecovering, Is.True);
+            Assert.That(only.EffectiveSkill(DutyRole.Engineering, new WorldMinute(1)),
+                Is.Zero);
+            var next = only.Tick(new WorldMinute(1));
+            Assert.That(next.Get(Engineer).Fatigue, Is.EqualTo(898));
+            Assert.That(next.EffectiveSkill(DutyRole.Engineering, new WorldMinute(2)),
+                Is.Zero, "Partial rest cannot cause work/rest oscillation.");
+        }
+
+        [Test]
+        public void ExpeditionAbsenceDoesNotMagicallyRecoverFatigue()
+        {
+            var member = new CrewMember(Engineer, DutyRole.Engineering, 900, 0, 0, 1440,
+                fatigue: 650, isAway: true, isRecovering: true);
+            var crew = CrewState.Create(new[] { member });
+            for (int minute = 1; minute <= 60; minute++)
+                crew = crew.Tick(new WorldMinute(minute));
+            Assert.That(crew.Get(Engineer).Fatigue, Is.EqualTo(650));
+            Assert.That(crew.Get(Engineer).IsRecovering, Is.True);
+            crew = crew.SetAway(Engineer, false).Tick(new WorldMinute(61));
+            Assert.That(crew.Get(Engineer).Fatigue, Is.EqualTo(648));
+            Assert.That(crew.Get(Engineer).IsRecovering, Is.True);
+        }
+
+        [Test]
+        public void RecoveryLatchRoundTripsAtIntermediateFatigue()
+        {
+            // At this fatigue, a recovered worker is available but one already
+            // resting still requires a full recovery; this MUST survive save.
+            var recovering = Roster(600);
+            recovering = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 1000, 100, 0, 1440,
+                    fatigue: 600, isRecovering: true),
+                recovering.Get(Backup)
+            });
+            var available = Roster(600);
+            Assert.That(recovering.Fingerprint(), Is.Not.EqualTo(available.Fingerprint()));
+
+            var initial = World(recovering);
+            var scheduler = Bind(() => initial, _ => { });
+            var encoded = SaveCodec.Encode(SaveGameDto.Capture(initial, scheduler));
+            var read = SaveCodec.TryDecode(encoded);
+            Assert.That(read.Success, Is.True, read.Error.ToString());
+            Assert.That(read.Value.State.CrewDuty.Get(Engineer).IsRecovering, Is.True);
+            Assert.That(read.Value.State.CrewDuty.Get(Engineer).Fatigue, Is.EqualTo(600));
+            Assert.That(SaveCodec.Encode(SaveGameDto.Capture(read.Value.State,
+                read.Value.CreateScheduler(Array.Empty<IWorldMinuteSystem>()))),
+                Is.EqualTo(encoded));
+        }
+
+        [Test]
+        public void SaveResumeAcrossRecoveryThresholdMatchesUninterruptedRun()
+        {
+            var full = World(Roster());
+            var uninterrupted = Bind(() => full, x => full = x);
+            uninterrupted.Advance(310);
+
+            var first = World(Roster());
+            var before = Bind(() => first, x => first = x);
+            before.Advance(130);
+            var checkpoint = SaveCodec.TryDecode(SaveCodec.Encode(SaveGameDto.Capture(first, before)));
+            Assert.That(checkpoint.Success, Is.True, checkpoint.Error.ToString());
+            var resumed = checkpoint.Value.State;
+            var after = checkpoint.Value.CreateScheduler(new IWorldMinuteSystem[]
+            {
+                new ShipCrewMinuteSystem(() => resumed, x => resumed = x),
+                new ShipThermalMinuteSystem(() => resumed, x => resumed = x, _ => 0)
+            });
+            after.Advance(180);
+
+            Assert.That(resumed.Fingerprint(), Is.EqualTo(full.Fingerprint()));
+            Assert.That(resumed.CrewDuty.Get(Engineer).IsRecovering, Is.EqualTo(
+                full.CrewDuty.Get(Engineer).IsRecovering));
+            Assert.That(SaveCodec.Encode(SaveGameDto.Capture(resumed, after)),
+                Is.EqualTo(SaveCodec.Encode(SaveGameDto.Capture(full, uninterrupted))));
+        }
+    }
+}
