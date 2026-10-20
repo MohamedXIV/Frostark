@@ -1,5 +1,7 @@
 using System.Collections;
 using FrostArk.Core.Application;
+using FrostArk.Core.Commands;
+using FrostArk.Core.World;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using FrostArk.Unity;
@@ -85,6 +87,73 @@ namespace FrostArk.Unity.Tests
             Assert.That(Vector3.Distance(_actor.position,
                 CrewGalleyFixtureState.Grid().WorldCenter(
                     CrewGalleyFixtureState.StartCell, 1f)), Is.LessThan(0.2f));
+        }
+
+        [UnityTest]
+        public IEnumerator CancelMidStepThenSwitchNeedCompletesSegmentWithoutTeleport()
+        {
+            var source = _root.transform.Find("Galley");
+            Assert.That(source, Is.Not.Null);
+            // A slow frame ensures cancellation happens between cell centers.
+            _controller.Configure(_actor, source, speed: 0.25f);
+            yield return null;
+
+            var grid = CrewGalleyFixtureState.Grid();
+            var originalCell = _controller.CurrentCell;
+            var drinkRoute = grid.FindPath(originalCell,
+                CrewGalleyFixtureState.DrinkCell);
+            Assert.That(drinkRoute.Count, Is.GreaterThan(1));
+            var enteredCell = drinkRoute[1];
+            var enteredCenter = grid.WorldCenter(enteredCell, 1f);
+            var before = _actor.position;
+            Assert.That(Vector3.Distance(before,
+                grid.WorldCenter(originalCell, 1f)), Is.GreaterThan(0.001f),
+                "The actor must be interrupted in the middle of its movement.");
+            float distanceBefore = Vector3.Distance(before, enteredCenter);
+
+            _controller.CancelTrip();
+            Assert.That(_actor.position, Is.EqualTo(before),
+                "Cancelling must not warp the actor to a grid center.");
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims, Is.Empty);
+
+            // The previous thirst goal is now satisfied by a valid direct
+            // fixture domain command. The next goal must change to hunger.
+            var drank = _session.Submit(new ConsumeCrewProvisionCommand(
+                EntityId.Parse("cmd:fixture:water-while-paused"),
+                CrewGalleyFixtureState.Engineer, CrewGalleyFixtureState.Water,
+                _session.Revision));
+            Assert.That(drank.Success, Is.True);
+            Assert.That(_controller.TryStart(), Is.True);
+            Assert.That(_controller.HeldSlot, Is.EqualTo(CrewGalleyFixtureState.Eat));
+            Assert.That(_actor.position, Is.EqualTo(before),
+                "Replanning must not teleport before Unity movement runs.");
+
+            yield return null;
+            Assert.That(Vector3.Distance(_actor.position, enteredCenter),
+                Is.LessThan(distanceBefore),
+                "Finish the safe underway step before turning to the new galley slot.");
+        }
+
+        [UnityTest]
+        public IEnumerator RemovedGalleySourceReleasesClaimWithoutSpendingFood()
+        {
+            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+            var source = _root.transform.Find("Galley");
+            Assert.That(source, Is.Not.Null);
+            Object.Destroy(source.gameObject);
+            yield return null;
+            var state = _session.Capture().State;
+            Assert.That(_controller.IsMoving, Is.False);
+            Assert.That(_controller.IsPaused, Is.True);
+            Assert.That(state.CrewDuty.Interactions.Claims, Is.Empty);
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.ShipHold,
+                CrewGalleyFixtureState.Ration), Is.EqualTo(4));
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.ShipHold,
+                CrewGalleyFixtureState.Water), Is.EqualTo(4));
+            Assert.That(state.CrewDuty.Get(CrewGalleyFixtureState.Engineer).Hunger,
+                Is.EqualTo(950));
+            Assert.That(state.CrewDuty.Get(CrewGalleyFixtureState.Engineer).Thirst,
+                Is.EqualTo(960));
         }
 
         [UnityTest]
