@@ -121,6 +121,10 @@ namespace FrostArk.Core.Tests
                 new[] { new ShipModuleSpatialProfile(Blueprint,
                     new[] { new ShipLocalOffset(3, 0) },
                     Array.Empty<ShipLocalOffset>()) }, Array.Empty<ShipRoomPortal>()));
+            Assert.Throws<ArgumentException>(() => ShipSpatialMap.Derive(
+                Layout(new ShipModule(Engine, Blueprint, B, 1, 0)),
+                new[] { Machine() }, Array.Empty<ShipRoomPortal>()),
+                "A required interaction clearance must not disappear beyond a room wall.");
         }
 
         [Test]
