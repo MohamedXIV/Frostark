@@ -43,6 +43,7 @@ namespace FrostArk.Core.Tests
             return SaveCodec.Encode(SaveGameDto.Capture(fired.State, timer));
         }
 
+        // v15's empty recovery roster adds four payload bytes after v14's combat data.
         private static void ReplaceLastLongAndResign(byte[] bytes, int fromTail, long value)
         {
             Array.Copy(BitConverter.GetBytes(value), 0,
@@ -56,7 +57,7 @@ namespace FrostArk.Core.Tests
         public void ForgedShotCounterCannotExceedCommittedWorldCommands()
         {
             var encoded = OneShot();
-            ReplaceLastLongAndResign(encoded, fromTail: 40, value: 400);
+            ReplaceLastLongAndResign(encoded, fromTail: 44, value: 400);
             var decoded = SaveCodec.TryDecode(encoded);
             Assert.That(decoded.Success, Is.False);
             Assert.That(decoded.Error, Is.EqualTo(SaveDecodeError.InvalidData));
@@ -66,7 +67,7 @@ namespace FrostArk.Core.Tests
         public void ForgedFutureCooldownBeyondCurrentTickPlusAuthoredPeriodIsInvalid()
         {
             var encoded = OneShot();
-            ReplaceLastLongAndResign(encoded, fromTail: 48, value: 10);
+            ReplaceLastLongAndResign(encoded, fromTail: 52, value: 10);
             var decoded = SaveCodec.TryDecode(encoded);
             Assert.That(decoded.Success, Is.False);
             Assert.That(decoded.Error, Is.EqualTo(SaveDecodeError.InvalidData));
