@@ -27,6 +27,43 @@ namespace FrostArk.Core.Save
                 writer.Write(job.RemainingWork);
             }
         }
+        // v15 trailing extension: maintains the fatigue recovery latch across
+        // reload without disturbing the layout of v5-v14 crew records.
+        private static void WriteCrewRecoveryExtension(BinaryWriter writer, CrewState duty)
+        {
+            WriteCount(writer, duty.Members.Count);
+            foreach (var member in duty.Members)
+            {
+                WriteId(writer, member.Id);
+                writer.Write(member.IsRecovering ? (byte)1 : (byte)0);
+            }
+        }
+
+        private static CrewState ReadCrewRecoveryExtension(BinaryReader reader, CrewState duty)
+        {
+            int count = ReadCount(reader);
+            if (count != duty.Members.Count)
+                throw new InvalidDataException("Crew recovery count does not match roster.");
+            for (int i = 0; i < count; i++)
+            {
+                var id = ReadId(reader);
+                if (id != duty.Members[i].Id)
+                    throw new InvalidDataException("Crew recovery IDs must match sorted roster.");
+                byte flag = reader.ReadByte();
+                if (flag > 1)
+                    throw new InvalidDataException("Invalid crew recovery flag.");
+                try
+                {
+                    duty = duty.WithRecovering(id, flag == 1);
+                }
+                catch (System.ArgumentException ex)
+                {
+                    throw new InvalidDataException("Recovery flag conflicts with fatigue.", ex);
+                }
+            }
+            return duty;
+        }
+
         private static CrewState ReadCrew(BinaryReader reader)
         {
             var members = new List<CrewMember>();
