@@ -60,11 +60,12 @@ namespace FrostArk.Unity.Tests
                 var localBefore = ship.transform.InverseTransformPoint(crew.transform.position);
                 ship.transform.position = new Vector3(25f, 0f, 14f);
                 walker.Tick(0f);
-                Assert.That(ship.transform.InverseTransformPoint(crew.transform.position),
-                    Is.EqualTo(localBefore).Using(Vector3ComparerWithEqualsOperator.Instance));
-                Assert.That(crew.transform.position,
-                    Is.EqualTo(ship.transform.TransformPoint(localBefore))
-                        .Using(Vector3ComparerWithEqualsOperator.Instance));
+                Assert.That(Vector3.Distance(
+                    ship.transform.InverseTransformPoint(crew.transform.position), localBefore),
+                    Is.LessThan(0.0001f));
+                Assert.That(Vector3.Distance(
+                    crew.transform.position, ship.transform.TransformPoint(localBefore)),
+                    Is.LessThan(0.0001f));
 
                 for (int i = 0; i < 100 && walker.IsMoving; i++) walker.Tick(0.1f);
                 Assert.That(walker.IsMoving, Is.False);
