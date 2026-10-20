@@ -7,18 +7,6 @@ using UnityEngine;
 
 namespace FrostArk.Unity.Tests
 {
-    // An isolated EditMode fixture, NOT FrostArk's persisted Needs or food inventory.
-    // It deliberately provides read-only sensor facts and records command requests.
-    // It must never be used as an alternative authoritative hunger clock.
-    public sealed class GoapHungerProbeFacts : MonoBehaviour
-    {
-        public int Hunger { get; set; }
-        public bool FoodAvailable { get; set; }
-        public int RequestedMeals { get; private set; }
-
-        public void RequestMeal() => RequestedMeals++;
-    }
-
     // Binary urgency fact (1 = critical); avoid asking the planner to apply 75\n    // one-unit Decrease effects for a scalar hunger level of 95.\n    public sealed class GoapHungerKey : WorldKeyBase { }
     public sealed class GoapFoodAvailableKey : WorldKeyBase { }
     public sealed class GoapSatisfyHungerGoal : GoalBase { }
@@ -73,17 +61,6 @@ namespace FrostArk.Unity.Tests
                 .AddEffect<GoapHungerKey>(EffectType.Decrease)
                 .SetRequiresTarget(false);
             builder.AddMultiSensor<GoapHungerProbeSensor>();
-            return builder.Build();
-        }
-    }
-
-    // Programmatic factory uses upstream V3 types and the REAL GOAP resolver.
-    public sealed class GoapHungerProbeAgentTypeFactory : AgentTypeFactoryBase
-    {
-        public override IAgentTypeConfig Create()
-        {
-            var builder = this.CreateBuilder("FrostArk.HungerProbe");
-            builder.AddCapability<GoapHungerProbeCapability>();
             return builder.Build();
         }
     }
