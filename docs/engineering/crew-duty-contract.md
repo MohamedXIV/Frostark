@@ -32,3 +32,11 @@ Recovery is integrated into the existing deterministic `CrewState.Staff/ Tick` p
 Save **v15** adds a trailing sorted recovery extension to v14. Reader checks count/order/flags against the roster and rejects impossible state. v1-v14 saves remain readable; a high-fatigue old crew starts recovery safely, while v14 naturally cannot restore hysteresis it never stored. When no crew is recovering, existing roster fingerprints are intentionally preserved for stable older fixtures. Unit tests cover threshold transitions, backup coverage, time/absence, v15 persistence/invalidation, v14 migration and uninterrupted vs resumed world ticks.
 
 **Verification:** G0 source review only until NUnit runs on the exact feature branch; G1 .NET NUnit **NOT RUN** in this tool environment, G2 Unity and G3 PlayMode **NOT RUN**. This is not a full Needs system or physical crew navigation implementation.
+
+### Existing save-regression maintenance (v15)
+
+The v15 trailing crew-recovery extension is **4 bytes for an empty crew duty roster**, but longer for populated rosters: a 4-byte count plus each member's length-prefixed UTF-8 ID and one state byte. Existing historical save-downgrade and checksummed-tampering tests that depended on v14's exact suffix offsets must target the **intended earlier fields**, not mutate v15's new count/flags by accident.
+
+The branch updates regression fixtures involving combat magazines, shot provenance/cooldowns, medical healing definitions, ship navigation, island sites, workshop inventory credits, ship layout, crew legacy saves and scene checkpoints. Where possible, tests calculate variable suffix length from crew IDs. These are updates to the **test fixtures**, not changes to those unrelated production subsystems.
+
+These source-level changes are **not test passes**. All regressions require actual `dotnet test` execution at the exact PR HEAD before any merge; a future binary format extension should avoid introducing more fragile hardcoded tail offsets.
