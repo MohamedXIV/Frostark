@@ -134,11 +134,22 @@ namespace FrostArk.Core.Commands
                 if (!state.Layout.CanPlace(build.ModuleId, build.BlueprintId,
                     build.RoomId, build.X, build.Y))
                     return CommandResult.Rejected(state, CommandFailure.InvalidPlacement);
+                // Check canonical source-relative CrewInteractionSlots before
+                // spending any materials. The build grid remains different
+                // from walkability: a future authored solid mask can refine
+                // this conservative all-solid default.
+                var proposedLayout = state.Layout.Place(
+                    build.ModuleId, build.BlueprintId, build.RoomId, build.X, build.Y);
+                var spatial = Ship.ShipSpatialMap.Derive(proposedLayout,
+                    Array.Empty<Ship.ShipModuleSpatialProfile>(),
+                    Array.Empty<Ship.ShipRoomPortal>());
+                if (!spatial.PreservesModuleInteractionSlots(
+                        proposedLayout, state.CrewDuty.Interactions))
+                    return CommandResult.Rejected(state, CommandFailure.InvalidPlacement);
                 var spend = state.Inventory.TryConsumeShip(blueprint.PartId, blueprint.BuildCost);
                 if (!spend.Success)
                     return CommandResult.Rejected(state, CommandFailure.InsufficientMaterials);
-                var next = state.WithShipLayoutChange(state.Layout.Place(
-                    build.ModuleId, build.BlueprintId, build.RoomId, build.X, build.Y),
+                var next = state.WithShipLayoutChange(proposedLayout,
                     spend.State, state.CrewDuty, command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
                     next.Revision, WorldEventKind.ShipModuleBuilt, build.ModuleId));
