@@ -166,7 +166,10 @@ namespace FrostArk.Core.Tests
             var current = SaveCodec.Encode(snapshot);
             // Original v14 downgrade removed 66 trailing bytes. v15 adds
             // a four-byte empty recovery-roster count to the suffix.
-            int payloadLength = BitConverter.ToInt32(current, 10) - 70;
+            // This fixture has NO CrewDuty members; v16 contributes only
+            // two empty counts (needs and consumable definitions): 8 bytes.
+            int v16Needs = 8;
+            int payloadLength = BitConverter.ToInt32(current, 10) - 70 - v16Needs;
             var legacy = new byte[14 + payloadLength + 32];
             Array.Copy(current, legacy, 14 + payloadLength);
             legacy[8] = 4;

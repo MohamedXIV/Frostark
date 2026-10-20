@@ -48,6 +48,9 @@ namespace FrostArk.Core.Commands
         CrewAlreadyIncapacitated = 43,
         MagazineEmpty = 44,
         MagazineAlreadyFull = 45,
-        WeaponCannotReload = 46
+        WeaponCannotReload = 46,
+        UnknownProvision = 47,
+        CrewNotOnShip = 48,
+        NeedAlreadySatisfied = 49
     }
 }

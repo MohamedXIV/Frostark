@@ -279,4 +279,20 @@ namespace FrostArk.Core.Commands
             ExpectedRevision = expectedRevision;
         }
     }
+    /// <summary>Consume one authored food/drink item held by the ship.</summary>
+    public sealed class ConsumeCrewProvisionCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId ItemId { get; }
+        public long ExpectedRevision { get; }
+
+        public ConsumeCrewProvisionCommand(EntityId id, EntityId crewId,
+            EntityId itemId, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; ItemId = itemId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
+
 }
