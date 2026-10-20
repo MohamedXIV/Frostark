@@ -117,6 +117,19 @@ namespace FrostArk.Unity
         {
             if (updated == null) throw new ArgumentNullException(nameof(updated));
             if (!IsConfigured) { LastError = "NotConfigured"; return false; }
+            // If the actor is physically between discrete cell centers, a
+            // fresh path beginning at _lastReachedCell could diagonally cut
+            // through an obstacle. Stop without teleporting; the scene can
+            // issue a new validated order after reaching a safe restart pose.
+            if (IsMoving && (!TryCenter(_lastReachedCell, out var reachedCenter) ||
+                (_localPosition - reachedCenter).sqrMagnitude > 0.0001f))
+            {
+                _map = updated;
+                _route = null;
+                _nextIndex = 0;
+                LastError = "RouteInvalidated";
+                return false;
+            }
             var next = IsMoving ? updated.FindPath(_lastReachedCell, _orderedCell) :
                 Array.Empty<ShipGridCell>();
             if (IsMoving && (next.Count == 0 || !RouteOriginsValid(next)))
