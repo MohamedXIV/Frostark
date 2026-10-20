@@ -28,6 +28,10 @@ namespace FrostArk.Unity
         private IReadOnlyList<Vector2Int> _route = Array.Empty<Vector2Int>();
         private Vector2Int _currentCell;
         private int _routeIndex;
+        // If a trip is cancelled between cell centers, finish the already
+        // entered walkable segment before following a newly planned route.
+        // Never snap an actor across a corner or through a bulkhead.
+        private Vector2Int? _unfinishedStep;
         private EntityId _claimedSlot;
         private EntityId _item;
         private long _commandSequence;
@@ -132,7 +136,7 @@ namespace FrostArk.Unity
                     offer.SlotId == CrewGalleyFixtureState.Drink ?
                     CrewGalleyFixtureState.DrinkCell : new Vector2Int(-1, -1);
                 if (!SlotAnchorMatchesSource(offer.SlotId, goal)) continue;
-                var route = _grid.FindPath(_currentCell, goal);
+                var route = _grid.FindPath(_unfinishedStep ?? _currentCell, goal);
                 if (route.Count == 0) continue;
 
                 var result = _session.Submit(new ClaimCrewInteractionCommand(
@@ -147,7 +151,8 @@ namespace FrostArk.Unity
                 _claimedSlot = offer.SlotId;
                 _item = offer.ItemId;
                 _route = route;
-                _routeIndex = 1;
+                _routeIndex = _unfinishedStep.HasValue ? 0 : 1;
+                _unfinishedStep = null;
                 _goingHome = false;
                 _moving = true;
                 _status = "Critical " + (offer.Verb == CrewInteractionVerb.Eat ?
@@ -243,7 +248,8 @@ namespace FrostArk.Unity
 
         private void ReturnToWork()
         {
-            var route = _grid.FindPath(_currentCell, CrewGalleyFixtureState.StartCell);
+            var route = _grid.FindPath(_unfinishedStep ?? _currentCell,
+                CrewGalleyFixtureState.StartCell);
             if (route.Count == 0)
             {
                 _paused = true;
@@ -251,7 +257,8 @@ namespace FrostArk.Unity
                 return;
             }
             _route = route;
-            _routeIndex = 1;
+            _routeIndex = _unfinishedStep.HasValue ? 0 : 1;
+            _unfinishedStep = null;
             _goingHome = true;
             _moving = true;
             _status = "Needs recovered: returning to engineering";
@@ -259,6 +266,15 @@ namespace FrostArk.Unity
 
         public void CancelTrip(string reason = "Cancelled by player", bool pause = true)
         {
+            // Preserve the current physical segment if the actor is halfway
+            // between cells. The next goal may differ from the cancelled goal.
+            if (_moving && engineer != null && _grid != null &&
+                _routeIndex < _route.Count)
+            {
+                var priorCenter = _grid.WorldCenter(_currentCell, 1f);
+                _unfinishedStep = Vector3.Distance(engineer.position, priorCenter) > 0.01f
+                    ? _route[_routeIndex] : (Vector2Int?)null;
+            }
             _moving = false;
             _goingHome = false;
             _route = Array.Empty<Vector2Int>();
