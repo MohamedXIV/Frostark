@@ -15,6 +15,7 @@ All items are in [MohamedXIV/Frostark Issues](https://github.com/MohamedXIV/Fros
 | [E08 Content/economy #10](https://github.com/MohamedXIV/Frostark/issues/10) | [I01 #23](https://github.com/MohamedXIV/Frostark/issues/23) inventory; [I02 #38](https://github.com/MohamedXIV/Frostark/issues/38) crafting/trade |
 | [E09 Visual/UI #11](https://github.com/MohamedXIV/Frostark/issues/11) | [V01 #20](https://github.com/MohamedXIV/Frostark/issues/20) art benchmark; [UI01 #39](https://github.com/MohamedXIV/Frostark/issues/39) UI/accessibility |
 | [E10 Quality/release #12](https://github.com/MohamedXIV/Frostark/issues/12) | [Q01 #40](https://github.com/MohamedXIV/Frostark/issues/40) tooling; [Q02 #41](https://github.com/MohamedXIV/Frostark/issues/41) profiling; [Q03 #42](https://github.com/MohamedXIV/Frostark/issues/42) release gates |
+| [E11 Cross-theater RTS controls #108](https://github.com/MohamedXIV/Frostark/issues/108) | [#109](https://github.com/MohamedXIV/Frostark/issues/109) movement domain routing; [#110](https://github.com/MohamedXIV/Frostark/issues/110) ship walkability/room portals; [#111](https://github.com/MohamedXIV/Frostark/issues/111) box/group selection and deselect; [#112](https://github.com/MohamedXIV/Frostark/issues/112) player orders/autonomy; [#113](https://github.com/MohamedXIV/Frostark/issues/113) smooth ship locomotion/traffic; existing [#32](https://github.com/MohamedXIV/Frostark/issues/32) shore NavMesh group commands; [#114](https://github.com/MohamedXIV/Frostark/issues/114) dual-domain G2/G3 acceptance |
 
 ## Live execution status — inspected 2026-10-11
 
@@ -27,3 +28,13 @@ The [canonical Project #5](https://github.com/users/MohamedXIV/projects/5) curre
 **Parallel implementation rule:** independently testable pure-C# work may be extracted from a blocked gameplay issue only with a small scoped child issue and real G1 proof; the gameplay parent stays open until its Unity evidence passes. Avoid refilling the project with speculative Core systems while #21's physical playable click-to-command slice is blocked. Preserve historical completed work and do not duplicate separate world/crew authorities.
 
 The native issue/dependency links and live Project board remain authoritative for ordering. This document's original #2–#43 epic map is retained as a **historical issue index**; it is not a current list of open or Ready work. GitHub Actions are allowed for the public FrostArk repository for G0/G1, but do not imply Unity G2/G3.
+
+
+## Cross-theater movement/RTS execution index — 2026-10-20
+
+New [E11 #108](https://github.com/MohamedXIV/Frostark/issues/108) is a **coordination Epic across E02/E03/E04/E05**, not a replacement of their scope. See the [dependency-ordered implementation roadmap](roadmap.md#e11-integration-track--shared-rts-control-separate-movement-theaters-2026-10-20) and authoritative [Miro D01](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660187).
+
+- Ship crew: **local Grid + A*** with authored clearance/doors/multiple decks, [#110](https://github.com/MohamedXIV/Frostark/issues/110) and [#113](https://github.com/MohamedXIV/Frostark/issues/113). Current Galley [#106](https://github.com/MohamedXIV/Frostark/issues/106) / draft PR #107 is a fixture, not full runtime integration.
+- Land crew: existing **Unity NavMesh** and [#32](https://github.com/MohamedXIV/Frostark/issues/32) squad acceptance. The ship-at-sea travel model is independently #33/#60.
+- Same RTS selection/order interface: [#111](https://github.com/MohamedXIV/Frostark/issues/111) and [#112](https://github.com/MohamedXIV/Frostark/issues/112) — group-select → order; blank-space deselect preserves current accepted orders/standing assignments and frees idle AI to make new decisions. **No per-crew Resume Auto**.
+- Evidence: [#114](https://github.com/MohamedXIV/Frostark/issues/114) demands real Unity G2/G3 for both environments; authored code, pure .NET G1 or an isolated fixture alone do not close E11.
