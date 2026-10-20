@@ -171,11 +171,28 @@ namespace FrostArk.Unity.Editor
 
         private static Material MaterialFor(Color color)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit") ??
-                Shader.Find("Standard");
-            if (shader == null)
-                throw new InvalidOperationException("No Lit shader found for galley fixture.");
-            var material = new Material(shader) { color = color };
+            // Persist authored palette as real project assets rather than
+            // serializing temporary Material instances into the scene file.
+            const string root = "Assets/FrostArk/Generated";
+            if (!AssetDatabase.IsValidFolder(root))
+                AssetDatabase.CreateFolder("Assets/FrostArk", "Generated");
+            const string folder = root + "/Galley";
+            if (!AssetDatabase.IsValidFolder(folder))
+                AssetDatabase.CreateFolder(root, "Galley");
+
+            string path = folder + "/Galley_" + ColorUtility.ToHtmlStringRGB(color) + ".mat";
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                var shader = Shader.Find("Universal Render Pipeline/Lit") ??
+                    Shader.Find("Standard");
+                if (shader == null)
+                    throw new InvalidOperationException("No Lit shader for generated fixture.");
+                material = new Material(shader);
+                AssetDatabase.CreateAsset(material, path);
+            }
+            material.color = color;
+            EditorUtility.SetDirty(material);
             return material;
         }
     }
