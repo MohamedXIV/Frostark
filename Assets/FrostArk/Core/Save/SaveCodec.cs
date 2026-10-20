@@ -22,7 +22,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 16;
+        public const ushort CurrentVersion = 17;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -106,6 +106,7 @@ namespace FrostArk.Core.Save
                     WriteCombatMagazineExtension(writer, state.Combat);
                     WriteCrewRecoveryExtension(writer, state.CrewDuty);
                     WriteCrewNeedsExtension(writer, state.CrewDuty);
+                    WriteCrewInteractionExtension(writer, state.CrewDuty.Interactions);
                 }
                 payload = stream.ToArray();
             }
@@ -162,7 +163,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -241,6 +242,7 @@ namespace FrostArk.Core.Save
             if (version >= 14) combat = ReadCombatMagazineExtension(reader, combat);
             if (version >= 15) crewDuty = ReadCrewRecoveryExtension(reader, crewDuty);
             if (version >= 16) crewDuty = ReadCrewNeedsExtension(reader, crewDuty);
+            if (version >= 17) crewDuty = ReadCrewInteractionExtension(reader, crewDuty);
             var world = WorldState.RestoreSnapshot(minute, revision,
                 supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy, combat, siteProgress);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides, sceneCheckpoint);
