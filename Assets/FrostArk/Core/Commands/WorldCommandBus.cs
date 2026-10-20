@@ -382,10 +382,10 @@ namespace FrostArk.Core.Commands
                 var slot = state.CrewDuty.Interactions.GetSlot(use.SlotId);
                 if (slot == null)
                     return CommandResult.Rejected(state, CommandFailure.UnknownInteractionSlot);
-                var claim = state.CrewDuty.Interactions.GetClaim(use.SlotId);
-                if (claim == null || claim.CrewId != use.CrewId)
+                var heldClaim = state.CrewDuty.Interactions.GetClaim(use.SlotId);
+                if (heldClaim == null || heldClaim.CrewId != use.CrewId)
                     return CommandResult.Rejected(state, CommandFailure.InteractionClaimNotOwned);
-                if (claim.ExpiresAt <= state.Minute)
+                if (heldClaim.ExpiresAt <= state.Minute)
                     return CommandResult.Rejected(state, CommandFailure.InteractionClaimExpired);
                 var provision = state.CrewDuty.GetConsumable(use.ItemId);
                 if (provision == null)
