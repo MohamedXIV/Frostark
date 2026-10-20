@@ -384,7 +384,7 @@ namespace FrostArk.Core.Tests
             // Every current v15 snapshot in this fixture has an empty *duty*
             // roster. v15 appends one extra four-byte recovery-count suffix,
             // which must also be removed when constructing older payloads.
-            int recoveryExtensionBytes = 4;
+            int recoveryExtensionBytes = 4 + 8; // v15 empty roster + v16 empty needs/provisions
             int payloadLength = BitConverter.ToInt32(encoded, 10)
                 - removedBytes - recoveryExtensionBytes;
             var legacy = new byte[header + payloadLength + checksum];
