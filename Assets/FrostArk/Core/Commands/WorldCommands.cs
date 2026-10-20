@@ -295,6 +295,27 @@ namespace FrostArk.Core.Commands
         }
     }
 
+    /// <summary>
+    /// Resolves a completed, physically approached Eat/Drink slot. The caller's
+    /// Unity movement adapter must establish arrival before requesting this;
+    /// having the claim alone is NOT proof of arrival.
+    /// </summary>
+    public sealed class UseCrewProvisionInteractionCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId SlotId { get; }
+        public EntityId ItemId { get; }
+        public long ExpectedRevision { get; }
+
+        public UseCrewProvisionInteractionCommand(EntityId id, EntityId crewId,
+            EntityId slotId, EntityId itemId, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; SlotId = slotId; ItemId = itemId;
+            ExpectedRevision = expectedRevision;
+        }
+    }
+
     /// <summary>Claim one authored interaction position before navigation.</summary>
     public sealed class ClaimCrewInteractionCommand : IGameCommand
     {
