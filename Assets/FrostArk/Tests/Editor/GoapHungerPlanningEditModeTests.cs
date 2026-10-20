@@ -67,6 +67,19 @@ namespace FrostArk.Unity.Tests
         }
     }
 
+    // Spike-only goal selector; source needs would be read from FrostArk Core
+    // once the character Needs domain is authored.
+    public static class GoapHungerProbeGoalSelector
+    {
+        public static bool RequestFoodIfCritical(GoapHungerProbeFacts facts, GoapActionProvider provider)
+        {
+            if (facts.Hunger < 80)
+                return false;
+            provider.RequestGoal<GoapSatisfyHungerGoal>();
+            return true;
+        }
+    }
+
     [TestFixture]
     public sealed class GoapHungerPlanningEditModeTests
     {
@@ -104,6 +117,8 @@ namespace FrostArk.Unity.Tests
         [TearDown]
         public void TearDown()
         {
+            if (this.actor != null)
+                this.actor.IsPaused = true; // Do not replan as Unity tears down the object.
             if (this.crew != null)
                 Object.DestroyImmediate(this.crew);
             if (this.goapHost != null)
@@ -116,7 +131,7 @@ namespace FrostArk.Unity.Tests
             this.facts.Hunger = 95;
             this.facts.FoodAvailable = true;
 
-            this.provider.RequestGoal<GoapSatisfyHungerGoal>();
+            Assert.That(GoapHungerProbeGoalSelector.RequestFoodIfCritical(this.facts, this.provider), Is.True);
 
             // This action must come from CrashKonijn's planner, not test code.
             Assert.That(this.provider.CurrentPlan, Is.Not.Null);
@@ -137,9 +152,20 @@ namespace FrostArk.Unity.Tests
             this.facts.Hunger = 95;
             this.facts.FoodAvailable = false;
 
-            this.provider.RequestGoal<GoapSatisfyHungerGoal>();
+            Assert.That(GoapHungerProbeGoalSelector.RequestFoodIfCritical(this.facts, this.provider), Is.True);
             this.actor.Run(0.1f);
 
+            Assert.That(this.facts.RequestedMeals, Is.Zero);
+        }
+        [Test]
+        public void NoncriticalHungerKeepsExistingDutyInsteadOfRequestingFood()
+        {
+            this.facts.Hunger = 25;
+            this.facts.FoodAvailable = true;
+
+            Assert.That(GoapHungerProbeGoalSelector.RequestFoodIfCritical(this.facts, this.provider), Is.False);
+            Assert.That(this.provider.GoalRequest, Is.Null);
+            this.actor.Run(0.1f);
             Assert.That(this.facts.RequestedMeals, Is.Zero);
         }
     }
