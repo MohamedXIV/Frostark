@@ -21,6 +21,12 @@ namespace FrostArk.Unity.Editor
         [MenuItem("FrostArk/Fixtures/Rebuild Crew Galley Slice")]
         public static void CreateScene()
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new InvalidOperationException(
+                    "Generate the Crew Galley fixture only outside Unity PlayMode.");
+
+            var grid = CrewGalleyFixtureState.Grid();
+            ValidateFixtureAuthoring(grid);
             var original = SceneManager.GetActiveScene();
             // Never close an unsaved scene to build the fixture. The menu action
             // operates in a new additive scene and leaves existing scenes intact.
@@ -36,7 +42,6 @@ namespace FrostArk.Unity.Editor
                 var root = new GameObject("GalleyPlayableFixture");
                 if (root.scene != scene)
                     SceneManager.MoveGameObjectToScene(root, scene);
-                var grid = CrewGalleyFixtureState.Grid();
 
                 var deck = Cube(root.transform, "ShipDeckFloor",
                     new Vector3(0f, -0.13f, 0f),
@@ -134,6 +139,37 @@ namespace FrostArk.Unity.Editor
                     SceneManager.SetActiveScene(original);
                 if (scene.IsValid() && scene.isLoaded)
                     EditorSceneManager.CloseScene(scene, true);
+            }
+        }
+
+        // Catch mismatched authored IDs/offsets or a blocked route *before*
+        // generating material assets or saving any new scene.
+        private static void ValidateFixtureAuthoring(CrewShipGridPath grid)
+        {
+            var state = CrewGalleyFixtureState.CreateDefaultState();
+            if (!grid.CanStand(CrewGalleyFixtureState.StartCell) ||
+                !grid.CanStand(CrewGalleyFixtureState.EatCell) ||
+                !grid.CanStand(CrewGalleyFixtureState.DrinkCell) ||
+                grid.CanStand(CrewGalleyFixtureState.GalleyCell))
+                throw new InvalidOperationException(
+                    "Galley/source/walkable standing cells contradict the grid.");
+            foreach (var pair in new[]
+            {
+                (CrewGalleyFixtureState.Eat, CrewGalleyFixtureState.EatCell,
+                    FrostArk.Core.Crew.CrewInteractionVerb.Eat),
+                (CrewGalleyFixtureState.Drink, CrewGalleyFixtureState.DrinkCell,
+                    FrostArk.Core.Crew.CrewInteractionVerb.Drink)
+            })
+            {
+                var slot = state.CrewDuty.Interactions.GetSlot(pair.Item1);
+                if (slot == null || slot.SourceId != CrewGalleyFixtureState.Galley ||
+                    slot.Verb != pair.Item3 ||
+                    CrewGalleyFixtureState.GalleyCell +
+                        new Vector2Int(slot.LocalX, slot.LocalY) != pair.Item2 ||
+                    grid.FindPath(CrewGalleyFixtureState.StartCell, pair.Item2).Count == 0)
+                    throw new InvalidOperationException(
+                        "Galley slot is not authored consistently or is unreachable: " +
+                        pair.Item1.Value);
             }
         }
 
