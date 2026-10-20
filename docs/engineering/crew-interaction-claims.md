@@ -22,3 +22,13 @@ Remaining staged work: (1) author real module/prop interaction sources and valid
 - G0 source contract checks and G1 `dotnet test` for full Core at exact PR HEAD. Do not merge on source review alone.
 - G2 Unity import, G3 PlayMode and G4 platforms **NOT RUN** per user directive to postpone engine checks.
 - GOAP 3.1.2 PR #97 is still an **unproven Draft**; no dependence and no duplicate Needs/world state.
+
+## Claim-bound provision resolution — follow-up issue #104 (G1 pending)
+
+- `CrewProvisionInteractionDiscovery.Find(world, crewId)` is a **read-only candidate list**, ordered by actual Hunger/Thirst urgency and then stable slot/item IDs. It checks the authored Eat/Drink slot, current ship-hold stock, current Need, present/unincapacitated actor, and that no slot/crew claim is already active. It intentionally **does not claim a slot, prove a physical route or run Unity**.
+- `UseCrewProvisionInteractionCommand` connects an already-owned, *unexpired* Eat/Drink claim to `CrewState.Consume` and `InventoryState.TryConsumeShip`; mismatched verb, no claim, wrong owner, expired claim, no item, full Need or stale revision are **atomic rejections**.
+- A successful use **consumes one real item, reduces Needs, and releases the occupied slot in ONE immutable WorldState revision, emitting one `CrewProvisionConsumed` event**. No second 'release' command or duplicated Core inventory. Direct `ConsumeCrewProvisionCommand` still exists for the prior direct domain API; the new command enforces a claim for **interaction-backed** use.
+- A claim is explicitly **not proof of arrival**. The future Unity adapter must prove path completion and proximity to the authored anchor before calling the use command. SourceId is still authoring metadata without canonical galley footprint/clearance validation, so this code should **not** be presented as a physically navigable galley.
+- No change to persisted state structure: SaveCodec stays v17. `CrewProvisionInteractionTests` adds discovery, end-to-end meal/water, wrong-owner/verb checks, depleted inventory, exact-expiry check and use-after-load replay. G0/G1 must be confirmed from exact-head logs before merge.
+
+**Playable test milestone:** wait for an actual Unity ship scene where actor navigates to a real galley slot, interrupts duty for Hunger/Thirst, consumes a real ration on successful arrival, correctly releases on cancellation and resumes/heeds staffing changes. A passing pure .NET suite is foundation, not yet that milestone.
