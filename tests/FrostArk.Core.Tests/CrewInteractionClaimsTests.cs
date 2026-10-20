@@ -5,6 +5,7 @@ using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Events;
 using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Core.Time;
 using FrostArk.Core.World;
 using NUnit.Framework;
@@ -146,6 +147,30 @@ namespace FrostArk.Core.Tests
             Assert.That(newOwner.Success, Is.True);
             Assert.That(newOwner.State.CrewDuty.Interactions.GetClaim(EatSlot)!.CrewId,
                 Is.EqualTo(B));
+        }
+
+        [Test]
+        public void WorldClockExpiryPreservesCommandProvenanceWithoutNewRevision()
+        {
+            var bus = new WorldCommandBus();
+            var claimed = bus.Execute(World(), Claim("clock", A, EatSlot, 0, 2));
+            Assert.That(claimed.Success, Is.True);
+            var world = claimed.State;
+            var scheduler = new SimulationScheduler(new WorldClock(world.Minute),
+                new IWorldMinuteSystem[]
+                {
+                    new ShipCrewMinuteSystem(() => world, s => world = s),
+                    new ShipThermalMinuteSystem(() => world, s => world = s, _ => 0)
+                }, seed: 17);
+            scheduler.Advance(2);
+            Assert.That(world.Minute.Value, Is.EqualTo(2));
+            Assert.That(world.CrewDuty.Interactions.GetClaim(EatSlot), Is.Null);
+            Assert.That(world.Revision, Is.EqualTo(1),
+                "Expiring a slot must not invent player-command provenance.");
+            var duplicate = bus.Execute(world, Claim("clock", B, EatSlot, 1, 2));
+            Assert.That(duplicate.Failure, Is.EqualTo(CommandFailure.DuplicateCommand));
+            var retry = bus.Execute(world, Claim("retry", B, EatSlot, 1, 2));
+            Assert.That(retry.Success, Is.True);
         }
 
         [Test]
