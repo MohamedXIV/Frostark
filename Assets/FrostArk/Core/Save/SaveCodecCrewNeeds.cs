@@ -45,8 +45,13 @@ namespace FrostArk.Core.Save
             var consumables = new List<CrewConsumable>();
             int foodCount = ReadCount(reader);
             for (int i = 0; i < foodCount; i++)
-                consumables.Add(new CrewConsumable(ReadId(reader),
-                    reader.ReadInt32(), reader.ReadInt32(), reader.ReadInt32()));
+            {
+                var itemId = ReadId(reader);
+                int version = reader.ReadInt32();
+                int nutrition = reader.ReadInt32();
+                int hydration = reader.ReadInt32();
+                consumables.Add(new CrewConsumable(itemId, nutrition, hydration, version));
+            }
             return duty.WithConsumables(consumables);
         }
     }
