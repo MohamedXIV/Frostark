@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using UnityEngine;
 using EntityId = FrostArk.Core.World.EntityId;
@@ -17,17 +18,17 @@ namespace FrostArk.Unity
     public readonly struct CrewMoveGoal
     {
         public PhysicalTheater Theater { get; }
-        public Vector2Int ShipCell { get; }
+        public ShipGridCell ShipCell { get; }
         public Vector3 ShoreWorld { get; }
 
-        private CrewMoveGoal(PhysicalTheater theater, Vector2Int cell, Vector3 point)
+        private CrewMoveGoal(PhysicalTheater theater, ShipGridCell cell, Vector3 point)
         {
             Theater = theater;
             ShipCell = cell;
             ShoreWorld = point;
         }
 
-        public static CrewMoveGoal ShipCellGoal(Vector2Int localCell) =>
+        public static CrewMoveGoal ShipCellGoal(ShipGridCell localCell) =>
             new CrewMoveGoal(PhysicalTheater.Ship, localCell, default);
 
         public static CrewMoveGoal ShorePoint(Vector3 world)
