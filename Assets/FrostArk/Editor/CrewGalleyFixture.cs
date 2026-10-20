@@ -34,7 +34,8 @@ namespace FrostArk.Unity.Editor
             {
                 SceneManager.SetActiveScene(scene);
                 var root = new GameObject("GalleyPlayableFixture");
-                SceneManager.MoveGameObjectToScene(root, scene);
+                if (root.scene != scene)
+                    SceneManager.MoveGameObjectToScene(root, scene);
                 var grid = CrewGalleyFixtureState.Grid();
 
                 var deck = Cube(root.transform, "ShipDeckFloor",
@@ -94,7 +95,8 @@ namespace FrostArk.Unity.Editor
                 sun.color = new Color(0.80f, 0.89f, 1.0f);
 
                 var scopeRoot = new GameObject("FrostArkSessionScope");
-                SceneManager.MoveGameObjectToScene(scopeRoot, scene);
+                if (scopeRoot.scene != scene)
+                    SceneManager.MoveGameObjectToScene(scopeRoot, scene);
                 scopeRoot.AddComponent<WorldSessionScope>();
                 scopeRoot.AddComponent<CrewGalleyFixtureBootstrap>();
 
