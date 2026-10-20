@@ -179,5 +179,85 @@ namespace FrostArk.Unity.Tests
                 finally { UnityEngine.Object.DestroyImmediate(root); }
             }
         }
+        [Test]
+        public void SharedSelectionDispatchesShipThenEmptyClickDoesNotCancelAcceptedMove()
+        {
+            using (var session = NewSession())
+            {
+                var root = new GameObject("G2-Ship");
+                try
+                {
+                    var walker = Walker(root, "Crew-A", Map(true), Cell(Bridge, 1, 2));
+                    var selection = new TacticalSelectionController();
+                    selection.Select(A);
+                    var executors = new ICrewTheaterMoveExecutor[] {
+                        new ShipGridCrewExecutor(A, ShipScene, walker)
+                    };
+                    var targetCell = Cell(Engine, 2, 2);
+                    var results = TacticalTheaterSelectionCommands.MoveSelectedOnShip(
+                        session, selection, targetCell, new Vector3(8.5f, 0f, 2.5f),
+                        executors);
+                    Assert.That(results.Single().Accepted, Is.True);
+                    Assert.That(walker.IsMoving, Is.True);
+                    selection.Clear(); // blank left-click, not a command cancellation.
+                    var empty = TacticalTheaterSelectionCommands.MoveSelectedOnShip(
+                        session, selection, Cell(Bridge, 3, 3),
+                        new Vector3(3.5f, 0f, 3.5f), executors);
+                    Assert.That(empty, Is.Empty);
+                    Assert.That(walker.IsMoving, Is.True);
+                    for (int i = 0; i < 100 && walker.IsMoving; i++) walker.Tick(0.1f);
+                    Assert.That(walker.LastReachedCell, Is.EqualTo(targetCell));
+                    Assert.That(session.Revision, Is.Zero);
+                }
+                finally { UnityEngine.Object.DestroyImmediate(root); }
+            }
+        }
+
+        private sealed class RecordingShoreExecutor : ICrewTheaterMoveExecutor
+        {
+            public EntityId ActorId { get; set; }
+            public EntityId SceneId { get; set; }
+            public PhysicalTheater Theater => PhysicalTheater.Shore;
+            public int Calls { get; private set; }
+            public Vector3 LastWorldPoint { get; private set; }
+            public bool TryMove(CrewMoveGoal goal)
+            {
+                Calls++;
+                LastWorldPoint = goal.ShoreWorld;
+                return goal.Theater == PhysicalTheater.Shore;
+            }
+        }
+
+        [Test]
+        public void SameSelectionControllerRoutesOnlyAshoreCrewToWorldExecutor()
+        {
+            using (var session = NewSession())
+            {
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { B }, true,
+                    EntityId.Parse("transition:selection-shore")).Success, Is.True);
+                var shoreScene = EntityId.Parse("scene:coast");
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    shoreScene, EntityId.Parse("site:coast"), EntityId.Parse("anchor:landing"),
+                    new[] { B }));
+                var selection = new TacticalSelectionController();
+                selection.SelectMultiple(new[] { A, B });
+                var shore = new RecordingShoreExecutor
+                {
+                    ActorId = B, SceneId = shoreScene
+                };
+                var point = new Vector3(17f, 0f, 9f);
+                var results = TacticalTheaterSelectionCommands.MoveSelectedOnShore(
+                    session, selection, point, new ICrewTheaterMoveExecutor[] { shore });
+                Assert.That(results.Select(x => x.ActorId), Is.EqualTo(new[] { A, B }));
+                Assert.That(results[0].RouteStatus,
+                    Is.EqualTo(CrewTheaterRouteStatus.WrongTheater));
+                Assert.That(results[1].Accepted, Is.True);
+                Assert.That(shore.Calls, Is.EqualTo(1));
+                Assert.That(shore.LastWorldPoint, Is.EqualTo(point));
+                Assert.That(selection.Count, Is.EqualTo(2),
+                    "An order does not persist, remove or rewrite transient selection.");
+                Assert.That(session.Capture().State.CrewDuty.Get(B).IsAway, Is.True);
+            }
+        }
     }
 }
