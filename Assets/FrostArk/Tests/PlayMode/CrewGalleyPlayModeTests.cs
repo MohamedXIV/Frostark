@@ -141,7 +141,10 @@ namespace FrostArk.Unity.Tests
             var source = _root.transform.Find("Galley");
             Assert.That(source, Is.Not.Null);
             Object.Destroy(source.gameObject);
-            yield return null;
+            // Unity destroys objects after the current update. Wait until the
+            // controller has observed the missing source in a following frame.
+            for (int frame = 0; frame < 10 && !_controller.IsPaused; frame++)
+                yield return null;
             var state = _session.Capture().State;
             Assert.That(_controller.IsMoving, Is.False);
             Assert.That(_controller.IsPaused, Is.True);
