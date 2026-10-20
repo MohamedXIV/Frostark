@@ -45,11 +45,11 @@ namespace FrostArk.Core.Tests
         private static WorldSession SaveRestore(WorldSession source)
         {
             var encoded = SaveCodec.Encode(source.Capture());
-            Assert.That(BitConverter.ToUInt16(encoded, 8), Is.EqualTo(14));
+            Assert.That(BitConverter.ToUInt16(encoded, 8), Is.EqualTo(SaveCodec.CurrentVersion));
             var result = SaveCodec.TryDecode(encoded);
             Assert.That(result.Success, Is.True, result.Error.ToString());
             Assert.That(SaveCodec.Encode(result.Value), Is.EqualTo(encoded),
-                "The entire v14 payload must be stable through decode/encode.");
+                "The entire current payload must be stable through decode/encode.");
             return WorldSession.Restore(result.Value);
         }
 
@@ -171,9 +171,9 @@ namespace FrostArk.Core.Tests
             using (var source = CreateSession())
             {
                 var blob = SaveCodec.Encode(source.Capture());
-                // V14 suffix: count(int32), capacity(int64), reloadTicks(int64), magazineRounds(int64).
-                // Last 8 bytes of signed payload are the magazine rounds.
-                Array.Copy(BitConverter.GetBytes(999L), 0, blob, blob.Length - 32 - 8, 8);
+                // v14 magazine extension precedes v15's empty (4-byte) recovery count.
+                // Locate the last magazine rounds before that added suffix.
+                Array.Copy(BitConverter.GetBytes(999L), 0, blob, blob.Length - 32 - 4 - 8, 8);
                 using (var sha = SHA256.Create())
                 {
                     var signature = sha.ComputeHash(blob, 0, blob.Length - 32);
@@ -192,8 +192,8 @@ namespace FrostArk.Core.Tests
             {
                 var v14 = SaveCodec.Encode(source.Capture());
                 // Original v13 had no magazine extension; downgrade only the
-                // dedicated 4+24 byte suffix for this exact one-weapon save.
-                int payloadLength = BitConverter.ToInt32(v14, 10) - 28;
+                // dedicated 4+24 byte magazine suffix and 4-byte v15 recovery count.
+                int payloadLength = BitConverter.ToInt32(v14, 10) - 32;
                 var old = new byte[14 + payloadLength + 32];
                 Array.Copy(v14, old, 14 + payloadLength);
                 Array.Copy(BitConverter.GetBytes((ushort)13), 0, old, 8, 2);
