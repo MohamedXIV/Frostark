@@ -46,6 +46,28 @@ namespace FrostArk.Unity
             new Vector3(cell.x - (Width - 1) * 0.5f, height,
                 cell.y - (Height - 1) * 0.5f);
 
+        /// <summary>Map a hit/moving actor to its containing 1m deck cell.</summary>
+        public Vector2Int WorldToCell(Vector3 world) =>
+            new Vector2Int(
+                Mathf.FloorToInt(world.x + (Width - 1) * 0.5f + 0.5f),
+                Mathf.FloorToInt(world.z + (Height - 1) * 0.5f + 0.5f));
+
+        /// <summary>
+        /// Check the entire visible displacement, not just its destination.
+        /// This permits short rounded turns inside traversable cells without
+        /// clipping a bulkhead or jumping through a blocked grid square.
+        /// </summary>
+        public bool CanTraverse(Vector3 from, Vector3 to)
+        {
+            float distance = Vector3.Distance(from, to);
+            int samples = Mathf.Max(1, Mathf.CeilToInt(distance / 0.08f));
+            for (int i = 0; i <= samples; i++)
+                if (!CanStand(WorldToCell(Vector3.Lerp(from, to,
+                        (float)i / samples))))
+                    return false;
+            return true;
+        }
+
         public IReadOnlyList<Vector2Int> FindPath(Vector2Int start, Vector2Int goal)
         {
             if (!CanStand(start) || !CanStand(goal))
