@@ -341,7 +341,7 @@ namespace FrostArk.Unity.Tests
             var after = _session.Capture().State.CrewDuty
                 .Get(CrewGalleyFixtureState.Engineer);
             Assert.That(after.Role, Is.EqualTo(before.Role));
-            Assert.That(after.ShiftStartMinute, Is.EqualTo(before.ShiftStartMinute));
+            Assert.That(after.ShiftStart, Is.EqualTo(before.ShiftStart));
             yield return null;
         }
     }
