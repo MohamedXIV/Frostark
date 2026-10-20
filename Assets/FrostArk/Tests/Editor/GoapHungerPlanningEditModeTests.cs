@@ -7,7 +7,9 @@ using UnityEngine;
 
 namespace FrostArk.Unity.Tests
 {
-    // Binary urgency fact (1 = critical); avoid asking the planner to apply 75\n    // one-unit Decrease effects for a scalar hunger level of 95.\n    public sealed class GoapHungerKey : WorldKeyBase { }
+    // Binary urgency fact (1 = critical); avoid asking the planner to apply 75
+    // one-unit Decrease effects for a scalar hunger level of 95.
+    public sealed class GoapHungerKey : WorldKeyBase { }
     public sealed class GoapFoodAvailableKey : WorldKeyBase { }
     public sealed class GoapSatisfyHungerGoal : GoalBase { }
 
