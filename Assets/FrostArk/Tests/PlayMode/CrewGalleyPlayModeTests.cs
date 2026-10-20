@@ -194,7 +194,7 @@ namespace FrostArk.Unity.Tests
         }
 
         [UnityTest]
-        public IEnumerator RtsMoveOrderOverridesCriticalNeedsAndCanResumeAutonomy()
+        public IEnumerator RtsMoveOrderOverridesCriticalNeedsAndDeselectRestoresAutonomy()
         {
             Assert.That(_controller.HeldSlot.IsValid, Is.True);
             _controller.SelectEngineer();
@@ -226,9 +226,12 @@ namespace FrostArk.Unity.Tests
                 CrewGalleyFixtureState.Engineer).Thirst,
                 Is.EqualTo(initial.CrewDuty.Get(CrewGalleyFixtureState.Engineer).Thirst));
 
-            Assert.That(_controller.TryStart(), Is.True,
-                "Resume Auto must reconsider the canonical critical Need.");
-            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+            Assert.That(_controller.TryStart(), Is.False,
+                "Selected crew must not start a competing autonomous goal.");
+            _controller.ClearSelection();
+            Assert.That(_controller.IsSelected, Is.False);
+            Assert.That(_controller.HeldSlot.IsValid, Is.True,
+                "Empty-click deselection must resume urgent idle Needs automatically.");
             Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims,
                 Has.Count.EqualTo(1));
         }
@@ -284,6 +287,62 @@ namespace FrostArk.Unity.Tests
                 Is.EqualTo(960));
             Assert.That(result.Revision, Is.EqualTo(2),
                 "Claim and cancel only; no Use command should have committed.");
+        }
+
+        [UnityTest]
+        public IEnumerator DeselectDuringPlayerMove_DoesNotCancelOrder_ThenResumesNeeds()
+        {
+            _controller.SelectEngineer();
+            Assert.That(_controller.IssueMoveOrder(new Vector2Int(2, 1)), Is.True);
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims, Is.Empty);
+            _controller.ClearSelection();
+            Assert.That(_controller.IsSelected, Is.False);
+            Assert.That(_controller.IsManualOrder, Is.True,
+                "Deselection may not cancel a valid in-flight player Move.");
+
+            _controller.Configure(_actor, _root.transform.Find("Galley"), speed: 25f);
+            for (int frame = 0; frame < 300 && _controller.IsManualOrder; frame++)
+                yield return null;
+
+            Assert.That(_controller.IsManualOrder, Is.False,
+                "The accepted player route must complete before an idle goal is reconsidered.");
+            Assert.That(_controller.CurrentCell, Is.EqualTo(new Vector2Int(2, 1)));
+            Assert.That(_controller.HeldSlot.IsValid, Is.True,
+                "After completing the move, idle unselected crew may address critical thirst.");
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims,
+                Has.Count.EqualTo(1));
+            Assert.That(_session.Capture().State.Inventory.GetAmount(
+                InventoryContainer.ShipHold, CrewGalleyFixtureState.Water),
+                Is.EqualTo(4), "No automatic consumption before physical arrival.");
+        }
+
+        [UnityTest]
+        public IEnumerator EmptyPointerClick_DeselectsWithoutErasingStandingCrewDuty()
+        {
+            var cameraObject = new GameObject("GalleyDeselectCamera");
+            cameraObject.transform.SetParent(_root.transform, false);
+            cameraObject.transform.position = new Vector3(0f, 13f, -8f);
+            cameraObject.transform.rotation = Quaternion.Euler(62f, 0f, 0f);
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = 8f;
+            _controller.ConfigureRtsCamera(camera);
+
+            _controller.SelectEngineer();
+            Assert.That(_controller.IssueMoveOrder(new Vector2Int(2, 1)), Is.True);
+            var before = _session.Capture().State.CrewDuty
+                .Get(CrewGalleyFixtureState.Engineer);
+            var blankPoint = camera.WorldToScreenPoint(
+                CrewGalleyFixtureState.Grid().WorldCenter(new Vector2Int(3, 1)));
+            Assert.That(_controller.ProcessRtsPointer(blankPoint, rightClick: false),
+                Is.False);
+            Assert.That(_controller.IsSelected, Is.False);
+            Assert.That(_controller.IsManualOrder, Is.True);
+            var after = _session.Capture().State.CrewDuty
+                .Get(CrewGalleyFixtureState.Engineer);
+            Assert.That(after.Role, Is.EqualTo(before.Role));
+            Assert.That(after.ShiftStartMinute, Is.EqualTo(before.ShiftStartMinute));
+            yield return null;
         }
     }
 }
