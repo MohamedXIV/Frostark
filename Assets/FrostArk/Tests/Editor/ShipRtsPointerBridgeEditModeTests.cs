@@ -287,5 +287,24 @@ namespace FrostArk.Unity.Tests
             }
         }
 
+        [Test]
+        public void FreshShipCheckpointMustBeExplicitAndDoesNotDefaultFromSceneObjects()
+        {
+            var root = new GameObject("G2-Bootstrap-Only");
+            try
+            {
+                var bootstrap = root.AddComponent<ShipTacticalSceneBootstrap>();
+                Assert.That(bootstrap.InitialNewRunCheckpoint(), Is.Null);
+                bootstrap.ConfigureNewRunCheckpoint(ShipScene,
+                    EntityId.Parse("anchor:new-run"));
+                var checkpoint = bootstrap.InitialNewRunCheckpoint();
+                Assert.That(checkpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
+                Assert.That(checkpoint.SceneId, Is.EqualTo(ShipScene));
+                Assert.That(checkpoint.SpawnAnchorId,
+                    Is.EqualTo(EntityId.Parse("anchor:new-run")));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
     }
 }

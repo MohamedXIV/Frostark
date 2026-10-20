@@ -52,11 +52,35 @@ namespace FrostArk.Unity
         [SerializeField] private DoorBinding[] doors = Array.Empty<DoorBinding>();
         [SerializeField] private CrewBinding[] crew = Array.Empty<CrewBinding>();
         [SerializeField, Min(0.1f)] private float crewMoveSpeed = 2.5f;
+        [Header("Explicit new-run ship spawn (never applied to restored saves)")]
+        [SerializeField] private bool establishShipCheckpointForFreshRun;
+        [SerializeField] private string startingSceneId = "scene:ship-interior";
+        [SerializeField] private string startingAnchorId = "anchor:ship-start";
         private WorldSession _session;
         private ShipSpatialMap _map;
         private uint _layoutFingerprint;
 
         public ShipSpatialMap Map => _map;
+
+        /// <summary>
+        /// Opt-in scene-local new-run location. WorldSessionScope calls this
+        /// ONLY on freshly constructed sessions, never on a restored snapshot.
+        /// Missing legacy checkpoints remain unknown rather than invented.
+        /// </summary>
+        public PhysicalSceneCheckpoint InitialNewRunCheckpoint() =>
+            establishShipCheckpointForFreshRun
+                ? PhysicalSceneCheckpoint.Ship(EntityId.Parse(startingSceneId),
+                    EntityId.Parse(startingAnchorId))
+                : null;
+
+        public void ConfigureNewRunCheckpoint(EntityId sceneId, EntityId spawnAnchorId)
+        {
+            if (!sceneId.IsValid || !spawnAnchorId.IsValid)
+                throw new ArgumentException("Valid initial ship scene and anchor required.");
+            startingSceneId = sceneId.Value;
+            startingAnchorId = spawnAnchorId.Value;
+            establishShipCheckpointForFreshRun = true;
+        }
 
         /// <summary>Expose identical inspector/authored data to test fixtures.</summary>
         public void Configure(Transform root, TacticalCommandController input,
