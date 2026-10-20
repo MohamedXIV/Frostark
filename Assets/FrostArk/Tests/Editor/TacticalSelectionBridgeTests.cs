@@ -220,5 +220,51 @@ namespace FrostArk.Unity.Tests
                 UnityEngine.Object.DestroyImmediate(root);
             }
         }
+
+        [Test]
+        public void MixedMoveDispatch_ReportsActorFailuresAndOnlyEmitsAcceptedIntent()
+        {
+            var root = new GameObject("TestRoot_PartialMove");
+            try
+            {
+                var actorA = new GameObject("CanMove");
+                actorA.transform.SetParent(root.transform);
+                var success = actorA.AddComponent<TestActorProxy>();
+                success.SetActorId(EntityId.Parse("actor:ok"));
+                success.SimulateMoveSuccess = true;
+
+                var actorB = new GameObject("CannotMove");
+                actorB.transform.SetParent(root.transform);
+                var rejected = actorB.AddComponent<TestActorProxy>();
+                rejected.SetActorId(EntityId.Parse("actor:blocked"));
+                rejected.SimulateMoveSuccess = false;
+
+                var commanderObject = new GameObject("Commander");
+                commanderObject.transform.SetParent(root.transform);
+                var commander = commanderObject.AddComponent<TacticalCommandController>();
+                commander.RegisterActor(success);
+                commander.RegisterActor(rejected);
+                commander.SelectActor(success.ActorId);
+                commander.SelectActor(rejected.ActorId, addToSelection: true);
+
+                Assert.That(commander.IssueMoveOrder(new Vector3(5f, 0f, 5f)), Is.True);
+                Assert.That(commander.LastMoveDispatch.Count, Is.EqualTo(2));
+                Assert.That(commander.LastMoveDispatch[success.ActorId], Is.True);
+                Assert.That(commander.LastMoveDispatch[rejected.ActorId], Is.False);
+                Assert.That(commander.LastIssuedIntent.ActorIds,
+                    Is.EquivalentTo(new[] { success.ActorId }),
+                    "Rejected actors must not appear in the accepted intent.");
+
+                commander.ClearSelection();
+                Assert.That(commander.LastIssuedIntent.ActorIds,
+                    Is.EquivalentTo(new[] { success.ActorId }),
+                    "Changing transient selection never revokes an accepted order.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
     }
 }
