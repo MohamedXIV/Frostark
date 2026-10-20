@@ -467,15 +467,18 @@ namespace FrostArk.Unity
             var ray = tacticalCamera.ScreenPointToRay(screenPoint);
             var hits = Physics.RaycastAll(ray, 100f, ~0,
                 QueryTriggerInteraction.Ignore).OrderBy(h => h.distance).ToArray();
-            foreach (var hit in hits)
-            {
-                var target = hit.collider.GetComponentInParent<TacticalCombatTargetProxy>();
-                if (target != null && target.IsHostile && !target.IsDead)
-                    return IssueAttackOrder(target);
-                var interactable = hit.collider.GetComponentInParent<TacticalInteractableProxy>();
-                if (interactable != null && !interactable.IsDepleted)
-                    return IssueInteractOrder(interactable);
-            }
+            // Context actions operate on the first physical hit only: a target
+            // concealed behind a wall is not magically actionable by click.
+            if (hits.Length == 0) return false;
+            var first = hits[0];
+            var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
+            if (target != null && target.IsHostile && !target.IsDead)
+                return IssueAttackOrder(target);
+            var interactable = first.collider.GetComponentInParent<TacticalInteractableProxy>();
+            if (interactable != null && !interactable.IsDepleted)
+                return IssueInteractOrder(interactable);
+            if (first.collider.GetComponentInParent<TacticalActorProxy>() != null)
+                return false;
             if (Physics.Raycast(ray, out var groundHit, 100f, groundLayer,
                     QueryTriggerInteraction.Ignore))
                 return IssueMoveOrder(groundHit.point);
@@ -573,11 +576,14 @@ namespace FrostArk.Unity
             }
             if (mouse.leftButton.wasReleasedThisFrame && _selectionPointerHeld)
             {
-                if ((point - _selectionPointerOrigin).sqrMagnitude >
-                    dragThresholdPixels * dragThresholdPixels)
-                    ProcessBoxSelection(_selectionPointerOrigin, point, additive);
-                else
-                    ProcessPointerClick(point, additive);
+                if (!pointerOverUi)
+                {
+                    if ((point - _selectionPointerOrigin).sqrMagnitude >
+                        dragThresholdPixels * dragThresholdPixels)
+                        ProcessBoxSelection(_selectionPointerOrigin, point, additive);
+                    else
+                        ProcessPointerClick(point, additive);
+                }
                 _selectionPointerHeld = false;
             }
             if (mouse.rightButton.wasPressedThisFrame && !pointerOverUi)
