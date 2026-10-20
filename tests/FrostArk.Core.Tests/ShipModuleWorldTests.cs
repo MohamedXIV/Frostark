@@ -309,7 +309,7 @@ namespace FrostArk.Core.Tests
                 new SimulationScheduler(new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
             Assert.That(current[8], Is.EqualTo((byte)SaveCodec.CurrentVersion));
             // v15 adds a four-byte empty roster recovery suffix.
-            var old = new byte[current.Length - 62];
+            var old = new byte[current.Length - 70];
             Array.Copy(current, old, old.Length - 32);
             old[8] = 5;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);
