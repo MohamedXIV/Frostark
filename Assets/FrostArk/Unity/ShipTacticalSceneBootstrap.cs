@@ -121,6 +121,7 @@ namespace FrostArk.Unity
                 walker.Configure(shipRoot, _map, origins,
                     new ShipGridCell(roomId, binding.StartingCell.x, binding.StartingCell.y),
                     crewMoveSpeed);
+                binding.Actor.BindScene(checkpoint.SceneId);
                 commander.RegisterShipActor(binding.Actor);
             }
         }
