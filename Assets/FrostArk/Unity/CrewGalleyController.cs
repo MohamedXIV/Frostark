@@ -303,12 +303,15 @@ namespace FrostArk.Unity
             // entering it. Keep an actual route along the authored free cells.
             var direction = destination - before;
             float speed = walkingMetersPerSecond;
+            bool isBend = false;
             if (_routeIndex + 1 < _route.Count)
             {
                 var after = _grid.WorldCenter(_route[_routeIndex + 1], 1f);
                 var incoming = destination - _grid.WorldCenter(_currentCell, 1f);
                 var outgoing = after - destination;
-                if (Vector3.Dot(incoming.normalized, outgoing.normalized) < 0.25f)
+                isBend = Vector3.Dot(incoming.normalized,
+                    outgoing.normalized) < 0.25f;
+                if (isBend)
                 {
                     speed *= Mathf.Lerp(0.65f, 1f,
                         Mathf.Clamp01(remaining / 0.75f));
@@ -339,9 +342,15 @@ namespace FrostArk.Unity
                     Quaternion.LookRotation(direction.normalized, Vector3.up),
                     turningDegreesPerSecond * Time.deltaTime);
 
-            if (Vector3.SqrMagnitude(engineer.position - destination) <= 0.004f)
+            // Advance a little before the exact center of a bend. The
+            // spring retains velocity into the next free corridor cell, so
+            // turning is a small arc instead of an abrupt stop-and-snap.
+            // Final interaction/RTS destinations still require true arrival.
+            float arrivalRadius = isBend ? 0.23f : 0.06f;
+            if (Vector3.SqrMagnitude(engineer.position - destination) <=
+                arrivalRadius * arrivalRadius)
             {
-                engineer.position = destination;
+                if (!isBend) engineer.position = destination;
                 _currentCell = nextCell;
                 _routeIndex++;
                 if (_routeIndex >= _route.Count) Arrived();
