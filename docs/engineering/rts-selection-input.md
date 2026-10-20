@@ -5,11 +5,11 @@ Canonical design records: [Miro D01](https://miro.com/app/board/uXjVEYctyzg=/?mo
 ## Shipped to this unmerged branch (authored; Unity unverified)
 
 - The existing shore `TacticalCommandController` handles left-click actor selection, Shift toggling, drag-box selection (up to four), and empty-click/empty-box clearing. The pointer's selection hit must be the front-most physical object; the box additionally performs an occlusion ray.
-- A right-click on a shore hostile / interactable / ground issues the respective existing `TacticalActorProxy` NavMesh/tactical command, without adding a new shore path planner or moving ship grid onto land.
+- A right-click on a **first-hit, unobstructed** shore hostile / interactable / ground issues the respective existing `TacticalActorProxy` NavMesh/tactical command, without adding a new shore path planner or moving ship grid onto land.
 - Clearing selection changes only `TacticalSelectionController`'s transient IDs; previously accepted NavMesh movement remains in-flight.
 - Group Move keeps per-actor dispatch acceptance in `LastMoveDispatch`, and an intent lists only actors whose NavMesh executor accepted the dispatch. Acceptance is **not** verified arrival.
-- EventSystem UI guards prevent starting world gestures over uGUI. The mouse drag rectangle is visual-only; no new gameplay simulation state or save format.
-- Existing test harness gains 1 EditMode partial-dispatch test and 3 PlayMode selection/move/deselect tests. They are **authored only** until run in Unity 6000.6.0f1.
+- EventSystem UI guards (with an explicit `UnityEngine.UI` assembly reference) prevent starting or releasing world gestures over uGUI. The mouse drag rectangle is visual-only; no new gameplay simulation state or save format.
+- Existing test harness gains 1 EditMode partial-dispatch test and 4 PlayMode selection/move/deselect/occlusion tests. They are **authored only** until run in Unity 6000.6.0f1.
 
 ## Pending gates / intentionally not claimed
 
