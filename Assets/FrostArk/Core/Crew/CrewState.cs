@@ -24,17 +24,21 @@ namespace FrostArk.Core.Crew
         private readonly RepairJob[] _jobs;
         private readonly MedicalTreatmentProtocol[] _treatments;
         private readonly CrewConsumable[] _consumables;
+        private readonly CrewInteractionState _interactions;
         public IReadOnlyList<CrewMember> Members => Array.AsReadOnly(_members);
         public IReadOnlyList<RepairJob> RepairJobs => Array.AsReadOnly(_jobs);
         public IReadOnlyList<MedicalTreatmentProtocol> Treatments => Array.AsReadOnly(_treatments);
         public IReadOnlyList<CrewConsumable> Consumables => Array.AsReadOnly(_consumables);
+        public CrewInteractionState Interactions => _interactions;
         private CrewState(CrewMember[] members, RepairJob[] jobs,
-            MedicalTreatmentProtocol[] treatments, CrewConsumable[] consumables)
+            MedicalTreatmentProtocol[] treatments, CrewConsumable[] consumables,
+            CrewInteractionState interactions)
         {
             _members = members;
             _jobs = jobs;
             _treatments = treatments;
             _consumables = consumables;
+            _interactions = interactions;
         }
 
         public static CrewState Empty => Create(Array.Empty<CrewMember>());
@@ -42,7 +46,8 @@ namespace FrostArk.Core.Crew
         public static CrewState Create(IEnumerable<CrewMember> members,
             IEnumerable<RepairJob>? jobs = null,
             IEnumerable<MedicalTreatmentProtocol>? treatments = null,
-            IEnumerable<CrewConsumable>? consumables = null)
+            IEnumerable<CrewConsumable>? consumables = null,
+            CrewInteractionState? interactions = null)
         {
             if (members == null) throw new ArgumentNullException(nameof(members));
             var crew = members.ToArray();
@@ -72,14 +77,20 @@ namespace FrostArk.Core.Crew
             for (int i = 1; i < food.Length; i++)
                 if (food[i - 1].ItemId == food[i].ItemId)
                     throw new ArgumentException("Duplicate consumable item.", nameof(consumables));
-            return new CrewState(crew, queue, protocols, food);
+            var registry = interactions ?? CrewInteractionState.Empty;
+            foreach (var claim in registry.Claims)
+                if (!crew.Any(m => m.Id == claim.CrewId &&
+                    !m.IsAway && m.Wounds < 1000))
+                    throw new ArgumentException("Claim owner unavailable or absent.",
+                        nameof(interactions));
+            return new CrewState(crew, queue, protocols, food, registry);
         }
 
         public CrewState EnqueueRepair(EntityId id, long work)
         {
             if (!id.IsValid || GetRepair(id) != null || work <= 0)
                 throw new ArgumentException("Duplicate or invalid repair job.", nameof(id));
-            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }), _treatments, _consumables);
+            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }), _treatments, _consumables, _interactions);
         }
 
         public CrewMember? Get(EntityId id) =>
@@ -89,7 +100,7 @@ namespace FrostArk.Core.Crew
             itemId.IsValid ? Array.Find(_treatments, x => x.ItemId == itemId) : null;
 
         public CrewState WithTreatments(IEnumerable<MedicalTreatmentProtocol> treatments) =>
-            Create(_members, _jobs, treatments, _consumables);
+            Create(_members, _jobs, treatments, _consumables, _interactions);
 
         /// <summary>Only authored treatment IDs can resolve healing potency;
         /// a caller cannot supply a substituted high-healing protocol.</summary>
@@ -103,7 +114,7 @@ namespace FrostArk.Core.Crew
                 throw new ArgumentException("Crew patient is unavailable or healthy.", nameof(crewId));
             return new CrewState(_members.Select(m => m.Id == crewId
                 ? m.WithWounds(Math.Max(0, m.Wounds - protocol.HealPermille))
-                : m).ToArray(), _jobs, _treatments, _consumables);
+                : m).ToArray(), _jobs, _treatments, _consumables, _interactions);
         }
 
         internal CrewState Wound(EntityId crewId, int woundPermille)
@@ -113,9 +124,12 @@ namespace FrostArk.Core.Crew
             var member = Get(crewId);
             if (member == null)
                 throw new ArgumentException("Crew member is not in the authored roster.", nameof(crewId));
+            int nextWounds = Math.Min(1000, member.Wounds + woundPermille);
+            var nextRegistry = nextWounds == 1000
+                ? _interactions.ClearCrew(crewId) : _interactions;
             return new CrewState(_members.Select(m => m.Id == crewId
-                ? m.WithWounds(Math.Min(1000, m.Wounds + woundPermille))
-                : m).ToArray(), _jobs, _treatments, _consumables);
+                ? m.WithWounds(nextWounds) : m).ToArray(),
+                _jobs, _treatments, _consumables, nextRegistry);
         }
 
         public RepairJob? GetRepair(EntityId id) =>
@@ -135,14 +149,14 @@ namespace FrostArk.Core.Crew
             var next = current.WithRecovering(recovering);
             if (ReferenceEquals(next, current)) return this;
             return new CrewState(_members.Select(m => m.Id == id ? next : m).ToArray(),
-                _jobs, _treatments, _consumables);
+                _jobs, _treatments, _consumables, _interactions);
         }
 
         public CrewConsumable? GetConsumable(EntityId itemId) =>
             itemId.IsValid ? Array.Find(_consumables, x => x.ItemId == itemId) : null;
 
         public CrewState WithConsumables(IEnumerable<CrewConsumable> consumables) =>
-            Create(_members, _jobs, _treatments, consumables);
+            Create(_members, _jobs, _treatments, consumables, _interactions);
 
         public CrewNeedsAssessment AssessNeeds(EntityId crewId)
         {
@@ -158,7 +172,7 @@ namespace FrostArk.Core.Crew
             var next = member.WithNeeds(hunger, thirst);
             return ReferenceEquals(next, member) ? this :
                 new CrewState(_members.Select(m => m.Id == id ? next : m).ToArray(),
-                    _jobs, _treatments, _consumables);
+                    _jobs, _treatments, _consumables, _interactions);
         }
 
         internal CrewState Consume(EntityId crewId, EntityId itemId)
@@ -173,13 +187,36 @@ namespace FrostArk.Core.Crew
                 Math.Max(0, member.Thirst - provision.Hydration));
         }
 
+        /// <summary>Set authored slot definitions; does not invent claims.</summary>
+        public CrewState WithInteractionSlots(IEnumerable<CrewInteractionSlot> slots) =>
+            Create(_members, _jobs, _treatments, _consumables,
+                CrewInteractionState.Create(slots));
+
+        internal CrewState RestoreInteractions(CrewInteractionState state) =>
+            Create(_members, _jobs, _treatments, _consumables, state);
+
+        internal CrewState ClaimInteraction(EntityId crewId, EntityId slotId,
+            WorldMinute now, int lifetimeMinutes)
+        {
+            var actor = Get(crewId);
+            if (actor == null || actor.IsAway || actor.Wounds == 1000)
+                throw new ArgumentException("Crew member unavailable.", nameof(crewId));
+            return new CrewState(_members, _jobs, _treatments, _consumables,
+                _interactions.Claim(slotId, crewId, now, lifetimeMinutes));
+        }
+
+        internal CrewState ReleaseInteraction(EntityId crewId, EntityId slotId) =>
+            new CrewState(_members, _jobs, _treatments, _consumables,
+                _interactions.Release(slotId, crewId));
+
         public CrewState SetAway(EntityId id, bool away)
         {
             if (Get(id) == null)
                 throw new ArgumentException("Crew member is not in the authored roster.", nameof(id));
             var changed = _members.Select(m => m.Id == id ? m.WithAway(away) : m).ToArray();
             return changed.Zip(_members, (a, b) => ReferenceEquals(a, b)).All(x => x)
-                ? this : new CrewState(changed, _jobs, _treatments, _consumables);
+                ? this : new CrewState(changed, _jobs, _treatments, _consumables,
+                    away ? _interactions.ClearCrew(id) : _interactions);
         }
 
         /// <summary>
@@ -268,7 +305,12 @@ namespace FrostArk.Core.Crew
                 else
                     jobs[0] = new RepairJob(jobs[0].Id, remaining);
             }
-            return new CrewState(nextMembers, jobs, _treatments, _consumables);
+            var interactions = _interactions.Revalidate(minute, id =>
+            {
+                var member = Array.Find(nextMembers, m => m.Id == id);
+                return member != null && !member.IsAway && member.Wounds < 1000;
+            });
+            return new CrewState(nextMembers, jobs, _treatments, _consumables, interactions);
         }
 
         public uint Fingerprint()
@@ -317,6 +359,11 @@ namespace FrostArk.Core.Crew
                 Add(food.Version.ToString(CultureInfo.InvariantCulture));
                 Add(food.Nutrition.ToString(CultureInfo.InvariantCulture));
                 Add(food.Hydration.ToString(CultureInfo.InvariantCulture));
+            }
+            if (_interactions.Slots.Count != 0 || _interactions.Claims.Count != 0)
+            {
+                Add("interactions");
+                Add(_interactions.Fingerprint().ToString(CultureInfo.InvariantCulture));
             }
             return StableHash32.Of(canonical.ToString());
         }

@@ -153,7 +153,7 @@ namespace FrostArk.Core.Tests
             int v16Needs = 8;
             foreach (var member in state.CrewDuty.Members)
                 v16Needs += 12 + Encoding.UTF8.GetByteCount(member.Id.Value);
-            int minimumSkillOffset = encoded.Length - 32 - v16Needs
+            int minimumSkillOffset = encoded.Length - 32 - 8 - v16Needs
                 - recoveryBytes - 4 - 1 - 4 - 4;
             Array.Copy(BitConverter.GetBytes(1001), 0,
                 encoded, minimumSkillOffset, sizeof(int));

@@ -73,6 +73,43 @@ namespace FrostArk.Core.Commands
             }
 
 
+            if (command is ClaimCrewInteractionCommand claim)
+            {
+                var member = state.CrewDuty.Get(claim.CrewId);
+                if (member == null || !state.HasCrew(claim.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (member.IsAway)
+                    return CommandResult.Rejected(state, CommandFailure.CrewNotOnShip);
+                if (member.Wounds == 1000)
+                    return CommandResult.Rejected(state, CommandFailure.CrewIncapacitated);
+                if (state.CrewDuty.Interactions.GetSlot(claim.SlotId) == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownInteractionSlot);
+                if (claim.LifetimeMinutes <= 0 || claim.LifetimeMinutes > 1440)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidClaimLifetime);
+                if (state.CrewDuty.Interactions.GetClaim(claim.SlotId) != null)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionSlotBusy);
+                if (state.CrewDuty.Interactions.ClaimForCrew(claim.CrewId) != null)
+                    return CommandResult.Rejected(state, CommandFailure.CrewHasInteractionClaim);
+                var next = state.WithCrewInteraction(state.CrewDuty.ClaimInteraction(
+                    claim.CrewId, claim.SlotId, state.Minute, claim.LifetimeMinutes), command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.CrewSlotClaimed, claim.CrewId, claim.SlotId,
+                    claim.LifetimeMinutes));
+            }
+            if (command is ReleaseCrewInteractionCommand release)
+            {
+                var member = state.CrewDuty.Get(release.CrewId);
+                if (member == null || !state.HasCrew(release.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                var held = state.CrewDuty.Interactions.GetClaim(release.SlotId);
+                if (held == null || held.CrewId != release.CrewId)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionClaimNotOwned);
+                var next = state.WithCrewInteraction(state.CrewDuty.ReleaseInteraction(
+                    release.CrewId, release.SlotId), command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
+                    next.Revision, WorldEventKind.CrewSlotReleased, release.CrewId, release.SlotId));
+            }
+
             if (command is SetCrewAwayCommand shore)
             {
                 if (!state.HasCrew(shore.CrewId))

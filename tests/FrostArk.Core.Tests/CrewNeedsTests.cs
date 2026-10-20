@@ -221,7 +221,7 @@ namespace FrostArk.Core.Tests
             var newest = SaveCodec.Encode(SaveGameDto.Capture(state, timer));
             int idBytes = Encoding.UTF8.GetByteCount(Engineer.Value);
             int extension = 4 + (4 + idBytes + 8) + 4; // v16: one crew, zero provisions
-            int payload = BitConverter.ToInt32(newest, 10) - extension;
+            int payload = BitConverter.ToInt32(newest, 10) - extension - 8;
             var old = new byte[14 + payload + 32];
             Array.Copy(newest, old, 14 + payload);
             old[8] = 15;
@@ -243,7 +243,7 @@ namespace FrostArk.Core.Tests
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, timer));
             int idBytes = Encoding.UTF8.GetByteCount(Engineer.Value);
             int extension = 4 + (4 + idBytes + 8) + 4;
-            int hungerOffset = bytes.Length - 32 - extension + 4 + 4 + idBytes;
+            int hungerOffset = bytes.Length - 32 - 8 - extension + 4 + 4 + idBytes;
             Array.Copy(BitConverter.GetBytes(1001), 0, bytes, hungerOffset, 4);
             Resign(bytes);
             var decoded = SaveCodec.TryDecode(bytes);

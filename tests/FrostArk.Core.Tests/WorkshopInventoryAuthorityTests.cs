@@ -100,7 +100,7 @@ namespace FrostArk.Core.Tests
             // v9 appends three empty Workshop collections (12 bytes) AFTER
             // the v8 credited heater quantity; v15 adds an empty four-byte
             // recovery count, so keep targeting the actual credited row.
-            Array.Copy(BitConverter.GetBytes(0L), 0, blob, blob.Length - 32 - 61, 8);
+            Array.Copy(BitConverter.GetBytes(0L), 0, blob, blob.Length - 32 - 69, 8);
             using (var hash = System.Security.Cryptography.SHA256.Create())
                 Array.Copy(hash.ComputeHash(blob, 0, blob.Length - 32),
                     0, blob, blob.Length - 32, 32);

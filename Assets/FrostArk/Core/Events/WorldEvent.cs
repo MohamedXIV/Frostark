@@ -26,7 +26,9 @@ namespace FrostArk.Core.Events
         SiteDamaged = 18,
         CrewWounded = 19,
         WeaponReloaded = 20,
-        CrewProvisionConsumed = 21
+        CrewProvisionConsumed = 21,
+        CrewSlotClaimed = 22,
+        CrewSlotReleased = 23
     }
 
     /// <summary>

@@ -92,8 +92,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var now = SaveCodec.Encode(SaveGameDto.Capture(state, new SimulationScheduler(
                 new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(now[now.Length - 90], Is.Zero); // Empty navigation presence (v15 adds 4 bytes).
-            var old = new byte[now.Length - 58];
+            Assert.That(now[now.Length - 98], Is.Zero); // Empty navigation presence (v15 adds 4 bytes).
+            var old = new byte[now.Length - 66];
             Array.Copy(now, old, old.Length - 32);
             old[8] = 6;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);
@@ -115,7 +115,7 @@ namespace FrostArk.Core.Tests
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, timer));
             // Last Int32 in active v7 payload is progress on the current leg.
             Array.Copy(BitConverter.GetBytes(int.MaxValue), 0, bytes,
-                bytes.Length - 32 - 61, 4);
+                bytes.Length - 32 - 69, 4);
             Rehash(bytes);
             var decoded = SaveCodec.TryDecode(bytes);
             Assert.That(decoded.Success, Is.False);
@@ -131,7 +131,7 @@ namespace FrostArk.Core.Tests
                 new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
             Assert.That(SaveCodec.TryDecode(bytes.Take(bytes.Length - 3).ToArray()).Success,
                 Is.False);
-            bytes[bytes.Length - 49] = 2; // Invalid v13 checkpoint flag; v15 appends 4 bytes.
+            bytes[bytes.Length - 57] = 2; // Invalid v13 checkpoint flag; v15 appends 4 bytes.
             Rehash(bytes);
             Assert.That(SaveCodec.TryDecode(bytes).Error, Is.EqualTo(SaveDecodeError.InvalidData));
         }

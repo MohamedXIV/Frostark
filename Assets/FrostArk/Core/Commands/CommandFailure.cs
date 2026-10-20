@@ -51,6 +51,12 @@ namespace FrostArk.Core.Commands
         WeaponCannotReload = 46,
         UnknownProvision = 47,
         CrewNotOnShip = 48,
-        NeedAlreadySatisfied = 49
+        NeedAlreadySatisfied = 49,
+        UnknownInteractionSlot = 50,
+        InteractionSlotBusy = 51,
+        CrewHasInteractionClaim = 52,
+        InvalidClaimLifetime = 53,
+        InteractionClaimNotOwned = 54,
+        CrewIncapacitated = 55
     }
 }

@@ -185,6 +185,9 @@ namespace FrostArk.Core.World
             CopyWithCommand(commandId.Value, _supplies, _crewStations,
                 inventory: paid, crewDuty: updated);
 
+        internal WorldState WithCrewInteraction(CrewState crew, EntityId commandId) =>
+            CopyWithCommand(commandId.Value, _supplies, _crewStations, crewDuty: crew);
+
         internal WorldState WithCrewWound(CrewState wounded, EntityId commandId)
         {
             if (wounded == null) throw new ArgumentNullException(nameof(wounded));
