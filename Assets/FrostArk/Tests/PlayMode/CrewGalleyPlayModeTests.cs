@@ -194,6 +194,77 @@ namespace FrostArk.Unity.Tests
         }
 
         [UnityTest]
+        public IEnumerator RtsMoveOrderOverridesCriticalNeedsAndCanResumeAutonomy()
+        {
+            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+            _controller.SelectEngineer();
+            Assert.That(_controller.IsSelected, Is.True);
+            var initial = _session.Capture().State;
+
+            // A blocked tile should not cancel the autonomous galley claim.
+            Assert.That(_controller.IssueMoveOrder(
+                CrewGalleyFixtureState.GalleyCell), Is.False);
+            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+
+            Assert.That(_controller.IssueMoveOrder(new Vector2Int(2, 1)), Is.True);
+            Assert.That(_controller.IsManualOrder, Is.True);
+            Assert.That(_controller.HeldSlot.IsValid, Is.False);
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims, Is.Empty);
+
+            var galley = _root.transform.Find("Galley");
+            _controller.Configure(_actor, galley, speed: 25f);
+            for (int frame = 0; frame < 400 && !_controller.IsPaused; frame++)
+                yield return null;
+            Assert.That(_controller.IsPaused, Is.True,
+                "A manual move should stop at its chosen goal.");
+            Assert.That(_controller.CurrentCell, Is.EqualTo(new Vector2Int(2, 1)));
+            Assert.That(_controller.IsManualOrder, Is.False);
+            Assert.That(_session.Capture().State.Inventory.GetAmount(
+                InventoryContainer.ShipHold, CrewGalleyFixtureState.Water),
+                Is.EqualTo(4));
+            Assert.That(_session.Capture().State.CrewDuty.Get(
+                CrewGalleyFixtureState.Engineer).Thirst,
+                Is.EqualTo(initial.CrewDuty.Get(CrewGalleyFixtureState.Engineer).Thirst));
+
+            Assert.That(_controller.TryStart(), Is.True,
+                "Resume Auto must reconsider the canonical critical Need.");
+            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims,
+                Has.Count.EqualTo(1));
+        }
+
+        [UnityTest]
+        public IEnumerator RtsSelectionAndRightClickOrdersUseRealCameraRays()
+        {
+            var actorCollider = _actor.gameObject.AddComponent<CapsuleCollider>();
+            actorCollider.center = Vector3.zero;
+            var cameraObj = new GameObject("FixtureRtsTestCamera");
+            cameraObj.transform.SetParent(_root.transform, false);
+            cameraObj.transform.position = new Vector3(0f, 13f, -8f);
+            cameraObj.transform.rotation = Quaternion.Euler(62f, 0f, 0f);
+            var camera = cameraObj.AddComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = 8f;
+            _controller.ConfigureRtsCamera(camera);
+            Physics.SyncTransforms();
+
+            Assert.That(_controller.ProcessRtsPointer(
+                camera.WorldToScreenPoint(_actor.position), rightClick: false), Is.True);
+            Assert.That(_controller.IsSelected, Is.True);
+
+            var target = CrewGalleyFixtureState.Grid().WorldCenter(
+                new Vector2Int(2, 1), 0f);
+            Assert.That(_controller.ProcessRtsPointer(
+                camera.WorldToScreenPoint(target), rightClick: true), Is.True);
+            Assert.That(_controller.IsManualOrder, Is.True);
+            Assert.That(_controller.ManualDestination,
+                Is.EqualTo(new Vector2Int(2, 1)));
+            Assert.That(_session.Capture().State.CrewDuty.Interactions.Claims, Is.Empty,
+                "Right-click manual movement interrupts and releases autonomy.");
+            yield return null;
+        }
+
+        [UnityTest]
         public IEnumerator CancelWhileMovingReleasesClaimWithoutSpendingFoodOrWater()
         {
             Assert.That(_controller.HeldSlot.IsValid, Is.True);
