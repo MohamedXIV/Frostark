@@ -44,10 +44,12 @@ namespace FrostArk.Unity
         public EntityId HeldSlot => _claimedSlot;
         public Vector2Int CurrentCell => _currentCell;
 
-        public void Configure(Transform actor, Transform source)
+        public void Configure(Transform actor, Transform source,
+            float speed = 2.1f)
         {
             engineer = actor;
             galleySource = source;
+            walkingMetersPerSecond = Mathf.Max(0.1f, speed);
         }
 
         [Inject]
