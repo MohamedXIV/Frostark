@@ -66,3 +66,19 @@ These are explicit **instructions and authored tests, not execution evidence**:
 ## User notification gate
 
 Notify the user only after a generated scene is verified in real Unity with actual G2/G3 tests and a repeatable short manual sequence. If not verified, keep the PR Draft and avoid calling it ready to play.
+
+## Human visual feedback — RTS controls and movement polish (2026-10-20)
+
+**Human playtest feedback on the generated Unity scene:** turns and travel looked robotic, severity was easy to misread as satiety/fullness, and the player wanted genuine RTS-style click-to-select and right-click movement.
+
+### New changes on PR #107 (NOT retested by Unity yet)
+- **Smooth presentation only:** `CrewGalleyController` now uses `Vector3.SmoothDamp` for translation, turn anticipation and `Quaternion.RotateTowards` for facing. It advances before the exact center of a right-angle bend, creating a small curved transition instead of a hard stop. `CrewShipGridPath.CanTraverse` samples the full short displacement and rejects smoothing through blocked bulkheads, falling back to the original route segment as necessary. Core WorldMinute, crew Needs and inventory remain authoritative; movement is still fixture-local presentation.
+- **RTS manual override (fixture engineer only):** Left click the engineer capsule to select; right click a valid, reachable tile to move. Mouse handling uses Unity Input System and an actual camera ray; no physics/graphics-specific Core dependencies. Invalid/blocked/unreachable right clicks do not interrupt current activities. Valid move orders cancel/release a held autonomous Interaction Slot via Core, do not consume stock, interrupt the current autonomous path, and leave the AI paused after the manual destination. Press **Resume Auto** to reassess Hunger/Thirst and resume the next valid galley interaction. Right-click the original workstation to issue a return order.
+- **UI semantics clarified, Core unchanged:** `Hunger` and `Thirst` are **severity** (0 = comfortable, 1000 = starving/dehydrated), NOT fullness bars. Values >= `CrewMember.CriticalNeedAt` display in warning colors with text STARVING/DEHYDRATED. The fixture UI describes what the values mean, and shows whether the engineer is selected/manually controlled.
+- **Authored regression tests added:** G2 EditMode validates screen/world tile conversion and checks a potential rounded displacement against a blocked bulkhead; G3 PlayMode asserts invalid orders leave claims unchanged, manual override releases the claim without spending stock, movement stops at player destination and resumes autonomy on request, and selection/right-click use actual camera rays. These tests are **written but unexecuted at this newer branch HEAD**.
+- **Important scope:** this is a minimal in-scene RTS interaction for the engineer, not full multi-selection/group formations, queueable orders, pathfinding for multiple decks or persistent assigned world-space positions. The next step should reuse/extend the existing TacticalCommandController selection infrastructure rather than copy player-input logic across production scenes.
+
+### Verification history (do not conflate commit versions)
+- Previous exact head `6fb19910e328b351c55a8131a03f212978eb04f2`: user's Gemini reported Unity CLI `1.0.0-beta.13`, Unity Editor `6000.6.0f1`, EditMode **39/39**, targeted Galley PlayMode **6/6**, generated/reopened scene, visible consumption and return to duty. The full PlayMode suite had an unrelated input timing failure (**24/25**); exact XML was not committed.
+- **The changes above postdate that test run** and are NOT currently proven by Unity. Rerun `unity test . --mode EditMode` and both Galley PlayMode classes using the official Unity CLI, then manually inspect the generated scene in PlayMode for smoothness, UI semantics and mouse selection/right-click. Do not merge the Draft until fresh G2/G3 proof and observed UX acceptance.
+
