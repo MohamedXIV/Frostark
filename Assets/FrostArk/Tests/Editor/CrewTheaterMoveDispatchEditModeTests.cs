@@ -3,6 +3,7 @@ using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using FrostArk.Unity;
 using NUnit.Framework;
@@ -59,7 +60,7 @@ namespace FrostArk.Unity.Tests
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
                 var ship = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
                 var away = new FakeExecutor { ActorId = Scout, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
-                var world = CrewMoveGoal.ShipCellGoal(new Vector2Int(7, 4));
+                var world = CrewMoveGoal.ShipCellGoal(new ShipGridCell(Engine, 7, 4));
                 var intent = TacticalOrderIntent.MoveTo(new[] { Scout, Engineer }, 20, 20);
                 var beforeRevision = session.Revision;
                 var results = CrewTheaterMoveDispatcher.Dispatch(session, intent, world,
@@ -73,7 +74,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(results[1].Status, Is.EqualTo(CrewMoveDispatchStatus.RouteRejected));
                 Assert.That(ship.Calls, Is.EqualTo(1));
                 Assert.That(ship.LastDestination.Theater, Is.EqualTo(PhysicalTheater.Ship));
-                Assert.That(ship.LastDestination.ShipCell, Is.EqualTo(new Vector2Int(7, 4)));
+                Assert.That(ship.LastDestination.ShipCell, Is.EqualTo(new ShipGridCell(Engine, 7, 4)));
                 Assert.That(away.Calls, Is.Zero);
                 Assert.That(session.Revision, Is.EqualTo(beforeRevision));
             }
@@ -113,7 +114,7 @@ namespace FrostArk.Unity.Tests
                 var b = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
                 var intent = TacticalOrderIntent.MoveTo(new[] { Engineer, Scout }, 3, 4);
                 var results = CrewTheaterMoveDispatcher.Dispatch(session, intent,
-                    CrewMoveGoal.ShipCellGoal(new Vector2Int(3, 4)),
+                    CrewMoveGoal.ShipCellGoal(new ShipGridCell(Engine, 3, 4)),
                     new ICrewTheaterMoveExecutor[] { a, b });
                 Assert.That(results[0].Status,
                     Is.EqualTo(CrewMoveDispatchStatus.DuplicateSceneExecutor));
@@ -135,7 +136,7 @@ namespace FrostArk.Unity.Tests
                 };
                 var result = CrewTheaterMoveDispatcher.Dispatch(session,
                     TacticalOrderIntent.MoveTo(new[] { Engineer }, 4, 2),
-                    CrewMoveGoal.ShipCellGoal(new Vector2Int(4, 2)),
+                    CrewMoveGoal.ShipCellGoal(new ShipGridCell(Engine, 4, 2)),
                     new ICrewTheaterMoveExecutor[] { unreachable });
                 Assert.That(result.Single().RouteStatus,
                     Is.EqualTo(CrewTheaterRouteStatus.Ready));
@@ -192,7 +193,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(bridge.Theater, Is.EqualTo(PhysicalTheater.Shore));
                 Assert.That(bridge.TryMove(CrewMoveGoal.ShorePoint(point)), Is.True);
                 Assert.That(actor.LastPoint, Is.EqualTo(point));
-                Assert.That(bridge.TryMove(CrewMoveGoal.ShipCellGoal(new Vector2Int(1, 2))),
+                Assert.That(bridge.TryMove(CrewMoveGoal.ShipCellGoal(new ShipGridCell(Engine, 1, 2))),
                     Is.False);
             }
             finally
