@@ -30,6 +30,15 @@ These are explicit **instructions and authored tests, not execution evidence**:
 - Current fixture controls world time **manually** to make the physical action deterministic. The actor has a real animated walk via Unity transforms, not a canonical persistent position in Core.
 - The scene is generated only inside Unity and is **not** yet committed as a tested .unity scene. The authoring scripts and G2/G3 tests are on the draft branch, and passing .NET G1 cannot establish that they compile or run in Unity.
 
+## Preflight and practical Unity execution constraints (2026-10-20)
+
+- The opt-in Editor generator now runs **authored model checks before modifying scene assets**: the starting point and Eat/Drink standing cells must be walkable, the galley source itself must be blocked, and both authored slot IDs, source IDs, verbs, local offsets and reachable paths must match their canonical fixture world. Invalid fixture authoring fails explicitly before saving the generated scene. This is source-level preflight, **not** a G2 verification pass.
+- The scene Controller now clearly reports missing VContainer/WorldSession injection instead of disguising that failure as an invalid slot.
+- The galley EditMode scope test registers `CrewGalleyFixtureBootstrap` **before adding the active `WorldSessionScope`**; a VContainer scope may build immediately during `Awake`, so tests must use the same provider-before-build contract as actual scene loading.
+- Initial PlayMode movement speed is intentionally slow for cancellation tests; the full-journey test explicitly speeds up after setup. The mid-step replan test waits until the actor is physically off its previous cell center instead of assuming editor frame duration.
+- **Known external blocker:** [#95 Codespaces Unity headless proof](https://github.com/MohamedXIV/Frostark/issues/95) is still open. Earlier experiments got past shared-memory and Linux library problems but could not obtain a valid headless Editor license (`Access token is unavailable`, exit 198). **This PR has NOT independently run Unity G2 or G3.** Do not merge unproven Unity code or ask the user to install/open this as a playable build.
+- The correct editor version is pinned by `ProjectSettings/ProjectVersion.txt`: **6000.6.0f1** (earlier Codespaces probe downloaded 6000.6.6f1, which is *not* the exact pinned version). Actual test evidence must identify editor version, PR HEAD and full NUnit XML/logs.
+
 ## PR #107 follow-up — safety and test hardening (2026-10-20)
 
 - The opt-in editor scene generator now **always uses an additive scene**; it preserves open/unsaved scenes, refuses to rebuild the target if that scene is already loaded, restores the previous active scene and closes only the generated fixture scene. SceneManager moves are conditioned on scene identity.
