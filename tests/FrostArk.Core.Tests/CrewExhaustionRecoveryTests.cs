@@ -135,7 +135,7 @@ namespace FrostArk.Core.Tests
             // The v15 recovery extension is the final payload section,
             // immediately before the 32-byte SHA-256 checksum.
             int v16Needs = 8 + 12 + Encoding.UTF8.GetByteCount(Engineer.Value);
-            bytes[bytes.Length - 33 - v16Needs] = 2;
+            bytes[bytes.Length - 33 - 8 - v16Needs] = 2;
             using (var sha = SHA256.Create())
             {
                 var checksum = sha.ComputeHash(bytes, 0, bytes.Length - 32);
@@ -164,7 +164,7 @@ namespace FrostArk.Core.Tests
             int extensionLength = 4 + 4 + Encoding.UTF8.GetByteCount(Engineer.Value) + 1;
             int v16Needs = 8 + 12 + Encoding.UTF8.GetByteCount(Engineer.Value);
             int payloadLength = BitConverter.ToInt32(newest, 10)
-                - extensionLength - v16Needs;
+                - extensionLength - v16Needs - 8;
             var legacy = new byte[14 + payloadLength + 32];
             Array.Copy(newest, legacy, legacy.Length - 32);
             legacy[8] = 14;
@@ -201,7 +201,7 @@ namespace FrostArk.Core.Tests
             int idLength = Encoding.UTF8.GetByteCount(Engineer.Value);
             int extensionBytes = 4 + 4 + idLength + 1;
             int v16Needs = 8 + 12 + Encoding.UTF8.GetByteCount(Engineer.Value);
-            int firstIdCharacter = bytes.Length - 32 - v16Needs - extensionBytes + 8;
+            int firstIdCharacter = bytes.Length - 32 - 8 - v16Needs - extensionBytes + 8;
             bytes[firstIdCharacter] = (byte)'x';
             using (var sha = SHA256.Create())
                 Array.Copy(sha.ComputeHash(bytes, 0, bytes.Length - 32),
