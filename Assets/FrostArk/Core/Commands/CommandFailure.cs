@@ -57,6 +57,8 @@ namespace FrostArk.Core.Commands
         CrewHasInteractionClaim = 52,
         InvalidClaimLifetime = 53,
         InteractionClaimNotOwned = 54,
-        CrewIncapacitated = 55
+        CrewIncapacitated = 55,
+        InteractionVerbMismatch = 56,
+        InteractionClaimExpired = 57
     }
 }
