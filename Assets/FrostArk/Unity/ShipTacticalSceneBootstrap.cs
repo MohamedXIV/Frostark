@@ -54,6 +54,7 @@ namespace FrostArk.Unity
         [SerializeField, Min(0.1f)] private float crewMoveSpeed = 2.5f;
         private WorldSession _session;
         private ShipSpatialMap _map;
+        private uint _layoutFingerprint;
 
         public ShipSpatialMap Map => _map;
 
@@ -93,8 +94,11 @@ namespace FrostArk.Unity
                     throw new InvalidOperationException("Room ID missing in canonical layout or duplicated.");
             }
 
+            if (_session != null)
+                _session.Changed -= OnWorldChanged;
             _session = session;
             _map = BuildMap(state.Layout);
+            _layoutFingerprint = state.Layout.Fingerprint();
             foreach (var binding in rooms)
             {
                 var id = EntityId.Parse(binding.RoomId);
@@ -124,6 +128,22 @@ namespace FrostArk.Unity
                 binding.Actor.BindScene(checkpoint.SceneId);
                 commander.RegisterShipActor(binding.Actor);
             }
+            _session.Changed += OnWorldChanged;
+        }
+
+        private void OnWorldChanged(WorldSessionChange change)
+        {
+            if (_session == null) return;
+            var layout = _session.Capture().State.Layout;
+            if (layout.Fingerprint() != _layoutFingerprint)
+                RebuildNavigation();
+        }
+
+        private void OnDestroy()
+        {
+            if (_session != null)
+                _session.Changed -= OnWorldChanged;
+            _session = null;
         }
 
         private ShipSpatialMap BuildMap(ShipLayoutState layout)
@@ -153,7 +173,9 @@ namespace FrostArk.Unity
         public void RebuildNavigation()
         {
             if (_session == null) throw new InvalidOperationException("Ship scene is not initialized.");
-            _map = BuildMap(_session.Capture().State.Layout);
+            var layout = _session.Capture().State.Layout;
+            _map = BuildMap(layout);
+            _layoutFingerprint = layout.Fingerprint();
             commander.SetShipSpatialMap(_map);
             foreach (var binding in crew)
                 if (binding != null && binding.Actor != null && binding.Actor.Walker != null)
