@@ -41,6 +41,7 @@ namespace FrostArk.Unity.Tests
         public void GalleyReceivesTheSameScopedWorldAndItsCanonicalFixtureState()
         {
             var root = new GameObject("GalleyScopeEditModeTest");
+            root.SetActive(false);
             WorldSessionScope scope = null;
             try
             {
@@ -57,11 +58,11 @@ namespace FrostArk.Unity.Tests
                 var galley = controllerObject.AddComponent<CrewGalleyController>();
                 galley.Configure(actor.transform, source.transform);
 
-                // A LifetimeScope on an active GameObject can build in Awake
-                // as soon as AddComponent executes. Make the fixture provider
-                // available first, exactly like a serialized scene does.
+                // Use the exact generated-scene composition order: all
+                // inactive children/providers, then scope, then activation.
                 root.AddComponent<CrewGalleyFixtureBootstrap>();
                 scope = root.AddComponent<WorldSessionScope>();
+                root.SetActive(true);
                 if (scope.Container == null) scope.Build();
 
                 var session = scope.Container.Resolve<WorldSession>();
