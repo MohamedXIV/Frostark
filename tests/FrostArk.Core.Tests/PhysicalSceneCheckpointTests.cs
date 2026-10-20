@@ -132,7 +132,10 @@ namespace FrostArk.Core.Tests
             using (var session = Begin())
             {
                 var blob = SaveCodec.Encode(session.Capture());
-                blob[blob.Length - 72] = 2; // v13 flag precedes v14 magazine + v15 two-crew recovery suffix.
+                int v16Needs = 8 + 12 * 2 +
+                    System.Text.Encoding.UTF8.GetByteCount(Hero.Value) +
+                    System.Text.Encoding.UTF8.GetByteCount(Scout.Value);
+                blob[blob.Length - 72 - v16Needs] = 2; // v13 flag precedes v14 magazine + v15 two-crew recovery suffix.
                 using (var hash = SHA256.Create())
                 {
                     var checksum = hash.ComputeHash(blob, 0, blob.Length - 32);
@@ -155,7 +158,10 @@ namespace FrostArk.Core.Tests
                 // Version 13 adds precisely one 0-byte marker when no physical
                 // checkpoint exists. A genuine v12 ends immediately before it.
                 // Prior 5-byte suffix plus 35-byte v15 recovery extension for Hero+Scout.
-                int length = BitConverter.ToInt32(current, 10) - 40;
+                int v16Needs = 8 + 12 * 2 +
+                    System.Text.Encoding.UTF8.GetByteCount(Hero.Value) +
+                    System.Text.Encoding.UTF8.GetByteCount(Scout.Value);
+                int length = BitConverter.ToInt32(current, 10) - 40 - v16Needs;
                 var v12 = new byte[14 + length + 32];
                 Array.Copy(current, v12, 14 + length);
                 v12[8] = 12;
