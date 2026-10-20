@@ -33,6 +33,13 @@ namespace FrostArk.Unity
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
         private WorldSession _session;
+        private readonly Dictionary<EntityId, bool> _lastMoveDispatch =
+            new Dictionary<EntityId, bool>();
+        /// <summary>
+        /// Per-actor acceptance of the latest move DISPATCH (not completion).
+        /// False means no executor or a rejected NavMesh destination.
+        /// </summary>
+        public IReadOnlyDictionary<EntityId, bool> LastMoveDispatch => _lastMoveDispatch;
         [SerializeField, Min(3f)] private float dragThresholdPixels = 12f;
         private const int MaxSelection = 4;
         private bool _selectionPointerHeld;
@@ -213,20 +220,21 @@ namespace FrostArk.Unity
 
         public bool IssueMoveOrder(Vector3 worldDestination)
         {
-            if (_selectionController.Count == 0)
-                return false;
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
 
             var selectedActors = GetSelectedActorProxies();
             if (selectedActors.Count == 0)
                 return false;
 
-            bool anyDispatched = false;
+            var accepted = new List<EntityId>();
             for (int i = 0; i < selectedActors.Count; i++)
             {
                 var actor = selectedActors[i];
                 Vector3 target = worldDestination;
 
-                // Subtle offset spread if multiple actors ordered
+                // Small group spacing; advanced NavMesh formations are owned by #32.
                 if (selectedActors.Count > 1)
                 {
                     float angle = (i * 360f / selectedActors.Count) * Mathf.Deg2Rad;
@@ -234,22 +242,18 @@ namespace FrostArk.Unity
                     target += offset;
                 }
 
-                if (actor.MoveTo(target))
-                {
-                    anyDispatched = true;
-                }
+                bool dispatched = actor.MoveTo(target);
+                _lastMoveDispatch[actor.ActorId] = dispatched;
+                if (dispatched)
+                    accepted.Add(actor.ActorId);
             }
 
-            if (!anyDispatched)
-            {
+            if (accepted.Count == 0)
                 return false;
-            }
 
+            // Never announce rejected crew members as successfully ordered.
             var intent = TacticalOrderIntent.MoveTo(
-                _selectionController.SelectedActorIds,
-                worldDestination.x,
-                worldDestination.z);
-
+                accepted, worldDestination.x, worldDestination.z);
             LastIssuedIntent = intent;
             OrderIssued?.Invoke(intent);
 
