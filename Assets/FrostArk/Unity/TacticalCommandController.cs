@@ -5,6 +5,7 @@ using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
 using FrostArk.Core.World;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -32,6 +33,10 @@ namespace FrostArk.Unity
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
         private WorldSession _session;
+        [SerializeField, Min(3f)] private float dragThresholdPixels = 12f;
+        private const int MaxSelection = 4;
+        private bool _selectionPointerHeld;
+        private Vector2 _selectionPointerOrigin;
 
         public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
@@ -192,7 +197,11 @@ namespace FrostArk.Unity
         public void SelectActor(EntityId actorId, bool addToSelection = false)
         {
             if (addToSelection)
-                _selectionController.Toggle(actorId);
+            {
+                if (_selectionController.IsSelected(actorId) ||
+                    _selectionController.Count < MaxSelection)
+                    _selectionController.Toggle(actorId);
+            }
             else
                 _selectionController.Select(actorId);
         }
@@ -372,67 +381,100 @@ namespace FrostArk.Unity
             return anyReloaded;
         }
 
+        /// <summary>
+        /// Primary pointer gesture: select a visible actor, or clear transient
+        /// selection on empty space. Never issues Move, Attack or Interact.
+        /// Those are explicit context/right-click commands.
+        /// </summary>
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
         {
-            if (tacticalCamera == null)
-                tacticalCamera = Camera.main;
-            if (tacticalCamera == null)
-                return false;
-
-            Ray ray = tacticalCamera.ScreenPointToRay(screenPoint);
-            var hits = Physics.RaycastAll(ray, 100f);
-            var sortedHits = hits.OrderBy(h => h.distance).ToArray();
-
-            // 1. If actors are selected, check for clicking an attackable hostile target first
-            if (_selectionController.Count > 0)
-            {
-                foreach (var hit in sortedHits)
-                {
-                    var target = hit.collider.GetComponentInParent<TacticalCombatTargetProxy>();
-                    if (target != null && target.IsHostile && !target.IsDead)
-                    {
-                        return IssueAttackOrder(target);
-                    }
-                }
-            }
-
-            // 2. Check for clicking a friendly actor (selection)
-            foreach (var hit in sortedHits)
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return false;
+            var ray = tacticalCamera.ScreenPointToRay(screenPoint);
+            var hits = Physics.RaycastAll(ray, 100f, ~0,
+                QueryTriggerInteraction.Ignore).OrderBy(h => h.distance);
+            // Only the first physical surface counts: no selecting through walls.
+            foreach (var hit in hits)
             {
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
-                if (actor != null)
+                if (actor != null && _registeredActors.Contains(actor))
                 {
                     SelectActor(actor.ActorId, isAdditive);
                     return true;
                 }
+                break;
             }
+            if (!isAdditive) ClearSelection();
+            return false;
+        }
 
-            // 3. Check for clicking an interactable (if actors are selected)
-            if (_selectionController.Count > 0)
+        /// <summary>
+        /// Drag rectangle uses camera projections plus an unoccluded collider
+        /// ray. Actors outside this scene's registrations cannot be selected.
+        /// Selection is ephemeral; no order or duty is cancelled by replacement.
+        /// </summary>
+        public int ProcessBoxSelection(Vector2 screenStart, Vector2 screenEnd,
+            bool isAdditive = false)
+        {
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return 0;
+            var rect = Rect.MinMaxRect(
+                Mathf.Min(screenStart.x, screenEnd.x),
+                Mathf.Min(screenStart.y, screenEnd.y),
+                Mathf.Max(screenStart.x, screenEnd.x),
+                Mathf.Max(screenStart.y, screenEnd.y));
+            var ids = new List<EntityId>();
+            if (isAdditive)
+                ids.AddRange(_selectionController.SelectedActorIds);
+            foreach (var actor in _registeredActors
+                .Where(a => a != null)
+                .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
             {
-                foreach (var hit in sortedHits)
-                {
-                    var interactable = hit.collider.GetComponentInParent<TacticalInteractableProxy>();
-                    if (interactable != null && !interactable.IsDepleted)
-                    {
-                        return IssueInteractOrder(interactable);
-                    }
-                }
+                if (ids.Count >= MaxSelection) break;
+                if (ids.Contains(actor.ActorId)) continue;
+                var collider = actor.GetComponent<Collider>();
+                if (collider == null || !collider.enabled) continue;
+                var center = collider.bounds.center;
+                var projected = tacticalCamera.WorldToScreenPoint(center);
+                if (projected.z <= 0 || !rect.Contains(new Vector2(projected.x, projected.y)))
+                    continue;
+                var ray = tacticalCamera.ScreenPointToRay(projected);
+                var hits = Physics.RaycastAll(ray, 100f, ~0,
+                    QueryTriggerInteraction.Ignore);
+                var nearest = hits.OrderBy(h => h.distance).FirstOrDefault();
+                if (nearest.collider == null ||
+                    nearest.collider.GetComponentInParent<TacticalActorProxy>() != actor)
+                    continue;
+                ids.Add(actor.ActorId);
             }
+            _selectionController.SelectMultiple(ids);
+            return _selectionController.Count;
+        }
 
-            // 4. Check for clicking ground
-            if (Physics.Raycast(ray, out RaycastHit groundHit, 100f, groundLayer))
+        /// <summary>
+        /// Context/right-click dispatch. Actor choice remains on primary click.
+        /// The shore executor is the existing NavMesh-based TacticalActorProxy.
+        /// </summary>
+        public bool ProcessContextClick(Vector2 screenPoint)
+        {
+            if (_selectionController.Count == 0) return false;
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return false;
+            var ray = tacticalCamera.ScreenPointToRay(screenPoint);
+            var hits = Physics.RaycastAll(ray, 100f, ~0,
+                QueryTriggerInteraction.Ignore).OrderBy(h => h.distance).ToArray();
+            foreach (var hit in hits)
             {
-                if (_selectionController.Count > 0)
-                {
-                    return IssueMoveOrder(groundHit.point);
-                }
-                else
-                {
-                    ClearSelection();
-                }
+                var target = hit.collider.GetComponentInParent<TacticalCombatTargetProxy>();
+                if (target != null && target.IsHostile && !target.IsDead)
+                    return IssueAttackOrder(target);
+                var interactable = hit.collider.GetComponentInParent<TacticalInteractableProxy>();
+                if (interactable != null && !interactable.IsDepleted)
+                    return IssueInteractOrder(interactable);
             }
-
+            if (Physics.Raycast(ray, out var groundHit, 100f, groundLayer,
+                    QueryTriggerInteraction.Ignore))
+                return IssueMoveOrder(groundHit.point);
             return false;
         }
 
@@ -512,13 +554,49 @@ namespace FrostArk.Unity
         private void Update()
         {
             var mouse = UnityEngine.InputSystem.Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            if (mouse == null) return;
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            bool additive = keyboard != null &&
+                (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+            bool pointerOverUi = EventSystem.current != null &&
+                EventSystem.current.IsPointerOverGameObject();
+            var point = mouse.position.ReadValue();
+
+            if (mouse.leftButton.wasPressedThisFrame)
             {
-                var keyboard = UnityEngine.InputSystem.Keyboard.current;
-                bool isShift = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
-                Vector2 mousePos = mouse.position.ReadValue();
-                ProcessPointerClick(mousePos, isShift);
+                _selectionPointerHeld = !pointerOverUi;
+                _selectionPointerOrigin = point;
             }
+            if (mouse.leftButton.wasReleasedThisFrame && _selectionPointerHeld)
+            {
+                if ((point - _selectionPointerOrigin).sqrMagnitude >
+                    dragThresholdPixels * dragThresholdPixels)
+                    ProcessBoxSelection(_selectionPointerOrigin, point, additive);
+                else
+                    ProcessPointerClick(point, additive);
+                _selectionPointerHeld = false;
+            }
+            if (mouse.rightButton.wasPressedThisFrame && !pointerOverUi)
+                ProcessContextClick(point);
+        }
+
+        private void OnGUI()
+        {
+            if (!_selectionPointerHeld || UnityEngine.InputSystem.Mouse.current == null)
+                return;
+            var point = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
+            if ((point - _selectionPointerOrigin).sqrMagnitude <=
+                dragThresholdPixels * dragThresholdPixels)
+                return;
+            var old = GUI.color;
+            GUI.color = new Color(0.3f, 0.77f, 1f, 0.48f);
+            GUI.Box(Rect.MinMaxRect(
+                Mathf.Min(_selectionPointerOrigin.x, point.x),
+                Screen.height - Mathf.Max(_selectionPointerOrigin.y, point.y),
+                Mathf.Max(_selectionPointerOrigin.x, point.x),
+                Screen.height - Mathf.Min(_selectionPointerOrigin.y, point.y)),
+                GUIContent.none);
+            GUI.color = old;
         }
 
         private void OnDestroy()
