@@ -1,6 +1,8 @@
 using System;
 using System.Linq;
 using FrostArk.Core.Application;
+using FrostArk.Core.Commands;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
@@ -24,6 +26,8 @@ namespace FrostArk.Unity.Tests
         private static readonly EntityId First = EntityId.Parse("crew:bridge-operator");
         private static readonly EntityId Second = EntityId.Parse("crew:second-operator");
         private static readonly EntityId Door = EntityId.Parse("portal:bulkhead");
+        private static readonly EntityId Parts = EntityId.Parse("item:rts:parts");
+        private static readonly EntityId Blueprint = EntityId.Parse("blueprint:rts:obstruction");
 
         private sealed class Scene : IDisposable
         {
@@ -76,7 +80,18 @@ namespace FrostArk.Unity.Tests
                 {
                     new ShipCompartmentSlot(Bridge, 6, 6),
                     new ShipCompartmentSlot(Engine, 6, 6)
-                }, Array.Empty<ShipModuleBlueprint>(), Array.Empty<ShipModule>());
+                }, new[]
+                {
+                    new ShipModuleBlueprint(Blueprint, ShipModuleKind.Auxiliary, 1, 1, Parts, 1, 1)
+                }, Array.Empty<ShipModule>());
+                var inventory = InventoryState.Create(
+                    new ItemCatalog(new[] { new ItemDefinition(Parts, 1, 1, 4) }),
+                    new[] { new SalvagePickup(EntityId.Parse("pickup:rts:parts"), Parts, 4) },
+                    100, 10, 100, 10);
+                var collected = inventory.TryCollect(EntityId.Parse("pickup:rts:parts"));
+                if (!collected.Success) throw new InvalidOperationException("Stock fixture invalid.");
+                var unloaded = collected.State.TryUnload(Parts, 4);
+                if (!unloaded.Success) throw new InvalidOperationException("Ship stock fixture invalid.");
                 var duty = CrewState.Create(new[]
                 {
                     new CrewMember(First, DutyRole.Engineering, 850, 100, 0, 1440),
@@ -84,7 +99,7 @@ namespace FrostArk.Unity.Tests
                 });
                 Session = new WorldSession(WorldState.Create(WorldMinute.Zero,
                     Array.Empty<SupplyStock>(), new[] { First, Second },
-                    crewDuty: duty, layout: layout));
+                    crewDuty: duty, layout: layout, inventory: unloaded.State));
                 Session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
                     ShipScene, EntityId.Parse("anchor:bridge")));
 
@@ -242,5 +257,35 @@ namespace FrostArk.Unity.Tests
                     Is.EqualTo(CrewMoveDispatchStatus.ExecutorRejected));
             }
         }
+        [Test]
+        public void CommittedModuleBuildAutomaticallyInvalidatesBlockedShipRoute()
+        {
+            using (var scene = new Scene(true))
+            {
+                scene.Commander.SelectActor(First);
+                Assert.That(scene.Commander.ProcessContextClick(
+                    scene.Screen(new Vector3(8.5f, 0f, 2.5f))), Is.True);
+                Assert.That(scene.One.IsMoving, Is.True);
+                var placement = new BuildShipModuleCommand(
+                    EntityId.Parse("command:rts:door-obstruction"),
+                    EntityId.Parse("module:rts:door-obstruction"),
+                    Blueprint, Bridge, 5, 2, scene.Session.Revision);
+                var result = scene.Session.Submit(placement);
+                Assert.That(result.Success, Is.True, result.Failure.ToString());
+                Assert.That(scene.Session.Revision, Is.EqualTo(1));
+                Assert.That(scene.Bootstrap.Map.Walkable(new ShipGridCell(Bridge, 5, 2)),
+                    Is.False, "Committed world layout should rederive room navigation.");
+                Assert.That(scene.One.IsMoving, Is.False,
+                    "Invalidating a real doorway must stop an accepted route.");
+                Assert.That(scene.One.LastError, Is.EqualTo("RouteInvalidated"));
+                Assert.That(scene.Session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, Parts), Is.EqualTo(3));
+                Assert.That(scene.Commander.ProcessContextClick(
+                    scene.Screen(new Vector3(8.5f, 0f, 2.5f))), Is.False);
+                Assert.That(scene.Commander.LastTheaterMoveDispatch[First].Status,
+                    Is.EqualTo(CrewMoveDispatchStatus.ExecutorRejected));
+            }
+        }
+
     }
 }
