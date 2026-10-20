@@ -87,6 +87,12 @@ namespace FrostArk.Unity
                 builder.RegisterComponent(commander);
             }
 
+            // Optional isolated galley slice: reuse the same VContainer-scoped
+            // WorldSession; never let a fixture create a second world store.
+            var galley = GetComponentInChildren<CrewGalleyController>();
+            if (galley != null)
+                builder.RegisterComponent(galley);
+
             var tickRunner = GetComponentInChildren<CombatTickRunner>() ?? FindAnyObjectByType<CombatTickRunner>();
             if (tickRunner != null)
             {
