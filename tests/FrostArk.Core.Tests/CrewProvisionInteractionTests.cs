@@ -118,7 +118,8 @@ namespace FrostArk.Core.Tests
             Assert.That(claim.State.Inventory.GetAmount(InventoryContainer.ShipHold, Food),
                 Is.EqualTo(2), "The source snapshot must remain immutable.");
             Assert.That(used.State.CrewDuty.EffectiveSkill(DutyRole.Engineering,
-                new WorldMinute(1)), Is.Zero, "Thirst still takes priority.");
+                new WorldMinute(1)), Is.EqualTo(600),
+                "The engineer remains too thirsty to work; a real backup covers the role.");
 
             var retry = bus.Execute(used.State, Use("use-meal", A, EatSlot, Food, 2));
             Assert.That(retry.Failure, Is.EqualTo(CommandFailure.DuplicateCommand));
