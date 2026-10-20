@@ -50,7 +50,7 @@ namespace FrostArk.Core.Tests
             var scheduler = Bind(() => state, s => state = s);
             scheduler.Advance(3);
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
-            Assert.That(bytes[8], Is.EqualTo(14));
+            Assert.That(bytes[8], Is.EqualTo((byte)SaveCodec.CurrentVersion));
             var loaded = SaveCodec.TryDecode(bytes);
             Assert.That(loaded.Success, Is.True, loaded.Error.ToString());
             Assert.That(loaded.Value.State.Fingerprint(), Is.EqualTo(state.Fingerprint()));
@@ -92,8 +92,8 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
             var now = SaveCodec.Encode(SaveGameDto.Capture(state, new SimulationScheduler(
                 new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
-            Assert.That(now[now.Length - 78], Is.Zero); // Empty navigation presence.
-            var old = new byte[now.Length - 46];
+            Assert.That(now[now.Length - 82], Is.Zero); // Empty navigation presence (v15 adds 4 bytes).
+            var old = new byte[now.Length - 50];
             Array.Copy(now, old, old.Length - 32);
             old[8] = 6;
             Array.Copy(BitConverter.GetBytes(old.Length - 46), 0, old, 10, 4);
@@ -115,7 +115,7 @@ namespace FrostArk.Core.Tests
             var bytes = SaveCodec.Encode(SaveGameDto.Capture(state, timer));
             // Last Int32 in active v7 payload is progress on the current leg.
             Array.Copy(BitConverter.GetBytes(int.MaxValue), 0, bytes,
-                bytes.Length - 32 - 49, 4);
+                bytes.Length - 32 - 53, 4);
             Rehash(bytes);
             var decoded = SaveCodec.TryDecode(bytes);
             Assert.That(decoded.Success, Is.False);
@@ -131,7 +131,7 @@ namespace FrostArk.Core.Tests
                 new WorldClock(state.Minute), Array.Empty<IWorldMinuteSystem>())));
             Assert.That(SaveCodec.TryDecode(bytes.Take(bytes.Length - 3).ToArray()).Success,
                 Is.False);
-            bytes[bytes.Length - 37] = 2; // Invalid v13 physical-checkpoint presence flag.
+            bytes[bytes.Length - 41] = 2; // Invalid v13 checkpoint flag; v15 appends 4 bytes.
             Rehash(bytes);
             Assert.That(SaveCodec.TryDecode(bytes).Error, Is.EqualTo(SaveDecodeError.InvalidData));
         }
