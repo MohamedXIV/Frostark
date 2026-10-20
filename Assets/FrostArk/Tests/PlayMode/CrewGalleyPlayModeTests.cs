@@ -38,7 +38,9 @@ namespace FrostArk.Unity.Tests
 
             _session = new WorldSession(CrewGalleyFixtureState.CreateDefaultState());
             _controller = _root.AddComponent<CrewGalleyController>();
-            _controller.Configure(actor.transform, source.transform, speed: 40f);
+            // Slow initial speed makes the cancellation boundary observable
+            // instead of relying on arbitrary editor frame duration.
+            _controller.Configure(actor.transform, source.transform, speed: 0.25f);
             _controller.Construct(_session);
             yield return null; // Unity Start must establish authored slots and route.
         }
@@ -55,6 +57,8 @@ namespace FrostArk.Unity.Tests
         [UnityTest]
         public IEnumerator CriticalEngineerWalksAroundBulkheadUsesStockAndReturnsToDuty()
         {
+            var galley = _root.transform.Find("Galley");
+            _controller.Configure(_actor, galley, speed: 40f);
             Assert.That(_controller.IsBound, Is.True);
             Assert.That(_controller.IsMoving, Is.True,
                 "Critical Needs must trigger a claim and real locomotion.");
@@ -94,9 +98,14 @@ namespace FrostArk.Unity.Tests
         {
             var source = _root.transform.Find("Galley");
             Assert.That(source, Is.Not.Null);
-            // A slow frame ensures cancellation happens between cell centers.
-            _controller.Configure(_actor, source, speed: 0.25f);
-            yield return null;
+            // Continue at slow speed until the actor is physically between
+            // authored cell centers. No dependence on one particular FPS.
+            var gridForWait = CrewGalleyFixtureState.Grid();
+            for (int frame = 0; frame < 60 &&
+                Vector3.Distance(_actor.position,
+                    gridForWait.WorldCenter(_controller.CurrentCell, 1f)) <= 0.001f;
+                frame++)
+                yield return null;
 
             var grid = CrewGalleyFixtureState.Grid();
             var originalCell = _controller.CurrentCell;
