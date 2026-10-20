@@ -67,6 +67,12 @@ namespace FrostArk.Unity
             _grid = CrewGalleyFixtureState.Grid();
             _currentCell = CrewGalleyFixtureState.StartCell;
             _started = true;
+            if (_session == null)
+            {
+                _paused = true;
+                _status = "WorldSession injection missing — cannot run Galley";
+                return;
+            }
             if (engineer == null || galleySource == null)
             {
                 _paused = true;
