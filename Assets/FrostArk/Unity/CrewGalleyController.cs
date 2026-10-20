@@ -6,6 +6,7 @@ using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.World;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -22,6 +23,10 @@ namespace FrostArk.Unity
         [SerializeField] private Transform galleySource;
         [SerializeField] private float walkingMetersPerSecond = 2.1f;
         [SerializeField] private bool autoBegin = true;
+        [SerializeField] private bool allowRtsInput = true;
+        [SerializeField] private Camera rtsCamera;
+        [SerializeField, Range(0.04f, 0.35f)] private float motionSmoothTime = 0.12f;
+        [SerializeField] private float turningDegreesPerSecond = 300f;
 
         private WorldSession _session;
         private CrewShipGridPath _grid;
@@ -39,6 +44,10 @@ namespace FrostArk.Unity
         private bool _goingHome;
         private bool _paused;
         private bool _started;
+        private bool _selected;
+        private bool _manualMove;
+        private Vector2Int _manualDestination;
+        private Vector3 _walkVelocity;
         private string _status = "Waiting for world session";
 
         public bool IsBound => _session != null;
@@ -47,6 +56,9 @@ namespace FrostArk.Unity
         public string Status => _status;
         public EntityId HeldSlot => _claimedSlot;
         public Vector2Int CurrentCell => _currentCell;
+        public bool IsSelected => _selected;
+        public bool IsManualOrder => _manualMove;
+        public Vector2Int ManualDestination => _manualDestination;
 
         public void Configure(Transform actor, Transform source,
             float speed = 2.1f)
@@ -65,6 +77,7 @@ namespace FrostArk.Unity
         private void Start()
         {
             _grid = CrewGalleyFixtureState.Grid();
+            if (rtsCamera == null) rtsCamera = Camera.main;
             _currentCell = CrewGalleyFixtureState.StartCell;
             _started = true;
             if (_session == null)
@@ -111,6 +124,7 @@ namespace FrostArk.Unity
             if (!_started || _session == null || engineer == null || _moving) return false;
             _paused = false;
             _goingHome = false;
+            _manualMove = false;
             return PlanNext();
         }
 
@@ -172,8 +186,78 @@ namespace FrostArk.Unity
             return false;
         }
 
+        /// <summary>
+        /// This fixture exposes RTS-style controls for the engineer, without
+        /// touching sea navigation or attaching TacticalActorProxy/NavMesh.
+        /// Player commands preempt the autonomous claim and leave Needs intact.
+        /// </summary>
+        public void SelectEngineer() => _selected = engineer != null;
+        public void ClearSelection() => _selected = false;
+
+        public bool IssueMoveOrder(Vector2Int destination)
+        {
+            if (!_started || !_selected || _grid == null || engineer == null ||
+                !_grid.CanStand(destination))
+                return false;
+            var projectedStart = _moving && _routeIndex < _route.Count
+                ? _route[_routeIndex] : _unfinishedStep ?? _currentCell;
+            if (_grid.FindPath(projectedStart, destination).Count == 0)
+            {
+                _status = "No walkable route to selected destination";
+                return false; // Invalid clicks must not interrupt the current duty.
+            }
+            CancelTrip("Player move order", pause: false);
+            var next = _grid.FindPath(_unfinishedStep ?? _currentCell, destination);
+            if (next.Count == 0) return false;
+            _manualDestination = destination;
+            _route = next;
+            _routeIndex = _unfinishedStep.HasValue ? 0 : 1;
+            _unfinishedStep = null;
+            _manualMove = true;
+            _moving = true;
+            _paused = false;
+            _status = "Manual move ordered — autonomy paused until Resume Auto";
+            return true;
+        }
+
+        /// <summary>Clickable RTS input: left-select engineer, right-move.</summary>
+        public bool ProcessRtsPointer(Vector2 screenPosition, bool rightClick)
+        {
+            if (!_started || !allowRtsInput || engineer == null) return false;
+            var camera = rtsCamera != null ? rtsCamera : Camera.main;
+            if (camera == null) return false;
+            var ray = camera.ScreenPointToRay(screenPosition);
+            if (!rightClick)
+            {
+                bool clickedEngineer = Physics.Raycast(ray, out var hit, 200f) &&
+                    (hit.transform == engineer || hit.transform.IsChildOf(engineer));
+                _selected = clickedEngineer;
+                return clickedEngineer;
+            }
+            if (!_selected || _grid == null) return false;
+            var floor = new Plane(Vector3.up, Vector3.zero);
+            if (!floor.Raycast(ray, out float distance)) return false;
+            return IssueMoveOrder(_grid.WorldToCell(ray.GetPoint(distance)));
+        }
+
+        private void ProcessRtsMouse()
+        {
+            if (!allowRtsInput || !_started || _grid == null) return;
+            var mouse = Mouse.current;
+            if (mouse == null) return;
+            bool right = mouse.rightButton.wasPressedThisFrame;
+            bool left = mouse.leftButton.wasPressedThisFrame;
+            if (!right && !left) return;
+            var screen = mouse.position.ReadValue();
+            // Avoid issuing world orders through the fixture's IMGUI panel.
+            if (screen.x < 410f && Screen.height - screen.y < 305f)
+                return;
+            ProcessRtsPointer(screen, right);
+        }
+
         private void Update()
         {
+            ProcessRtsMouse();
             if (!_moving || _session == null || engineer == null || _grid == null)
                 return;
             if (!_goingHome)
@@ -210,13 +294,48 @@ namespace FrostArk.Unity
                 return;
             }
             var destination = _grid.WorldCenter(nextCell, 1f);
-            engineer.position = Vector3.MoveTowards(engineer.position, destination,
-                walkingMetersPerSecond * Time.deltaTime);
-            var direction = destination - engineer.position;
+            var before = engineer.position;
+            float remaining = Vector3.Distance(before, destination);
+
+            // Gently approach bends and begin looking around a corner before
+            // entering it. Keep an actual route along the authored free cells.
+            var direction = destination - before;
+            float speed = walkingMetersPerSecond;
+            if (_routeIndex + 1 < _route.Count)
+            {
+                var after = _grid.WorldCenter(_route[_routeIndex + 1], 1f);
+                var incoming = destination - _grid.WorldCenter(_currentCell, 1f);
+                var outgoing = after - destination;
+                if (Vector3.Dot(incoming.normalized, outgoing.normalized) < 0.25f)
+                {
+                    speed *= Mathf.Lerp(0.65f, 1f,
+                        Mathf.Clamp01(remaining / 0.75f));
+                    var lead = Mathf.Clamp01((0.65f - remaining) / 0.65f);
+                    direction = Vector3.Slerp(direction.normalized,
+                        outgoing.normalized, 0.35f * lead);
+                }
+            }
+            var candidate = Vector3.SmoothDamp(before, destination,
+                ref _walkVelocity, motionSmoothTime,
+                Mathf.Max(0.1f, speed), Time.deltaTime);
+            // Velocity blending may round a corner but must never cut through
+            // a blocked bulkhead. Fall back to the original cardinal segment.
+            if (!_grid.CanTraverse(before, candidate))
+            {
+                _walkVelocity = Vector3.zero;
+                candidate = Vector3.MoveTowards(before, destination,
+                    speed * Time.deltaTime);
+                if (!_grid.CanTraverse(before, candidate))
+                {
+                    CancelTrip("Path obstructed; no wall clipping", pause: true);
+                    return;
+                }
+            }
+            engineer.position = candidate;
             if (direction.sqrMagnitude > 0.0001f)
-                engineer.rotation = Quaternion.Slerp(engineer.rotation,
+                engineer.rotation = Quaternion.RotateTowards(engineer.rotation,
                     Quaternion.LookRotation(direction.normalized, Vector3.up),
-                    Mathf.Min(1, Time.deltaTime * 8f));
+                    turningDegreesPerSecond * Time.deltaTime);
 
             if (Vector3.SqrMagnitude(engineer.position - destination) <= 0.004f)
             {
@@ -230,6 +349,14 @@ namespace FrostArk.Unity
         private void Arrived()
         {
             _moving = false;
+            _walkVelocity = Vector3.zero;
+            if (_manualMove)
+            {
+                _manualMove = false;
+                _paused = true;
+                _status = "Move order complete — autonomy paused; Resume Auto to continue";
+                return;
+            }
             if (_goingHome)
             {
                 _paused = true;
@@ -294,6 +421,8 @@ namespace FrostArk.Unity
             }
             _moving = false;
             _goingHome = false;
+            _manualMove = false;
+            _walkVelocity = Vector3.zero;
             _route = Array.Empty<Vector2Int>();
             if (_session != null && _claimedSlot.IsValid)
             {
@@ -321,12 +450,26 @@ namespace FrostArk.Unity
             var actor = state.CrewDuty.Get(CrewGalleyFixtureState.Engineer);
             if (actor == null) return;
 
-            GUILayout.BeginArea(new Rect(12, 12, 395, 245), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(12, 12, 395, 295), GUI.skin.box);
             GUILayout.Label("FrostArk | Crew Galley — Unity fixture");
             GUILayout.Label("World minute: " + state.Minute.Value +
                 " | Core revision: " + state.Revision);
-            GUILayout.Label("Engineer Hunger: " + actor.Hunger +
-                "   Thirst: " + actor.Thirst + "   Fatigue: " + actor.Fatigue);
+            // These are severity bars, NOT fullness/hydration percentages:
+            // 1000 means starving/dehydrated; 0 means comfortable.
+            var oldColor = GUI.color;
+            GUI.color = actor.Hunger >= CrewMember.CriticalNeedAt
+                ? new Color(1f, 0.48f, 0.32f) : Color.white;
+            GUILayout.Label("HUNGER severity: " + actor.Hunger +
+                "/1000 (" + (actor.Hunger >= CrewMember.CriticalNeedAt ?
+                    "STARVING" : "not critical") + ")");
+            GUI.color = actor.Thirst >= CrewMember.CriticalNeedAt
+                ? new Color(1f, 0.48f, 0.32f) : Color.white;
+            GUILayout.Label("THIRST severity: " + actor.Thirst +
+                "/1000 (" + (actor.Thirst >= CrewMember.CriticalNeedAt ?
+                    "DEHYDRATED" : "not critical") + ")");
+            GUI.color = oldColor;
+            GUILayout.Label("Fatigue severity: " + actor.Fatigue + "/1000");
+            GUILayout.Label("0 = comfortable / 1000 = critical");
             GUILayout.Label("Rations: " +
                 state.Inventory.GetAmount(InventoryContainer.ShipHold,
                     CrewGalleyFixtureState.Ration) + "   Water: " +
@@ -337,10 +480,13 @@ namespace FrostArk.Unity
             GUILayout.Label("Claim: " + (_claimedSlot.IsValid ? _claimedSlot.Value : "none"));
             GUILayout.Label(_status);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Start / Replan")) TryStart();
+            if (GUILayout.Button("Resume Auto")) TryStart();
             if (GUILayout.Button("Cancel")) CancelTrip();
             if (GUILayout.Button("Advance 10 min")) _session.Advance(10);
             GUILayout.EndHorizontal();
+            GUILayout.Label("RTS: left-click Engineer to select; right-click deck to move.");
+            GUILayout.Label("Selected: " + (_selected ? "Engineer" : "none") +
+                (_manualMove ? " | Manual order" : ""));
             GUILayout.Label("Clock advances only via explicit button (fixture).");
             GUILayout.EndArea();
         }
