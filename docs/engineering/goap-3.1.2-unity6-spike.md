@@ -1,6 +1,6 @@
 # GOAP 3.1.2 / Unity 6 — opt-in import and integration spike
 
-**Status:** EXPERIMENT SETUP ONLY; Unity package import, EditMode tests, PlayMode behavior and target builds **NOT RUN**. Do not merge this branch as proof of GOAP adoption.
+**Status:** GOAP 3.1.2 import and actual code-first planner **fixtures authored**; Unity package import, EditMode test execution, PlayMode behavior and target builds **NOT RUN**. These C# tests are uncompiled hypotheses until the Editor can run. Do not merge this branch as proof of GOAP adoption.
 
 **Engineering issue:** [#96](https://github.com/MohamedXIV/Frostark/issues/96).  
 **Current design authority:** [D09 crew agency/needs](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875097), [D10 GOAP evaluation](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875098). Keep *game-design decisions in Miro*, not here.
@@ -8,8 +8,10 @@
 ## Changes on this experimental branch
 
 1. `Packages/manifest.json` pins `com.crashkonijn.goap` to the upstream UPM source `https://github.com/crashkonijn/GOAP.git?path=/Package#3.1.2`.
-2. The existing FrostArk Editor **test** assembly alone references the upstream `CrashKonijn.Goap.Runtime` and `CrashKonijn.Agent.Runtime` assemblies; the core world domain and production Unity assembly do not acquire new references.
-3. `GoapPackageAssemblySmokeTests` statically checks that V3 still supplies *separate* `GoapActionProvider` and `AgentBehaviour` Unity components. It **does not** create a real plan or perform actions.
+2. The existing FrostArk Editor **test** assembly alone references upstream `CrashKonijn.Goap.Runtime`, `CrashKonijn.Agent.Runtime`, `CrashKonijn.Goap.Core` and `CrashKonijn.Agent.Core` assemblies. Core and the production FrostArk.Unity assembly do not acquire new references.
+3. `GoapPackageAssemblySmokeTests` checks V3 public class import only.
+4. `GoapHungerPlanningEditModeTests` **constructs a real upstream `GoapBehaviour`, ManualController and code-first AgentType/Capability, creates an upstream GOAP agent and requests a real GOAP plan**. Two attachable Unity fixture MonoBehaviours have matching `.cs` names and `.meta` files.
+5. An explicit **test-only** sensor source exposes a binary critical-hunger fact and food-availability fact to the planner. The planned `GoapRequestMealAction` records a *command request*, never deducts supplies or authoritatively updates Needs. This is NOT integrated into gameplay and there is no real FrostArk Hunger component yet.
 
 These assembly names and the pin were verified against the upstream GOAP 3.1.2 package and demo sources on 2026-10-20. The upstream package advertises a Unity 2022.3 minimum and a dependency on `com.unity.collections` 1.2.4; **actual package resolution with our Unity 6 and transitive versions remains unverified**.
 
@@ -17,9 +19,9 @@ These assembly names and the pin were verified against the upstream GOAP 3.1.2 p
 
 | Gate | Requirement | Current |
 | --- | --- | --- |
-| G0 | Manifest JSON, exact official tagged URL, assembly references, .meta, and scope | Source-inspected; changes uncompiled |
+| G0 | Manifest JSON, exact official tagged URL, assembly references, .meta, and scope | Source-inspected against upstream GitHub **3.1.2 tag**; changes uncompiled |
 | G1 | Headless pure .NET domain regressions (if/when adapters touch WorldState) | NOT RUN for this spike |
-| G2 | Exact Unity 6 Editor imports UPM + resolves Unity.Collections + compiles and runs this Editor NUnit test | **NOT RUN** |
+| G2 | Exact Unity 6 Editor imports UPM + resolves Unity.Collections + compiles and runs assembly + real-planner Editor NUnit tests | **NOT RUN** |
 | G3 | Actual GOAP-backed PlayMode behaviors, transitions, cancel/replan, persistence | **NOT RUN** |
 | G4 | Desktop/mobile/WebGL performance and platform compatibility | **NOT RUN** |
 
@@ -27,26 +29,27 @@ Do not hand-edit `Packages/packages-lock.json`: regenerate via an actual verifie
 
 ## First executable check
 
-Use an authorized Unity Editor with the project open at this branch. Run the following **EditMode test** through the Unity Test Runner, or an equivalent licensed Editor command:
+Use an authorized licensed Unity 6000.6.x Editor with the project open on this branch, let Package Manager finish resolving (collect and commit the generated lockfile), then run **EditMode**:
 
 ```text
 FrostArk.Unity.Tests.GoapPackageAssemblySmokeTests.GoapV3ExposesDistinctPlannerAndExecutorComponents
+FrostArk.Unity.Tests.GoapHungerPlanningEditModeTests.CriticalHungerWithFoodResolvesOfficialGoapActionWithoutMutatingNeeds
+FrostArk.Unity.Tests.GoapHungerPlanningEditModeTests.CriticalHungerWithNoFoodDoesNotEmitMealCommand
+FrostArk.Unity.Tests.GoapHungerPlanningEditModeTests.NoncriticalHungerKeepsExistingDutyInsteadOfRequestingFood
 ```
 
-This is a **package API import smoke only**. A PASS proves that those upstream public types compile/resolve, *not* that planning, Unity 6 performance, offscreen persistence or Needs/Smart Interactions work.
+These test methods are **authored and not executed**; before publishing any PASS collect NUnit XML plus Unity Editor log and exact Editor/package versions. Their GOAP integration uses a real planner from the official package, and a *clearly fake* Needs/food snapshot: a successful run would verify V3 planning and the request-only boundary, **not** real food consumption or crew duty handover.
 
-### Runtime fixture to implement after G2
+### What remains to implement after this G2 checkpoint
 
-Keep first gameplay prototype narrow; don't silently install GOAP as the final AI architecture:
+1. **Authoritative needs/commands:** Design/implement a real crew Hunger and food-use command in the canonical Core as appropriate under the separate Needs/character work; replace fixture-sourced values with a read-only projection from that state. It must not create a second hidden hunger clock.
+2. **Ship interaction:** Hook actual food/store interactions, availability, approach, claim and release, including cancellations, missing food and loss of eligibility. The current spike action is targetless and does **not** test physical slots, pathing or occupancy.
+3. **Duty and interruption:** Integrate priority/handover with existing shift/duty scheduler; record reason codes and consequent station effects.
+4. **Tactical counterexample:** Build a second real GOAP scenario for perceived armor + ineffective current rifle + viable alternative or retreat. Vary fixed Trait and Skill inputs and capture explainable plans. Not implemented in this first batch.
+5. **World persistence/offscreen:** Verify resource conservation and save/reload under canonical ticks. Don't run separate agent-owned survival state in Unity Update.
+6. **Decision:** Compare GOAP's complexity with a small utility selector and FSM before ADOPT / ADAPT / REJECT in Miro D10.
 
-1. **World snapshot / sensors:** read one known crew member's authoritative need/duty state (or a deliberate temporary read-only fixture with clearly fake values), publish GOAP world-key facts. Don't create an independent hidden hunger clock.
-2. **Goal:** a severe hunger signal requests food while the crew member is staffing the engine. A small selector decides **when** to request the goal; GOAP discovers **how** to achieve it.
-3. **Actions:** propose acquire/eat, work/handover/resume. Validate available interaction slot and acquire/release a temporary claim; cancellation and already-reserved slots must fail safely. On completion only a validated WorldCommandBus/Core action commits any resource/need/work changes.
-4. **Tactical planner counterexample:** armor threat with ineffective current rifle and a better viable alternative; compare novice/cautious versus experienced/reckless input. Both option costs and perception must come from explicit supplied state; no magic omniscience.
-5. **Trace:** log `current goal -> plan/action choices -> condition/rejection -> resulting validated Core event`. Assert no double reservation, duplicate item consumption, or free offscreen progress.
-6. **Compare:** briefly compare implementation/debugging complexity against a small utility selector plus FSM. If the GOAP integration is cumbersome, document reasons and *reject* the package rather than design an enormous adapter framework.
-
-The version 3 package distinguishes `GoapActionProvider` (chooses plan/action) from `AgentBehaviour` (runs action); it includes Reactive, Proactive and Manual controllers. See [upstream Getting Started](https://github.com/crashkonijn/GOAP/blob/master/Package/Documentation/Introduction/GettingStarted.md). Its own documentation notes GOAP effects describe planning relationships, **not actual world mutations**; actual effects must be applied by game code. FrostArk's authoritative changes still happen through the shared world session.
+The V3 package distinguishes `GoapActionProvider` (goal/plan) from `AgentBehaviour` (action execution); it includes Reactive, Proactive and Manual controllers. The example uses `ManualControllerBehaviour` for an isolated synchronous planning invocation, not a full game-life scheduler. See [upstream Getting Started](https://github.com/crashkonijn/GOAP/blob/3.1.2/Package/Documentation/Introduction/GettingStarted.md). The upstream documentation notes GOAP effects describe planning relationships, **not actual world mutations**; actual effects must be applied by game code. FrostArk's authoritative changes still happen through the shared world session.
 
 ## Known external runtime blocker
 
