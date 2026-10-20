@@ -39,8 +39,31 @@
 | E08 | Inventory, crafting, trade and content | E01,E03,E04 |
 | E09 | Production art, UI, audio and accessibility | E02, with incremental dependencies |
 | E10 | QA, tooling, optimization and release | E00, cross-cutting |
+| E11 | Cross-theater RTS crew selection, orders and distinct Ship Grid / Shore NavMesh execution | E02,E03,E04,E05; command & location truth from E01 |
 
 Issues need criteria and test gates, not checklists that merely say 'implement subsystem'. No arbitrary artificial dependency between parallel independent epics: once E01/E02 interfaces stabilize, ship, land and UI work can proceed concurrently. R numbers express *integration outcomes*, not a mandate for one giant serial PR per phase.
+
+## E11 integration track — shared RTS control, separate movement theaters (2026-10-20)
+
+**Engineering Epic:** [#108](https://github.com/MohamedXIV/Frostark/issues/108). **Canonical design authority:** [Miro D01 — Ship-local navigation](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660187), [D02 — Placement/clearance](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660185), [D03 — Smart interactions](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660188), [D09 — Crew Agency](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875097). This section is an **execution map**, not a parallel gameplay design specification.
+
+The **same** selected-unit RTS input, group commands and stable crew identity must work across two distinct local navigation implementations:
+
+| Movement theater | Adapter / engineering owner | Never substitute |
+|---|---|---|
+| **Shipboard crew** | Canonical module/layout-derived **ship-local walkability**, compartment door/stair portals, local A* and smooth Unity movement; [#109](https://github.com/MohamedXIV/Frostark/issues/109), [#110](https://github.com/MohamedXIV/Frostark/issues/110), [#113](https://github.com/MohamedXIV/Frostark/issues/113), [#58](https://github.com/MohamedXIV/Frostark/issues/58) | NavMeshAgent baked/rebaked on a moving ship, or using the build grid as the navigation grid |
+| **Shore crew/protagonist** | Existing **Unity NavMeshAgent** and tactical navigation with unified order outcomes; [#28](https://github.com/MohamedXIV/Frostark/issues/28) / [#32](https://github.com/MohamedXIV/Frostark/issues/32) | Ship-local A* or independent shadow actor state |
+| **Ship at sea** | Strategic Core sea travel / later marine physical motion; [#33](https://github.com/MohamedXIV/Frostark/issues/33), [#60](https://github.com/MohamedXIV/Frostark/issues/60) | Either crew walking system |
+
+**Cross-cutting player-control milestones (R1→R3, no speculative dates):**
+
+1. **P0 shared interfaces:** [#109](https://github.com/MohamedXIV/Frostark/issues/109) routes a Move/Interact order to the correct theater; [#111](https://github.com/MohamedXIV/Frostark/issues/111) adds single/box/group selection and explicit **empty-ground deselect**; [#112](https://github.com/MohamedXIV/Frostark/issues/112) arbitrates player order, standing duty and idle autonomy without a per-unit `Resume Auto` toggle. Pure selection is transient; outstanding player orders and assignments must survive deselection. World time/Needs never freeze just because an actor is selected.
+2. **P0 ship spatial integration:** [#110](https://github.com/MohamedXIV/Frostark/issues/110) supplies actual room/deck walkability from the same layout truth as placement. Build footprint != traversability; invalid door/clearance blocks interactions, no teleport.
+3. **P1 visible locomotion:** [#113](https://github.com/MohamedXIV/Frostark/issues/113) smooths A*-guided ship motion, safe turning/replanning, small-group traffic and slot reservations; visual feedback from [#39](https://github.com/MohamedXIV/Frostark/issues/39). Existing Galley fixture [#106](https://github.com/MohamedXIV/Frostark/issues/106) / Draft [PR #107](https://github.com/MohamedXIV/Frostark/pull/107) is a focused **test slice**, not the full ship spatial system.
+4. **P1 on-foot parity:** existing [#32](https://github.com/MohamedXIV/Frostark/issues/32) owns shore multi-unit NavMesh orders/formations and per-actor acceptance, integrated with [#28](https://github.com/MohamedXIV/Frostark/issues/28); avoid a duplicate shore Epic.
+5. **Integration G2/G3:** [#114](https://github.com/MohamedXIV/Frostark/issues/114) proves 2–4 crew select/group move/deselect on ship, keep existing orders or resume idle autonomy, then transfer ashore and reuse the same UX on NavMesh. Save/reentry and resource/claim ownership must be coherent. No 'complete' without actual Unity scene and test evidence.
+
+**Player-observed polish/semantics:** ship-grid route computation remains discrete but actor movement and rotation must not look robotic; `Hunger = 1000` / `Thirst = 1000` represent **maximum severity**, not fullness. Final values and interpolation tuning require human playtest evidence, not a new global stat system.
 
 ## Gates at each slice
 
