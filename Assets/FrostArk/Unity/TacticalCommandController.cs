@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
+using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -29,6 +31,8 @@ namespace FrostArk.Unity
         private TacticalDestinationMarker destinationMarker;
 
         private readonly List<TacticalActorProxy> _registeredActors = new List<TacticalActorProxy>();
+        private readonly List<ShipCrewSelectionProxy> _shipActors = new List<ShipCrewSelectionProxy>();
+        private ShipSpatialMap _shipSpatialMap;
         private readonly List<TacticalInteractableProxy> _registeredInteractables = new List<TacticalInteractableProxy>();
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
@@ -40,6 +44,10 @@ namespace FrostArk.Unity
         /// False means no executor or a rejected NavMesh destination.
         /// </summary>
         public IReadOnlyDictionary<EntityId, bool> LastMoveDispatch => _lastMoveDispatch;
+        private readonly Dictionary<EntityId, CrewMoveDispatchDecision> _theaterDispatch =
+            new Dictionary<EntityId, CrewMoveDispatchDecision>();
+        public IReadOnlyDictionary<EntityId, CrewMoveDispatchDecision> LastTheaterMoveDispatch =>
+            _theaterDispatch;
         [SerializeField, Min(3f)] private float dragThresholdPixels = 12f;
         private const int MaxSelection = 4;
         private bool _selectionPointerHeld;
@@ -47,6 +55,7 @@ namespace FrostArk.Unity
 
         public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
+        public IReadOnlyList<ShipCrewSelectionProxy> ShipActors => _shipActors;
         public IReadOnlyList<TacticalInteractableProxy> Interactables => _registeredInteractables;
         public IReadOnlyList<TacticalCombatTargetProxy> Targets => _registeredTargets;
         public TacticalOrderIntent LastIssuedIntent { get; private set; }
@@ -113,6 +122,16 @@ namespace FrostArk.Unity
             }
         }
 
+        /// <summary>
+        /// Scene authoring bootstrap supplies a map derived from the canonical
+        /// ShipLayoutState and authored portals. Absent map rejects ship clicks.
+        /// This is a presentation projection, never a shadow world state.
+        /// </summary>
+        public void SetShipSpatialMap(ShipSpatialMap map)
+        {
+            _shipSpatialMap = map ?? throw new ArgumentNullException(nameof(map));
+        }
+
         public void SetDestinationMarker(TacticalDestinationMarker marker)
         {
             destinationMarker = marker;
@@ -131,6 +150,10 @@ namespace FrostArk.Unity
             {
                 RegisterActor(actor);
             }
+
+            _shipActors.Clear();
+            foreach (var shipActor in FindObjectsByType<ShipCrewSelectionProxy>())
+                RegisterShipActor(shipActor);
 
             _registeredInteractables.Clear();
             var foundInteractables = FindObjectsByType<TacticalInteractableProxy>();
@@ -161,6 +184,25 @@ namespace FrostArk.Unity
                 actor.OnTargetHit += HandleActorTargetHit;
                 actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
             }
+        }
+
+        public void RegisterShipActor(ShipCrewSelectionProxy actor)
+        {
+            if (actor == null || _shipActors.Contains(actor)) return;
+            if (!actor.ActorId.IsValid) return;
+            _shipActors.Add(actor);
+            actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
+        }
+
+        public void UnregisterShipActor(ShipCrewSelectionProxy actor)
+        {
+            if (actor == null) return;
+            _shipActors.Remove(actor);
+            // Only remove selection when no other registered scene proxy uses
+            // the stable ID; dispatch itself refuses duplicate executors.
+            if (!_shipActors.Any(a => a != null && a.ActorId == actor.ActorId) &&
+                !_registeredActors.Any(a => a != null && a.ActorId == actor.ActorId))
+                _selectionController.Exclude(actor.ActorId);
         }
 
         public void UnregisterActor(TacticalActorProxy actor)
@@ -220,6 +262,15 @@ namespace FrostArk.Unity
 
         public bool IssueMoveOrder(Vector3 worldDestination)
         {
+            // A ship-local move MUST carry RoomId: world X/Z is not enough.
+            if (_session != null && _session.SceneCheckpoint != null)
+            {
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+                    return false;
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Shore)
+                    return IssueShoreMoveOrder(worldDestination);
+            }
+            _theaterDispatch.Clear();
             _lastMoveDispatch.Clear();
             foreach (var id in _selectionController.SelectedActorIds)
                 _lastMoveDispatch[id] = false;
@@ -260,6 +311,76 @@ namespace FrostArk.Unity
             if (destinationMarker != null)
                 destinationMarker.Show(worldDestination);
 
+            return true;
+        }
+
+        /// <summary>
+        /// Move selected crew in the loaded ship scene through room-aware A*.
+        /// Target cell is resolved from the clicked, authored room floor.
+        /// Every accepted actor gets the current physical order; changing
+        /// selection does not cancel the walker's already-accepted path.
+        /// </summary>
+        public bool IssueShipMoveOrder(ShipGridCell cell, Vector3 clickedWorldPoint)
+        {
+            _theaterDispatch.Clear();
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
+            if (_session == null || _session.SceneCheckpoint == null ||
+                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                _shipSpatialMap == null || !_shipSpatialMap.Walkable(cell) ||
+                _selectionController.Count == 0)
+                return false;
+
+            var scene = _session.SceneCheckpoint.SceneId;
+            var executors = _shipActors
+                .Where(actor => actor != null && actor.isActiveAndEnabled &&
+                                actor.gameObject.activeInHierarchy && actor.Walker != null)
+                .Select(actor => (ICrewTheaterMoveExecutor)new ShipGridCrewExecutor(
+                    actor.ActorId, scene, actor.Walker)).ToArray();
+
+            var outcomes = TacticalTheaterSelectionCommands.MoveSelectedOnShip(
+                _session, _selectionController, cell, clickedWorldPoint, executors);
+            return RecordPhysicalDispatch(outcomes, clickedWorldPoint);
+        }
+
+        private bool IssueShoreMoveOrder(Vector3 worldPoint)
+        {
+            _theaterDispatch.Clear();
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
+            if (_session == null || _session.SceneCheckpoint == null ||
+                _session.SceneCheckpoint.Theater != PhysicalTheater.Shore ||
+                _selectionController.Count == 0)
+                return false;
+            var scene = _session.SceneCheckpoint.SceneId;
+            var executors = _registeredActors
+                .Where(actor => actor != null && actor.isActiveAndEnabled &&
+                                actor.gameObject.activeInHierarchy)
+                .Select(actor => (ICrewTheaterMoveExecutor)new ShoreNavMeshCrewExecutor(
+                    actor, scene)).ToArray();
+            var outcomes = TacticalTheaterSelectionCommands.MoveSelectedOnShore(
+                _session, _selectionController, worldPoint, executors);
+            return RecordPhysicalDispatch(outcomes, worldPoint);
+        }
+
+        private bool RecordPhysicalDispatch(
+            IReadOnlyList<CrewMoveDispatchDecision> outcomes, Vector3 worldPoint)
+        {
+            var accepted = new List<EntityId>();
+            foreach (var result in outcomes)
+            {
+                _lastMoveDispatch[result.ActorId] = result.Accepted;
+                _theaterDispatch[result.ActorId] = result;
+                if (result.Accepted) accepted.Add(result.ActorId);
+            }
+            if (accepted.Count == 0) return false;
+
+            LastIssuedIntent = TacticalOrderIntent.MoveTo(
+                accepted, worldPoint.x, worldPoint.z);
+            OrderIssued?.Invoke(LastIssuedIntent);
+            if (destinationMarker != null) destinationMarker.Show(worldPoint);
             return true;
         }
 
@@ -400,6 +521,12 @@ namespace FrostArk.Unity
             // Only the first physical surface counts: no selecting through walls.
             foreach (var hit in hits)
             {
+                var shipActor = hit.collider.GetComponentInParent<ShipCrewSelectionProxy>();
+                if (shipActor != null && _shipActors.Contains(shipActor))
+                {
+                    SelectActor(shipActor.ActorId, isAdditive);
+                    return true;
+                }
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
                 if (actor != null && _registeredActors.Contains(actor))
                 {
@@ -451,6 +578,27 @@ namespace FrostArk.Unity
                     continue;
                 ids.Add(actor.ActorId);
             }
+            foreach (var actor in _shipActors
+                .Where(a => a != null)
+                .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
+            {
+                if (ids.Count >= MaxSelection) break;
+                if (ids.Contains(actor.ActorId)) continue;
+                var collider = actor.GetComponent<Collider>();
+                if (collider == null || !collider.enabled) continue;
+                var center = collider.bounds.center;
+                var projected = tacticalCamera.WorldToScreenPoint(center);
+                if (projected.z <= 0 || !rect.Contains(new Vector2(projected.x, projected.y)))
+                    continue;
+                var ray = tacticalCamera.ScreenPointToRay(projected);
+                var nearest = Physics.RaycastAll(ray, 100f, ~0,
+                    QueryTriggerInteraction.Ignore)
+                    .OrderBy(h => h.distance).FirstOrDefault();
+                if (nearest.collider == null ||
+                    nearest.collider.GetComponentInParent<ShipCrewSelectionProxy>() != actor)
+                    continue;
+                ids.Add(actor.ActorId);
+            }
             _selectionController.SelectMultiple(ids);
             return _selectionController.Count;
         }
@@ -471,6 +619,16 @@ namespace FrostArk.Unity
             // concealed behind a wall is not magically actionable by click.
             if (hits.Length == 0) return false;
             var first = hits[0];
+            if (_session != null && _session.SceneCheckpoint != null &&
+                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+            {
+                var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
+                if (surface == null || _shipSpatialMap == null ||
+                    !surface.TryResolve(first.point, _shipSpatialMap, out var localCell))
+                    return false;
+                return IssueShipMoveOrder(localCell, first.point);
+            }
+
             var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
             if (target != null && target.IsHostile && !target.IsDead)
                 return IssueAttackOrder(target);
@@ -507,9 +665,12 @@ namespace FrostArk.Unity
             foreach (var actor in _registeredActors)
             {
                 if (actor != null)
-                {
                     actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
-                }
+            }
+            foreach (var actor in _shipActors)
+            {
+                if (actor != null)
+                    actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
             }
         }
 
