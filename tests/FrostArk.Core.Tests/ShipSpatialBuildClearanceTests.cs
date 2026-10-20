@@ -26,9 +26,13 @@ namespace FrostArk.Core.Tests
             {
                 new ItemDefinition(Parts, 1, 100, 100)
             }), new[] { new SalvagePickup(EntityId.Parse("pickup:parts"), Parts, 15) },
-                1000, 10, 1000, 10);
-            inventory = inventory.TryCollect(EntityId.Parse("pickup:parts")).State
-                .TryUnload(Parts, 15).State;
+                5000, 10, 5000, 10);
+            var collected = inventory.TryCollect(EntityId.Parse("pickup:parts"));
+            Assert.That(collected.Success, Is.True, collected.Error.ToString());
+            var unloaded = collected.State.TryUnload(Parts, 15);
+            Assert.That(unloaded.Success, Is.True, unloaded.Error.ToString());
+            inventory = unloaded.State;
+            Assert.That(inventory.GetAmount(InventoryContainer.ShipHold, Parts), Is.EqualTo(15));
             return WorldState.Create(WorldMinute.Zero,
                 Array.Empty<SupplyStock>(), Array.Empty<EntityId>(),
                 inventory: inventory,
