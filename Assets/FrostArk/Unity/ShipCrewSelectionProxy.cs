@@ -16,6 +16,17 @@ namespace FrostArk.Unity
         [SerializeField] private string actorId = "crew:ship:worker";
         [SerializeField] private GameObject selectionMarker;
         private EntityId _id;
+        private EntityId _sceneId;
+
+        public EntityId SceneId => _sceneId;
+
+        /// <summary>Configured by the authoritative ship scene bootstrap.</summary>
+        public void BindScene(EntityId logicalSceneId)
+        {
+            if (!logicalSceneId.IsValid)
+                throw new ArgumentException("Valid logical scene required.", nameof(logicalSceneId));
+            _sceneId = logicalSceneId;
+        }
 
         public EntityId ActorId
         {
