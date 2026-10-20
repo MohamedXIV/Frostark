@@ -2,6 +2,7 @@
   "dependencies": {
     "com.unity.addressables": "2.11.2",
     "com.unity.ai.navigation": "2.0.16",
+    "com.crashkonijn.goap": "https://github.com/crashkonijn/GOAP.git?path=/Package#3.1.2",
     "com.unity.cinemachine": "6.6.0",
     "com.unity.collab-proxy": "2.13.6",
     "com.unity.ide.rider": "3.0.38",
