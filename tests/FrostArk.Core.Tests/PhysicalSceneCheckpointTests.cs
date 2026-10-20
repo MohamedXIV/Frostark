@@ -135,7 +135,7 @@ namespace FrostArk.Core.Tests
                 int v16Needs = 8 + 12 * 2 +
                     System.Text.Encoding.UTF8.GetByteCount(Hero.Value) +
                     System.Text.Encoding.UTF8.GetByteCount(Scout.Value);
-                blob[blob.Length - 72 - v16Needs] = 2; // v13 flag precedes v14 magazine + v15 two-crew recovery suffix.
+                blob[blob.Length - 72 - v16Needs - 8] = 2; // v13 flag precedes v14 magazine + v15 two-crew recovery suffix.
                 using (var hash = SHA256.Create())
                 {
                     var checksum = hash.ComputeHash(blob, 0, blob.Length - 32);
@@ -161,7 +161,7 @@ namespace FrostArk.Core.Tests
                 int v16Needs = 8 + 12 * 2 +
                     System.Text.Encoding.UTF8.GetByteCount(Hero.Value) +
                     System.Text.Encoding.UTF8.GetByteCount(Scout.Value);
-                int length = BitConverter.ToInt32(current, 10) - 40 - v16Needs;
+                int length = BitConverter.ToInt32(current, 10) - 40 - v16Needs - 8;
                 var v12 = new byte[14 + length + 32];
                 Array.Copy(current, v12, 14 + length);
                 v12[8] = 12;
