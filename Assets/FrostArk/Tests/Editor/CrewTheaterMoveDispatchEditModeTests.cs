@@ -25,6 +25,7 @@ namespace FrostArk.Unity.Tests
         {
             public EntityId ActorId { get; set; }
             public PhysicalTheater Theater { get; set; }
+            public EntityId SceneId { get; set; }
             public bool Allow { get; set; } = true;
             public int Calls { get; private set; }
             public CrewMoveGoal LastDestination { get; private set; }
@@ -56,8 +57,8 @@ namespace FrostArk.Unity.Tests
                 Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Scout }, true,
                     EntityId.Parse("transfer:out")).Success, Is.True);
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
-                var ship = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship };
-                var away = new FakeExecutor { ActorId = Scout, Theater = PhysicalTheater.Ship };
+                var ship = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
+                var away = new FakeExecutor { ActorId = Scout, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
                 var world = CrewMoveGoal.ShipCellGoal(new Vector2Int(7, 4));
                 var intent = TacticalOrderIntent.MoveTo(new[] { Scout, Engineer }, 20, 20);
                 var beforeRevision = session.Revision;
@@ -87,8 +88,8 @@ namespace FrostArk.Unity.Tests
                     EntityId.Parse("transfer:shore")).Success, Is.True);
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
                     ShoreScene, Island, Landing, new[] { Scout }));
-                var ship = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship };
-                var shore = new FakeExecutor { ActorId = Scout, Theater = PhysicalTheater.Shore };
+                var ship = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
+                var shore = new FakeExecutor { ActorId = Scout, Theater = PhysicalTheater.Shore, SceneId = ShoreScene };
                 var point = new Vector3(4f, 0f, 5f);
                 var results = CrewTheaterMoveDispatcher.Dispatch(session,
                     TacticalOrderIntent.MoveTo(new[] { Scout, Engineer }, 4, 5),
@@ -108,8 +109,8 @@ namespace FrostArk.Unity.Tests
             using (var session = Begin())
             {
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
-                var a = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship };
-                var b = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship };
+                var a = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
+                var b = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene };
                 var intent = TacticalOrderIntent.MoveTo(new[] { Engineer, Scout }, 3, 4);
                 var results = CrewTheaterMoveDispatcher.Dispatch(session, intent,
                     CrewMoveGoal.ShipCellGoal(new Vector2Int(3, 4)),
@@ -130,7 +131,7 @@ namespace FrostArk.Unity.Tests
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
                 var unreachable = new FakeExecutor
                 {
-                    ActorId = Engineer, Theater = PhysicalTheater.Ship, Allow = false
+                    ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene, Allow = false
                 };
                 var result = CrewTheaterMoveDispatcher.Dispatch(session,
                     TacticalOrderIntent.MoveTo(new[] { Engineer }, 4, 2),
@@ -149,7 +150,7 @@ namespace FrostArk.Unity.Tests
         {
             using (var session = Begin())
             {
-                var shore = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Shore };
+                var shore = new FakeExecutor { ActorId = Engineer, Theater = PhysicalTheater.Shore, SceneId = ShoreScene };
                 var result = CrewTheaterMoveDispatcher.Dispatch(session,
                     TacticalOrderIntent.MoveTo(new[] { Engineer }, 2, 2),
                     CrewMoveGoal.ShorePoint(new Vector3(2, 0, 2)),
@@ -185,7 +186,7 @@ namespace FrostArk.Unity.Tests
             {
                 var actor = obj.AddComponent<RecordingActor>();
                 actor.SetActorId(Scout);
-                var bridge = new ShoreNavMeshCrewExecutor(actor);
+                var bridge = new ShoreNavMeshCrewExecutor(actor, ShoreScene);
                 var point = new Vector3(1.5f, 0, -2f);
                 Assert.That(bridge.ActorId, Is.EqualTo(Scout));
                 Assert.That(bridge.Theater, Is.EqualTo(PhysicalTheater.Shore));
@@ -197,6 +198,31 @@ namespace FrostArk.Unity.Tests
             finally
             {
                 UnityEngine.Object.DestroyImmediate(obj);
+            }
+        }
+
+        [Test]
+        public void StaleProxyFromAnotherShoreSceneCannotReceiveMovement()
+        {
+            using (var session = Begin())
+            {
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Scout }, true,
+                    EntityId.Parse("transfer:away")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    ShoreScene, Island, Landing, new[] { Scout }));
+                var stale = new FakeExecutor
+                {
+                    ActorId = Scout,
+                    Theater = PhysicalTheater.Shore,
+                    SceneId = EntityId.Parse("scene:obsolete-shore")
+                };
+                var result = CrewTheaterMoveDispatcher.Dispatch(session,
+                    TacticalOrderIntent.MoveTo(new[] { Scout }, 1, 2),
+                    CrewMoveGoal.ShorePoint(new Vector3(1, 0, 2)),
+                    new ICrewTheaterMoveExecutor[] { stale });
+                Assert.That(result.Single().Status,
+                    Is.EqualTo(CrewMoveDispatchStatus.StaleSceneExecutor));
+                Assert.That(stale.Calls, Is.Zero);
             }
         }
     }
