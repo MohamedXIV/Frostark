@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FrostArk.Core.Crew;
 using FrostArk.Core.World;
 
 namespace FrostArk.Core.Ship
@@ -121,6 +122,31 @@ namespace FrostArk.Core.Ship
             Inside(_rooms, cell) && _constructionReserved.Contains(cell);
         public bool ModuleClearanceAvailable(EntityId moduleId) =>
             _moduleClearanceOpen.TryGetValue(moduleId, out bool available) && available;
+
+        /// <summary>
+        /// Validate standing cells for the actual authored CrewInteractionSlots
+        /// whose SourceId resolves to a placed ShipModule. A slot's LocalX/Y
+        /// is relative to that module origin in its room; an unplaced fixture
+        /// source is ignored, never guessed. This checks *physical standing*
+        /// clearance, not door connectivity, approach/arrival or slot ownership.
+        /// Build placement uses the conservative all-solid footprint until
+        /// spatial profiles are part of the canonical layout/content contract.
+        /// </summary>
+        public bool PreservesModuleInteractionSlots(ShipLayoutState layout,
+            CrewInteractionState interactions)
+        {
+            if (layout == null) throw new ArgumentNullException(nameof(layout));
+            if (interactions == null) throw new ArgumentNullException(nameof(interactions));
+            foreach (var slot in interactions.Slots)
+            {
+                var source = layout.GetModule(slot.SourceId);
+                if (source == null) continue;
+                var cell = new ShipGridCell(source.RoomId,
+                    source.X + slot.LocalX, source.Y + slot.LocalY);
+                if (!Walkable(cell)) return false;
+            }
+            return true;
+        }
 
         private IEnumerable<ShipGridCell> Neighbors(ShipGridCell from)
         {
