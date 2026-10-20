@@ -337,7 +337,7 @@ namespace FrostArk.Unity
                 .Where(actor => actor != null && actor.isActiveAndEnabled &&
                                 actor.gameObject.activeInHierarchy && actor.Walker != null)
                 .Select(actor => (ICrewTheaterMoveExecutor)new ShipGridCrewExecutor(
-                    actor.ActorId, scene, actor.Walker)).ToArray();
+                    actor.ActorId, actor.SceneId, actor.Walker)).ToArray();
 
             var outcomes = TacticalTheaterSelectionCommands.MoveSelectedOnShip(
                 _session, _selectionController, cell, clickedWorldPoint, executors);
