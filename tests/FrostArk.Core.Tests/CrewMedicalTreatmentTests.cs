@@ -6,6 +6,7 @@ using FrostArk.Core.Inventory;
 using FrostArk.Core.Save;
 using FrostArk.Core.Time;
 using FrostArk.Core.World;
+using System.Text;
 using NUnit.Framework;
 
 namespace FrostArk.Core.Tests
@@ -142,10 +143,16 @@ namespace FrostArk.Core.Tests
             var timeline = new SimulationScheduler(new WorldClock(state.Minute),
                 Array.Empty<IWorldMinuteSystem>(), seed: 13);
             var encoded = SaveCodec.Encode(SaveGameDto.Capture(state, timeline));
-            // v11 trailing protocol: item ID, version, potency, minimum skill.
-            // Make min-skill > 1000 and recompute the accidental-corruption SHA.
+            // Medical's min-skill is followed by v12 site count (4),
+            // v13 checkpoint flag (1), v14 magazine count (4), and the
+            // variable-length v15 recovery flags. Mutate the REAL policy
+            // rather than accidentally corrupting the newest extension.
+            int recoveryBytes = 4;
+            foreach (var member in state.CrewDuty.Members)
+                recoveryBytes += 4 + Encoding.UTF8.GetByteCount(member.Id.Value) + 1;
+            int minimumSkillOffset = encoded.Length - 32 - recoveryBytes - 4 - 1 - 4 - 4;
             Array.Copy(BitConverter.GetBytes(1001), 0,
-                encoded, encoded.Length - 32 - 4, sizeof(int));
+                encoded, minimumSkillOffset, sizeof(int));
             using (var hash = System.Security.Cryptography.SHA256.Create())
                 Array.Copy(hash.ComputeHash(encoded, 0, encoded.Length - 32),
                     0, encoded, encoded.Length - 32, 32);

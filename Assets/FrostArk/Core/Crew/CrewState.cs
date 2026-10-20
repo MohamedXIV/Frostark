@@ -111,6 +111,23 @@ namespace FrostArk.Core.Crew
         public RepairJob? GetRepair(EntityId id) =>
             id.IsValid ? Array.Find(_jobs, x => x.Id == id) : null;
 
+        /// <summary>
+        /// SaveCodec extension restores the persisted recovery latch.
+        /// A flag inconsistent with the crew member's fatigue is rejected by
+        /// CrewMember.WithRecovering, not silently coerced during decoding.
+        /// </summary>
+        internal CrewState WithRecovering(EntityId id, bool recovering)
+        {
+            var current = Get(id);
+            if (current == null)
+                throw new ArgumentException("Crew member is not in the authored roster.",
+                    nameof(id));
+            var next = current.WithRecovering(recovering);
+            if (ReferenceEquals(next, current)) return this;
+            return new CrewState(_members.Select(m => m.Id == id ? next : m).ToArray(),
+                _jobs, _treatments);
+        }
+
         public CrewState SetAway(EntityId id, bool away)
         {
             if (Get(id) == null)
@@ -140,7 +157,8 @@ namespace FrostArk.Core.Crew
                     foreach (var member in _members)
                     {
                         if (occupied.Contains(member.Id.Value) || member.IsAway ||
-                            !member.OnShift(minute) || (member.Role == role) != primary)
+                            member.IsRecovering || !member.OnShift(minute) ||
+                            (member.Role == role) != primary)
                             continue;
                         if (!primary && member.BackupSkill < 200)
                             continue;
@@ -222,6 +240,9 @@ namespace FrostArk.Core.Crew
                 Add(m.Fatigue.ToString(CultureInfo.InvariantCulture));
                 Add(m.Wounds.ToString(CultureInfo.InvariantCulture));
                 Add(m.IsAway ? "1" : "0");
+                // Keep old all-healthy fingerprints unchanged; only a latched
+                // recovery period contributes additional state.
+                if (m.IsRecovering) Add("recovering");
             }
             foreach (var job in _jobs)
             {

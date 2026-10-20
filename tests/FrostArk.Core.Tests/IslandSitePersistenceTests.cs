@@ -124,9 +124,10 @@ namespace FrostArk.Core.Tests
                         0, bytes, bytes.Length - 32, 32);
             }
 
-            // Last site record: island ID, site ID, one looted flag, int32 damage.
+            // Site record precedes v13 checkpoint, v14 magazine, and the v15
+            // empty four-byte crew recovery suffix.
             var badFlag = (byte[])original.Clone();
-            badFlag[badFlag.Length - 32 - 10] = 2;
+            badFlag[badFlag.Length - 32 - 14] = 2;
             Resign(badFlag);
             var invalidFlag = SaveCodec.TryDecode(badFlag);
             Assert.That(invalidFlag.Success, Is.False);
@@ -134,7 +135,7 @@ namespace FrostArk.Core.Tests
 
             var badDamage = (byte[])original.Clone();
             Array.Copy(BitConverter.GetBytes(-10), 0,
-                badDamage, badDamage.Length - 32 - 9, 4);
+                badDamage, badDamage.Length - 32 - 13, 4);
             Resign(badDamage);
             var invalidDamage = SaveCodec.TryDecode(badDamage);
             Assert.That(invalidDamage.Success, Is.False);

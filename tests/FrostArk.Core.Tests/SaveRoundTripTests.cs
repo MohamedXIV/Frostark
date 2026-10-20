@@ -168,7 +168,7 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             byte[] v4 = SaveCodec.Encode(original);
-            Assert.That(v4[8], Is.EqualTo(14));
+            Assert.That(v4[8], Is.EqualTo(SaveCodec.CurrentVersion));
             byte[] v2 = DowngradeEmptyInventory(v4, version: 2, removedBytes: 138);
             var loaded = SaveCodec.TryDecode(v2);
 
@@ -185,7 +185,7 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v4 = SaveCodec.Encode(current);
-            Assert.That(v4[8], Is.EqualTo(14));
+            Assert.That(v4[8], Is.EqualTo(SaveCodec.CurrentVersion));
             var v3 = DowngradeEmptyInventory(v4, version: 3, removedBytes: 94);
             var result = SaveCodec.TryDecode(v3);
             Assert.That(result.Success, Is.True, result.Error.ToString());
@@ -200,7 +200,7 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             var current = SaveCodec.Encode(original);
-            Assert.That(current[8], Is.EqualTo(14));
+            Assert.That(current[8], Is.EqualTo(SaveCodec.CurrentVersion));
             // The new v8 tail is exactly one credited-inflow entry count,
             // zero for an old world. Strip it to form the original v7 bytes.
             var old = DowngradeEmptyInventory(current, version: 7, removedBytes: 45);
@@ -217,7 +217,7 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v9 = SaveCodec.Encode(current);
-            Assert.That(v9[8], Is.EqualTo(14));
+            Assert.That(v9[8], Is.EqualTo(SaveCodec.CurrentVersion));
             // V9 added 4 empty collection counts for recipes, stations,
             // pending prepaid jobs and finite merchants.
             var v8 = DowngradeEmptyInventory(v9, version: 8, removedBytes: 41);
@@ -235,7 +235,7 @@ namespace FrostArk.Core.Tests
         {
             var original = MakeSnapshot();
             var v10 = SaveCodec.Encode(original);
-            Assert.That(v10[8], Is.EqualTo(14));
+            Assert.That(v10[8], Is.EqualTo(SaveCodec.CurrentVersion));
             // V10 appends one int64 tactical tick plus one empty weapon count.
             var v9 = DowngradeEmptyInventory(v10, version: 9, removedBytes: 25);
             var recovered = SaveCodec.TryDecode(v9);
@@ -252,7 +252,7 @@ namespace FrostArk.Core.Tests
         {
             var current = MakeSnapshot();
             var v11 = SaveCodec.Encode(current);
-            Assert.That(v11[8], Is.EqualTo(14));
+            Assert.That(v11[8], Is.EqualTo(SaveCodec.CurrentVersion));
             // Empty v11 medical catalog = one 4-byte count after v10 combat.
             var v10 = DowngradeEmptyInventory(v11, version: 10, removedBytes: 13);
             var result = SaveCodec.TryDecode(v10);
@@ -268,7 +268,7 @@ namespace FrostArk.Core.Tests
         {
             var now = MakeSnapshot();
             var v12 = SaveCodec.Encode(now);
-            Assert.That(v12[8], Is.EqualTo(14));
+            Assert.That(v12[8], Is.EqualTo(SaveCodec.CurrentVersion));
             // V12 appended 4-byte site count, v13 the 1-byte absent-checkpoint flag, and v14 a 4-byte empty magazine-extension count.
             var v11 = DowngradeEmptyInventory(v12, version: 11, removedBytes: 9);
             var loaded = SaveCodec.TryDecode(v11);
@@ -381,7 +381,12 @@ namespace FrostArk.Core.Tests
         {
             const int header = 14;
             const int checksum = 32;
-            int payloadLength = BitConverter.ToInt32(encoded, 10) - removedBytes;
+            // Every current v15 snapshot in this fixture has an empty *duty*
+            // roster. v15 appends one extra four-byte recovery-count suffix,
+            // which must also be removed when constructing older payloads.
+            int recoveryExtensionBytes = 4;
+            int payloadLength = BitConverter.ToInt32(encoded, 10)
+                - removedBytes - recoveryExtensionBytes;
             var legacy = new byte[header + payloadLength + checksum];
             Array.Copy(encoded, legacy, header + payloadLength);
             legacy[8] = (byte)version;
