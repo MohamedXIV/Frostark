@@ -169,7 +169,7 @@ namespace FrostArk.Core.Tests
             // This fixture has NO CrewDuty members; v16 contributes only
             // two empty counts (needs and consumable definitions): 8 bytes.
             int v16Needs = 8;
-            int payloadLength = BitConverter.ToInt32(current, 10) - 70 - v16Needs;
+            int payloadLength = BitConverter.ToInt32(current, 10) - 70 - v16Needs - 8;
             var legacy = new byte[14 + payloadLength + 32];
             Array.Copy(current, legacy, 14 + payloadLength);
             legacy[8] = 4;
