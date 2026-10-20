@@ -68,6 +68,8 @@ namespace FrostArk.Unity
             walkingMetersPerSecond = Mathf.Max(0.1f, speed);
         }
 
+        public void ConfigureRtsCamera(Camera camera) => rtsCamera = camera;
+
         [Inject]
         public void Construct(WorldSession session)
         {
@@ -250,7 +252,7 @@ namespace FrostArk.Unity
             if (!right && !left) return;
             var screen = mouse.position.ReadValue();
             // Avoid issuing world orders through the fixture's IMGUI panel.
-            if (screen.x < 410f && Screen.height - screen.y < 305f)
+            if (screen.x < 410f && Screen.height - screen.y < 355f)
                 return;
             ProcessRtsPointer(screen, right);
         }
@@ -450,7 +452,7 @@ namespace FrostArk.Unity
             var actor = state.CrewDuty.Get(CrewGalleyFixtureState.Engineer);
             if (actor == null) return;
 
-            GUILayout.BeginArea(new Rect(12, 12, 395, 295), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(12, 12, 395, 344), GUI.skin.box);
             GUILayout.Label("FrostArk | Crew Galley — Unity fixture");
             GUILayout.Label("World minute: " + state.Minute.Value +
                 " | Core revision: " + state.Revision);
