@@ -217,6 +217,30 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void DiscoveryReevaluatesWithoutStaleOffersAfterClaimAndMeal()
+        {
+            var bus = new WorldCommandBus();
+            var original = World(hunger: 950, thirst: 0);
+            var offers = CrewProvisionInteractionDiscovery.Find(original, A);
+            Assert.That(offers, Has.Count.EqualTo(1));
+            Assert.That(offers[0].ItemId, Is.EqualTo(Food));
+
+            var held = bus.Execute(original, Claim("offer-hold", A, offers[0].SlotId, 0));
+            Assert.That(held.Success, Is.True);
+            Assert.That(CrewProvisionInteractionDiscovery.Find(held.State, A), Is.Empty);
+            var finished = bus.Execute(held.State,
+                Use("offer-use", A, offers[0].SlotId, offers[0].ItemId, 1));
+            Assert.That(finished.Success, Is.True);
+            Assert.That(finished.State.CrewDuty.Get(A)!.Hunger, Is.EqualTo(450));
+            Assert.That(finished.State.CrewDuty.Interactions.Claims, Is.Empty);
+            var remaining = CrewProvisionInteractionDiscovery.Find(finished.State, A);
+            Assert.That(remaining, Has.Count.EqualTo(1));
+            Assert.That(remaining[0].NeedSeverity, Is.EqualTo(450));
+            Assert.That(remaining[0].SlotId, Is.EqualTo(EatSlot));
+            Assert.That(remaining[0].ItemId, Is.EqualTo(Food));
+        }
+
+        [Test]
         public void SaveResumeWhileClaimedThenUseConsumesExactlyOnce()
         {
             var bus = new WorldCommandBus();
