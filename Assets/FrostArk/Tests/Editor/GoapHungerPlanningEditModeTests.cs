@@ -19,7 +19,7 @@ namespace FrostArk.Unity.Tests
         public void RequestMeal() => RequestedMeals++;
     }
 
-    public sealed class GoapHungerKey : WorldKeyBase { }
+    // Binary urgency fact (1 = critical); avoid asking the planner to apply 75\n    // one-unit Decrease effects for a scalar hunger level of 95.\n    public sealed class GoapHungerKey : WorldKeyBase { }
     public sealed class GoapFoodAvailableKey : WorldKeyBase { }
     public sealed class GoapSatisfyHungerGoal : GoalBase { }
 
@@ -28,7 +28,7 @@ namespace FrostArk.Unity.Tests
         public GoapHungerProbeSensor()
         {
             this.AddLocalWorldSensor<GoapHungerKey>((actor, references) =>
-                references.GetCachedComponent<GoapHungerProbeFacts>().Hunger);
+                references.GetCachedComponent<GoapHungerProbeFacts>().Hunger >= 80 ? 1 : 0);
             this.AddLocalWorldSensor<GoapFoodAvailableKey>((actor, references) =>
                 references.GetCachedComponent<GoapHungerProbeFacts>().FoodAvailable ? 1 : 0);
         }
@@ -67,7 +67,7 @@ namespace FrostArk.Unity.Tests
         {
             var builder = new CapabilityBuilder("FrostArk.HungerProbe");
             builder.AddGoal<GoapSatisfyHungerGoal>()
-                .AddCondition<GoapHungerKey>(Comparison.SmallerThanOrEqual, 20);
+                .AddCondition<GoapHungerKey>(Comparison.SmallerThanOrEqual, 0);
             builder.AddAction<GoapRequestMealAction>()
                 .AddCondition<GoapFoodAvailableKey>(Comparison.GreaterThanOrEqual, 1)
                 .AddEffect<GoapHungerKey>(EffectType.Decrease)
