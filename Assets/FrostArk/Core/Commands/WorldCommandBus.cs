@@ -370,6 +370,47 @@ namespace FrostArk.Core.Commands
                     reload.WeaponId, weapon.Definition.AmmoItemId, toLoad));
             }
 
+            if (command is UseCrewProvisionInteractionCommand use)
+            {
+                var actor = state.CrewDuty.Get(use.CrewId);
+                if (actor == null || !state.HasCrew(use.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (actor.IsAway)
+                    return CommandResult.Rejected(state, CommandFailure.CrewNotOnShip);
+                if (actor.Wounds >= 1000)
+                    return CommandResult.Rejected(state, CommandFailure.CrewIncapacitated);
+                var slot = state.CrewDuty.Interactions.GetSlot(use.SlotId);
+                if (slot == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownInteractionSlot);
+                var claim = state.CrewDuty.Interactions.GetClaim(use.SlotId);
+                if (claim == null || claim.CrewId != use.CrewId)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionClaimNotOwned);
+                if (claim.ExpiresAt <= state.Minute)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionClaimExpired);
+                var provision = state.CrewDuty.GetConsumable(use.ItemId);
+                if (provision == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownProvision);
+                bool eat = slot.Verb == Crew.CrewInteractionVerb.Eat;
+                bool drink = slot.Verb == Crew.CrewInteractionVerb.Drink;
+                if ((!eat && !drink) ||
+                    (eat && provision.Nutrition == 0) ||
+                    (drink && provision.Hydration == 0))
+                    return CommandResult.Rejected(state, CommandFailure.InteractionVerbMismatch);
+                if ((eat && actor.Hunger == 0) || (drink && actor.Thirst == 0))
+                    return CommandResult.Rejected(state, CommandFailure.NeedAlreadySatisfied);
+                var stock = state.Inventory.TryConsumeShip(use.ItemId, 1);
+                if (!stock.Success)
+                    return CommandResult.Rejected(state, MapInventoryFailure(stock.Error));
+                // One validated, all-or-nothing domain commit. No separate
+                // slot-release command or second world revision on success.
+                var updated = state.CrewDuty.Consume(use.CrewId, use.ItemId)
+                    .ReleaseInteraction(use.CrewId, use.SlotId);
+                var next = state.WithCrewProvision(updated, stock.State, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewProvisionConsumed,
+                    use.CrewId, use.ItemId, quantity: 1));
+            }
+
             if (command is ConsumeCrewProvisionCommand consumption)
             {
                 var member = state.CrewDuty.Get(consumption.CrewId);
