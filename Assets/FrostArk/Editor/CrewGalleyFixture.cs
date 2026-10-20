@@ -22,11 +22,17 @@ namespace FrostArk.Unity.Editor
         public static void CreateScene()
         {
             var original = SceneManager.GetActiveScene();
-            bool untitled = string.IsNullOrEmpty(original.path);
+            // Never close an unsaved scene to build the fixture. The menu action
+            // operates in a new additive scene and leaves existing scenes intact.
+            var alreadyOpen = SceneManager.GetSceneByPath(ScenePath);
+            if (alreadyOpen.IsValid() && alreadyOpen.isLoaded)
+                throw new InvalidOperationException(
+                    "Close the existing Crew Galley fixture scene before rebuilding it.");
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,
-                untitled ? NewSceneMode.Single : NewSceneMode.Additive);
+                NewSceneMode.Additive);
             try
             {
+                SceneManager.SetActiveScene(scene);
                 var root = new GameObject("GalleyPlayableFixture");
                 SceneManager.MoveGameObjectToScene(root, scene);
                 var grid = CrewGalleyFixtureState.Grid();
@@ -122,13 +128,10 @@ namespace FrostArk.Unity.Editor
             }
             finally
             {
-                if (!untitled)
-                {
-                    if (original.IsValid() && original.isLoaded)
-                        SceneManager.SetActiveScene(original);
-                    if (scene.IsValid() && scene.isLoaded)
-                        EditorSceneManager.CloseScene(scene, true);
-                }
+                if (original.IsValid() && original.isLoaded)
+                    SceneManager.SetActiveScene(original);
+                if (scene.IsValid() && scene.isLoaded)
+                    EditorSceneManager.CloseScene(scene, true);
             }
         }
 
