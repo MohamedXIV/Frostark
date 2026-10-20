@@ -576,5 +576,29 @@ namespace FrostArk.Unity.Tests
             yield return new WaitForSeconds(0.25f);
             Assert.That(_protagonist.Agent.hasPath, Is.True);
         }
+
+        [UnityTest]
+        public IEnumerator Test13_PrimarySelection_RejectsActorHiddenBySolidObstacle()
+        {
+            _commander.ClearSelection();
+            var collider = _protagonist.GetComponent<Collider>();
+            var center = collider.bounds.center;
+            var screenPoint = _camera.WorldToScreenPoint(center);
+            var ray = _camera.ScreenPointToRay(screenPoint);
+            var obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            obstacle.name = "TemporaryOccluder";
+            obstacle.transform.SetParent(_sceneRoot.transform, false);
+            obstacle.transform.position =
+                ray.GetPoint(Vector3.Distance(ray.origin, center) * 0.5f);
+            obstacle.transform.localScale = new Vector3(2f, 2f, 0.4f);
+            Physics.SyncTransforms();
+
+            Assert.That(_commander.ProcessPointerClick(screenPoint), Is.False);
+            Assert.That(_commander.Selection.Count, Is.Zero,
+                "Unit selection must not raycast through a solid wall.");
+            UnityEngine.Object.Destroy(obstacle);
+            yield return null;
+        }
+
     }
 }
