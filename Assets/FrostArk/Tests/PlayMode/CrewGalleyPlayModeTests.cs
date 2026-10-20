@@ -144,6 +144,31 @@ namespace FrostArk.Unity.Tests
         }
 
         [UnityTest]
+        public IEnumerator MovedGalleySourceInvalidatesClaimWithoutFreeFood()
+        {
+            Assert.That(_controller.HeldSlot.IsValid, Is.True);
+            var source = _root.transform.Find("Galley");
+            Assert.That(source, Is.Not.Null);
+            source.position += Vector3.right * 1.2f;
+
+            // A moving/resized ship prop must invalidate an authored standing
+            // anchor rather than letting the actor use stale coordinates.
+            for (int i = 0; i < 10 && !_controller.IsPaused; i++)
+                yield return null;
+
+            var state = _session.Capture().State;
+            Assert.That(_controller.IsPaused, Is.True);
+            Assert.That(_controller.IsMoving, Is.False);
+            Assert.That(state.CrewDuty.Interactions.Claims, Is.Empty);
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.ShipHold,
+                CrewGalleyFixtureState.Ration), Is.EqualTo(4));
+            Assert.That(state.Inventory.GetAmount(InventoryContainer.ShipHold,
+                CrewGalleyFixtureState.Water), Is.EqualTo(4));
+            Assert.That(state.CrewDuty.Get(CrewGalleyFixtureState.Engineer).Thirst,
+                Is.EqualTo(960));
+        }
+
+        [UnityTest]
         public IEnumerator RemovedGalleySourceReleasesClaimWithoutSpendingFood()
         {
             Assert.That(_controller.HeldSlot.IsValid, Is.True);
