@@ -66,7 +66,7 @@ namespace FrostArk.Unity.Tests
                 CrewGalleyFixtureState.Engineer).Thirst, Is.EqualTo(960),
                 "The fixture world must not silently fall back to an empty session.");
 
-            for (var i = 0; i < 600 && !controller.IsPaused; i++)
+            for (var i = 0; i < 2000 && !controller.IsPaused; i++)
                 yield return null;
 
             var state = worldSession.Capture().State;

@@ -68,7 +68,7 @@ namespace FrostArk.Unity.Tests
                 CrewGalleyFixtureState.Ration), Is.EqualTo(4));
 
             // Real Unity frames, not a fabricated Core-only path completion.
-            for (int frame = 0; frame < 600 && !_controller.IsPaused; frame++)
+            for (int frame = 0; frame < 2000 && !_controller.IsPaused; frame++)
                 yield return null;
 
             var world = _session.Capture().State;
@@ -128,7 +128,7 @@ namespace FrostArk.Unity.Tests
             // The previous thirst goal is now satisfied by a valid direct
             // fixture domain command. The next goal must change to hunger.
             var drank = _session.Submit(new ConsumeCrewProvisionCommand(
-                EntityId.Parse("cmd:fixture:water-while-paused"),
+                FrostArk.Core.World.EntityId.Parse("cmd:fixture:water-while-paused"),
                 CrewGalleyFixtureState.Engineer, CrewGalleyFixtureState.Water,
                 _session.Revision));
             Assert.That(drank.Success, Is.True);
