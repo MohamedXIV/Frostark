@@ -111,7 +111,13 @@ namespace FrostArk.Unity
         private void CompleteProvision(EntityId id, ShipGridWalker walker,
             PendingProvision pending, bool selected)
         {
-            if (selected && !pending.CancelRequested)
+            // An already committed emergency provision can finish even if
+            // the user has selected this actor; ordinary autonomous provision
+            // yields to selection at the next safe cell boundary.
+            var member = _session.Capture().State.CrewDuty.Get(id);
+            bool emergency = member != null &&
+                Math.Max(member.Hunger, member.Thirst) >= CrewAgencyPolicy.EmergencyInterruptAt;
+            if (selected && !emergency && !pending.CancelRequested)
             {
                 pending.CancelRequested = true;
                 walker.RequestStopAtSafeCell();
