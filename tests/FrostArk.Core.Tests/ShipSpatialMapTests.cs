@@ -70,6 +70,27 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void OccupiedCrewCellsTriggerDetourWithoutModifyingLayoutSnapshot()
+        {
+            var map = ShipSpatialMap.Derive(Layout(),
+                Array.Empty<ShipModuleSpatialProfile>(), Array.Empty<ShipRoomPortal>());
+            var occupied = C(B, 1, 1);
+            var route = map.FindPath(C(B, 0, 1), C(B, 3, 1),
+                new[] { occupied });
+            Assert.That(route, Is.Not.Empty);
+            Assert.That(route.Contains(occupied), Is.False,
+                "A standing crew blocks navigation, not permanent floor walkability.");
+            Assert.That(map.Walkable(occupied), Is.True,
+                "Transient actor positions must never modify canonical layout.");
+            Assert.That(map.FindPath(C(B, 0, 0), C(B, 1, 1),
+                new[] { C(B, 1, 0) }).Count, Is.GreaterThanOrEqualTo(3),
+                "Dynamic diagonal side blockers must forbid squeezing between actors.");
+            Assert.That(map.FindPath(C(B, 0, 1), occupied,
+                new[] { occupied }), Is.Empty,
+                "Occupied destination cannot be a valid arrival point.");
+        }
+
+        [Test]
         public void DefaultBlueprintBlocksEntirePhysicalFootprint()
         {
             var map = ShipSpatialMap.Derive(Layout(new ShipModule(Engine, Blueprint, B, 1, 1)),
