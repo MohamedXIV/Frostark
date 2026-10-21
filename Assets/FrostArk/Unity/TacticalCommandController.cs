@@ -53,6 +53,27 @@ namespace FrostArk.Unity
         private bool _selectionPointerHeld;
         private Vector2 _selectionPointerOrigin;
 
+        // Optional scene-local IMGUI overlay blocker. EventSystem alone only
+        // handles uGUI, not GUI.Button/GUI.Box in an OnGUI() fixture.
+        private Func<Vector2, bool> _isPointerOverSceneOverlay;
+
+        /// <summary>
+        /// Hook non-EventSystem overlays without coupling this reusable RTS
+        /// controller to any specific scene/HUD implementation. Screen points
+        /// use bottom-left InputSystem coordinates, just like screen rays.
+        /// </summary>
+        public void SetPointerOverlayBlocker(Func<Vector2, bool> blocker)
+        {
+            _isPointerOverSceneOverlay = blocker;
+        }
+
+        public bool IsPointerBlocked(Vector2 screenPoint)
+        {
+            return (EventSystem.current != null &&
+                    EventSystem.current.IsPointerOverGameObject()) ||
+                   (_isPointerOverSceneOverlay?.Invoke(screenPoint) ?? false);
+        }
+
         public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
         public IReadOnlyList<ShipCrewSelectionProxy> ShipActors => _shipActors;
@@ -726,9 +747,8 @@ namespace FrostArk.Unity
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             bool additive = keyboard != null &&
                 (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
-            bool pointerOverUi = EventSystem.current != null &&
-                EventSystem.current.IsPointerOverGameObject();
             var point = mouse.position.ReadValue();
+            bool pointerOverUi = IsPointerBlocked(point);
 
             if (mouse.leftButton.wasPressedThisFrame)
             {
