@@ -56,8 +56,10 @@ namespace FrostArk.Unity.Tests
             // in the bridge room. It must not mutate the game's WorldRevision.
             demo.SetDoorOpen(false);
             Assert.That(actors.All(x => !x.Walker.IsMoving), Is.True);
-            Assert.That(actors.All(x => x.Walker.LastError == "RouteInvalidated"),
-                Is.True);
+            Assert.That(actors.Take(2).All(x => x.Walker.LastError == "RouteInvalidated"),
+                Is.True, "Only the two ordered actors had a route to invalidate.");
+            Assert.That(actors.Skip(2).All(x => x.Walker.LastError == null),
+                Is.True, "Idle crew must not acquire a false route failure.");
             Assert.That(demo.Session.Revision, Is.Zero);
             demo.SetDoorOpen(true);
 
