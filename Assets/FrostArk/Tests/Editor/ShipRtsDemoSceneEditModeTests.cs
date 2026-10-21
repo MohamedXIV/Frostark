@@ -64,6 +64,15 @@ namespace FrostArk.Unity.Tests
                 Assert.That(go.GetComponentsInChildren<ShipRoomClickSurface>(true).Length,
                     Is.EqualTo(2));
 
+                // The IMGUI overlay is *not* EventSystem UI. Gameplay pointer
+                // events must not leak through its button/label rectangle.
+                var buttonPixel = new Vector2(55f, Screen.height - 176f);
+                var mapPixel = new Vector2(540f, Screen.height - 176f);
+                Assert.That(demo.IsPointerOverHud(buttonPixel), Is.True);
+                Assert.That(demo.Commander.IsPointerBlocked(buttonPixel), Is.True);
+                Assert.That(demo.IsPointerOverHud(mapPixel), Is.False);
+                Assert.That(demo.Commander.IsPointerBlocked(mapPixel), Is.False);
+
                 var from = new ShipGridCell(
                     EntityId.Parse(ShipRtsDemoRuntime.BridgeRoomId), 1, 2);
                 var to = new ShipGridCell(
