@@ -34,16 +34,21 @@ namespace FrostArk.Unity
             return true;
         }
 
-        public bool CanEnter(ShipGridWalker caller, ShipGridCell next)
+        public bool CanEnter(ShipGridWalker caller, ShipGridCell from, ShipGridCell next)
         {
-            // Until a peer has physically vacated its current cell, a
-            // conflicting next-step reservation cannot be acquired. This
-            // also prevents opposing actors swapping a narrow edge in one
-            // frame or entering the same bulkhead door simultaneously.
+            // Own the crossing edge and prevent diagonal squeezing between
+            // occupied cardinal side cells, just as static A* forbids it.
+            bool diagonal = from.RoomId == next.RoomId &&
+                from.X != next.X && from.Y != next.Y;
+            var flankX = diagonal ? new ShipGridCell(from.RoomId, next.X, from.Y) : default;
+            var flankY = diagonal ? new ShipGridCell(from.RoomId, from.X, next.Y) : default;
             foreach (var other in _walkers)
-                if (other != null && other != caller && other.IsConfigured &&
-                    other.HoldsCell(next))
-                    return false;
+            {
+                if (other == null || other == caller || !other.IsConfigured) continue;
+                if (other.HoldsCell(next)) return false;
+                if (diagonal &&
+                    (other.HoldsCell(flankX) || other.HoldsCell(flankY))) return false;
+            }
             return true;
         }
     }
