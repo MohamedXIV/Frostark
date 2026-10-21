@@ -30,6 +30,7 @@ namespace FrostArk.Unity
         private ShipGridCell _reservedCell;
         private float _trafficWaitSeconds;
         private bool _recovering;
+        private bool _stopAtNextSafeCell;
         public bool HasIncomingReservation => _nextCellReserved;
         public ShipGridCell IncomingReservation => _reservedCell;
         public bool IsRecovering => _recovering;
@@ -89,6 +90,7 @@ namespace FrostArk.Unity
             _currentSpeed = 0f;
             _nextCellReserved = false;
             _trafficWaitSeconds = 0f;
+            _stopAtNextSafeCell = false;
             _traffic = shipRoot.GetComponent<ShipTrafficCoordinator>();
             if (_traffic == null)
                 _traffic = shipRoot.gameObject.AddComponent<ShipTrafficCoordinator>();
@@ -105,6 +107,26 @@ namespace FrostArk.Unity
             }
             center = default;
             return false;
+        }
+
+        /// <summary>
+        /// Interrupt a physical action only at a safe cell center. When
+        /// halfway through an occupied edge we finish that committed edge
+        /// and retain its reservation until arrival. Never warp or cut a wall.
+        /// </summary>
+        public void RequestStopAtSafeCell()
+        {
+            if (!IsConfigured || _recovering || !IsMoving) return;
+            if (_nextCellReserved)
+            {
+                _stopAtNextSafeCell = true;
+                return;
+            }
+            _route = null;
+            _nextIndex = 0;
+            _currentSpeed = 0f;
+            _stopAtNextSafeCell = false;
+            LastError = "PlayerOrSafetyInterrupted";
         }
 
         public bool TryMoveTo(ShipGridCell goal)
@@ -144,6 +166,7 @@ namespace FrostArk.Unity
                 }
             }
             _orderedCell = goal;
+            _stopAtNextSafeCell = false;
             _trafficWaitSeconds = 0f;
             _route = path;
             _nextIndex = path.Count > 1 ? ChooseNextWaypoint(1) : path.Count;
@@ -355,6 +378,14 @@ namespace FrostArk.Unity
                         _lastReachedCell = nextCell;
                         _nextCellReserved = false;
                         _nextIndex++;
+                        if (_stopAtNextSafeCell)
+                        {
+                            _stopAtNextSafeCell = false;
+                            _route = null;
+                            _nextIndex = 0;
+                            _currentSpeed = 0f;
+                            LastError = "PlayerOrSafetyInterrupted";
+                        }
                         if (!IsMoving)
                         {
                             _route = null;
