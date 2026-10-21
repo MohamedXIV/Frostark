@@ -344,6 +344,9 @@ namespace FrostArk.Unity
                 _shipRoot.localPosition = new Vector3(
                     Mathf.Sin(_bobClock * 0.2f) * 0.18f, 0f,
                     Mathf.Sin(_bobClock * 0.4f) * 0.15f);
+                // Mouse raycasts must see current ship floors/crew positions
+                // even while moving between physics FixedUpdate steps.
+                Physics.SyncTransforms();
             }
         }
 
