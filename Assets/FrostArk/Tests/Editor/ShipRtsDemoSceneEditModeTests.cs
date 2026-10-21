@@ -8,6 +8,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using EntityId = FrostArk.Core.World.EntityId;
 
 namespace FrostArk.Unity.Tests
 {
