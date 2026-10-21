@@ -36,6 +36,7 @@ namespace FrostArk.Unity
         private readonly List<TacticalInteractableProxy> _registeredInteractables = new List<TacticalInteractableProxy>();
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
+        private bool _selectionEventsBound;
         private WorldSession _session;
         private readonly Dictionary<EntityId, bool> _lastMoveDispatch =
             new Dictionary<EntityId, bool>();
@@ -74,7 +75,29 @@ namespace FrostArk.Unity
                    (_isPointerOverSceneOverlay?.Invoke(screenPoint) ?? false);
         }
 
-        public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
+        // An EditMode-created MonoBehaviour may be configured through its public
+        // API before Unity invokes Awake. Bind selection notifications when first
+        // used as well as in Awake, once per controller instance.
+        private void EnsureSelectionBinding()
+        {
+            if (_selectionController == null)
+            {
+                _selectionController = new TacticalSelectionController();
+                _selectionEventsBound = false;
+            }
+            if (_selectionEventsBound) return;
+            _selectionController.SelectionChanged += OnSelectionChanged;
+            _selectionEventsBound = true;
+        }
+
+        public TacticalSelectionController Selection
+        {
+            get
+            {
+                EnsureSelectionBinding();
+                return _selectionController;
+            }
+        }
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
         public IReadOnlyList<ShipCrewSelectionProxy> ShipActors => _shipActors;
         public IReadOnlyList<TacticalInteractableProxy> Interactables => _registeredInteractables;
@@ -92,10 +115,7 @@ namespace FrostArk.Unity
             if (tacticalCamera == null)
                 tacticalCamera = Camera.main;
 
-            if (_selectionController == null)
-                _selectionController = new TacticalSelectionController();
-            _selectionController.SelectionChanged -= OnSelectionChanged;
-            _selectionController.SelectionChanged += OnSelectionChanged;
+            EnsureSelectionBinding();
 
             // Automatically find scene actors, interactables, and targets
             RefreshSceneRegistrations();
@@ -165,6 +185,7 @@ namespace FrostArk.Unity
 
         public void RefreshSceneRegistrations()
         {
+            EnsureSelectionBinding();
             _registeredActors.Clear();
             var foundActors = FindObjectsByType<TacticalActorProxy>();
             foreach (var actor in foundActors)
@@ -195,6 +216,7 @@ namespace FrostArk.Unity
 
         public void RegisterActor(TacticalActorProxy actor)
         {
+            EnsureSelectionBinding();
             if (actor != null && !_registeredActors.Contains(actor))
             {
                 _registeredActors.Add(actor);
@@ -209,6 +231,7 @@ namespace FrostArk.Unity
 
         public void RegisterShipActor(ShipCrewSelectionProxy actor)
         {
+            EnsureSelectionBinding();
             if (actor == null || _shipActors.Contains(actor)) return;
             if (!actor.ActorId.IsValid) return;
             _shipActors.Add(actor);
@@ -266,6 +289,7 @@ namespace FrostArk.Unity
 
         public void SelectActor(EntityId actorId, bool addToSelection = false)
         {
+            EnsureSelectionBinding();
             if (addToSelection)
             {
                 if (_selectionController.IsSelected(actorId) ||
@@ -278,6 +302,7 @@ namespace FrostArk.Unity
 
         public void ClearSelection()
         {
+            EnsureSelectionBinding();
             _selectionController.Clear();
         }
 
@@ -568,6 +593,7 @@ namespace FrostArk.Unity
         public int ProcessBoxSelection(Vector2 screenStart, Vector2 screenEnd,
             bool isAdditive = false)
         {
+            EnsureSelectionBinding();
             if (tacticalCamera == null) tacticalCamera = Camera.main;
             if (tacticalCamera == null) return 0;
             var rect = Rect.MinMaxRect(
@@ -792,9 +818,10 @@ namespace FrostArk.Unity
 
         private void OnDestroy()
         {
-            if (_selectionController != null)
+            if (_selectionController != null && _selectionEventsBound)
             {
                 _selectionController.SelectionChanged -= OnSelectionChanged;
+                _selectionEventsBound = false;
             }
             foreach (var actor in _registeredActors)
             {
