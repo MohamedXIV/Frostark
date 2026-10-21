@@ -107,7 +107,10 @@ namespace FrostArk.Core.Save
                     WriteCrewRecoveryExtension(writer, state.CrewDuty);
                     WriteCrewNeedsExtension(writer, state.CrewDuty);
                     WriteCrewInteractionExtension(writer, state.CrewDuty.Interactions);
-                    WritePendingCrewMoves(writer, snapshot.PendingCrewMoves);
+                    // V18 optional trailing extension: when no accepted moves
+                    // exist, retain the exact legacy payload suffix.
+                    if (snapshot.PendingCrewMoves.Count > 0)
+                        WritePendingCrewMoves(writer, snapshot.PendingCrewMoves);
                 }
                 payload = stream.ToArray();
             }
@@ -244,7 +247,8 @@ namespace FrostArk.Core.Save
             if (version >= 15) crewDuty = ReadCrewRecoveryExtension(reader, crewDuty);
             if (version >= 16) crewDuty = ReadCrewNeedsExtension(reader, crewDuty);
             if (version >= 17) crewDuty = ReadCrewInteractionExtension(reader, crewDuty);
-            var crewMoves = version >= 18 ? ReadPendingCrewMoves(reader) : Array.Empty<PendingCrewMove>();
+            var crewMoves = version >= 18 && reader.BaseStream.Position < reader.BaseStream.Length
+                ? ReadPendingCrewMoves(reader) : Array.Empty<PendingCrewMove>();
             var world = WorldState.RestoreSnapshot(minute, revision,
                 supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy, combat, siteProgress);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides, sceneCheckpoint, crewMoves);
