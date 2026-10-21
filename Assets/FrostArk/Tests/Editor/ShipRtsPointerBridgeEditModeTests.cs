@@ -186,10 +186,14 @@ namespace FrostArk.Unity.Tests
                 Assert.That(scene.Commander.LastTheaterMoveDispatch.Values
                     .All(x => x.Accepted), Is.True);
                 Assert.That(scene.One.IsMoving && scene.Two.IsMoving, Is.True);
-                Assert.That(scene.One.OrderedCell,
-                    Is.EqualTo(new ShipGridCell(Engine, 2, 2)));
-                Assert.That(scene.Two.OrderedCell,
-                    Is.EqualTo(new ShipGridCell(Engine, 2, 2)));
+                Assert.That(scene.One.OrderedCell.RoomId, Is.EqualTo(Engine));
+                Assert.That(scene.Two.OrderedCell.RoomId, Is.EqualTo(Engine));
+                Assert.That(scene.One.OrderedCell, Is.Not.EqualTo(scene.Two.OrderedCell),
+                    "Group click is a center, not one parking cell for everyone.");
+                Assert.That(Math.Abs(scene.One.OrderedCell.X - 2) +
+                    Math.Abs(scene.One.OrderedCell.Y - 2), Is.LessThanOrEqualTo(3));
+                Assert.That(Math.Abs(scene.Two.OrderedCell.X - 2) +
+                    Math.Abs(scene.Two.OrderedCell.Y - 2), Is.LessThanOrEqualTo(3));
 
                 // A blank click deselects but does not revoke movement.
                 scene.Commander.ProcessPointerClick(
