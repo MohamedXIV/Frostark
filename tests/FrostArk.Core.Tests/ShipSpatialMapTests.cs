@@ -35,6 +35,41 @@ namespace FrostArk.Core.Tests
             new ShipRoomPortal(Door, C(A, 5, 3), C(B, 0, 3), open);
 
         [Test]
+        public void ClearRoomUsesDirectDiagonalRatherThanOrthogonalLRoute()
+        {
+            var map = ShipSpatialMap.Derive(Layout(),
+                Array.Empty<ShipModuleSpatialProfile>(), Array.Empty<ShipRoomPortal>());
+            var path = map.FindPath(C(B, 0, 0), C(B, 4, 4));
+            Assert.That(path.Count, Is.EqualTo(5));
+            for (int n = 1; n < path.Count; n++)
+            {
+                Assert.That(path[n].X - path[n - 1].X, Is.EqualTo(1));
+                Assert.That(path[n].Y - path[n - 1].Y, Is.EqualTo(1));
+            }
+            Assert.That(map.CanTraverseStraight(C(B, 0, 0), C(B, 4, 4)), Is.True);
+            Assert.That(map.CanTraverseStraight(C(A, 0, 0), C(B, 0, 0)), Is.False,
+                "Smoothing must never skip authored room portals.");
+        }
+
+        [Test]
+        public void DiagonalCornerCutAndStraightLineThroughMachineAreForbidden()
+        {
+            var map = ShipSpatialMap.Derive(
+                Layout(new ShipModule(Engine, Blueprint, B, 1, 0)),
+                Array.Empty<ShipModuleSpatialProfile>(),
+                Array.Empty<ShipRoomPortal>());
+            // From (0,1) to (1,2) the diagonal squeezes past solid (1,1).
+            Assert.That(map.Walkable(C(B, 0, 1)), Is.True);
+            Assert.That(map.Walkable(C(B, 1, 2)), Is.True);
+            Assert.That(map.CanTraverseStraight(C(B, 0, 1), C(B, 1, 2)), Is.False);
+            var path = map.FindPath(C(B, 0, 1), C(B, 1, 2));
+            Assert.That(path.Count, Is.GreaterThanOrEqualTo(3));
+            Assert.That(path[1], Is.Not.EqualTo(C(B, 1, 2)));
+            Assert.That(map.CanTraverseStraight(C(B, 0, 0), C(B, 4, 2)), Is.False,
+                "Path smoothing may not tunnel through machine footprint.");
+        }
+
+        [Test]
         public void DefaultBlueprintBlocksEntirePhysicalFootprint()
         {
             var map = ShipSpatialMap.Derive(Layout(new ShipModule(Engine, Blueprint, B, 1, 1)),
