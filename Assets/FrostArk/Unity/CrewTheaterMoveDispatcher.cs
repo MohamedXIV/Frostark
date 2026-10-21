@@ -88,7 +88,8 @@ namespace FrostArk.Unity
         NoSceneExecutor,
         StaleSceneExecutor,
         DuplicateSceneExecutor,
-        ExecutorRejected
+        ExecutorRejected,
+        DestinationUnavailable
     }
 
     public sealed class CrewMoveDispatchDecision
