@@ -148,27 +148,80 @@ namespace FrostArk.Core.Ship
             return true;
         }
 
-        private IEnumerable<ShipGridCell> Neighbors(ShipGridCell from)
+        // Orthogonal = 10, diagonal = 14. The extra four diagonals are
+        // legal only when BOTH adjacent cardinal cells are walkable, so a
+        // character never clips through a blocked module/bulkhead corner.
+        private IEnumerable<(ShipGridCell Cell, int Cost)> Neighbors(ShipGridCell from)
         {
-            foreach (var (dx, dy) in new[] { (0, 1), (1, 0), (0, -1), (-1, 0) })
+            foreach (var (dx, dy) in new[]
+            {
+                (0, 1), (1, 0), (0, -1), (-1, 0),
+                (1, 1), (1, -1), (-1, -1), (-1, 1)
+            })
             {
                 var next = new ShipGridCell(from.RoomId, from.X + dx, from.Y + dy);
-                if (Walkable(next)) yield return next;
+                if (!Walkable(next)) continue;
+                if (dx != 0 && dy != 0 &&
+                    (!Walkable(new ShipGridCell(from.RoomId, from.X + dx, from.Y)) ||
+                     !Walkable(new ShipGridCell(from.RoomId, from.X, from.Y + dy))))
+                    continue;
+                yield return (next, dx != 0 && dy != 0 ? 14 : 10);
             }
             foreach (var portal in _portals)
             {
                 if (!portal.Open) continue;
-                if (portal.A == from && Walkable(portal.B)) yield return portal.B;
-                if (portal.B == from && Walkable(portal.A)) yield return portal.A;
+                if (portal.A == from && Walkable(portal.B)) yield return (portal.B, 10);
+                if (portal.B == from && Walkable(portal.A)) yield return (portal.A, 10);
             }
         }
 
-        // A* uses an admissible zero cross-room heuristic because an authored
-        // portal may shortcut arbitrary distances. Cell count is bounded by
-        // ShipCompartmentSlot; optimality is more important than a guess.
-        private int Heuristic(ShipGridCell cell, ShipGridCell target) =>
-            _portals.Length == 0 && cell.RoomId == target.RoomId
-                ? Math.Abs(cell.X - target.X) + Math.Abs(cell.Y - target.Y) : 0;
+        // Same-room octile distance is admissible ONLY when the route graph
+        // has no arbitrary cross-room shortcuts. Otherwise zero remains safe.
+        private int Heuristic(ShipGridCell cell, ShipGridCell target)
+        {
+            if (_portals.Length != 0 || cell.RoomId != target.RoomId) return 0;
+            int dx = Math.Abs(cell.X - target.X);
+            int dy = Math.Abs(cell.Y - target.Y);
+            return 10 * Math.Max(dx, dy) + 4 * Math.Min(dx, dy);
+        }
+
+        /// <summary>
+        /// Conservative grid-supercover line check between two cell centers.
+        /// The diagonal branch tests both adjacent cells to prevent smoothing
+        /// through the corner of a wall. Never smooth across room portals.
+        /// </summary>
+        public bool CanTraverseStraight(ShipGridCell from, ShipGridCell to)
+        {
+            if (from.RoomId != to.RoomId || !Walkable(from) || !Walkable(to))
+                return false;
+            int x = from.X, y = from.Y;
+            int dx = to.X - x, dy = to.Y - y;
+            int nx = Math.Abs(dx), ny = Math.Abs(dy);
+            int sx = Math.Sign(dx), sy = Math.Sign(dy);
+            int ix = 0, iy = 0;
+            while (ix < nx || iy < ny)
+            {
+                long horizontal = (1L + 2L * ix) * ny;
+                long vertical = (1L + 2L * iy) * nx;
+                if (horizontal == vertical)
+                {
+                    if (!Walkable(new ShipGridCell(from.RoomId, x + sx, y)) ||
+                        !Walkable(new ShipGridCell(from.RoomId, x, y + sy)))
+                        return false;
+                    x += sx; y += sy; ix++; iy++;
+                }
+                else if (horizontal < vertical)
+                {
+                    x += sx; ix++;
+                }
+                else
+                {
+                    y += sy; iy++;
+                }
+                if (!Walkable(new ShipGridCell(from.RoomId, x, y))) return false;
+            }
+            return true;
+        }
 
         private static int Compare(ShipGridCell a, ShipGridCell b)
         {
@@ -213,10 +266,11 @@ namespace FrostArk.Core.Ship
                     return Array.AsReadOnly(path.ToArray());
                 }
                 closed.Add(current);
-                foreach (var next in Neighbors(current))
+                foreach (var edge in Neighbors(current))
                 {
+                    var next = edge.Cell;
                     if (closed.Contains(next)) continue;
-                    int candidate = g[current] + 1;
+                    int candidate = g[current] + edge.Cost;
                     if (g.TryGetValue(next, out var existing) && candidate >= existing)
                         continue;
                     g[next] = candidate;
