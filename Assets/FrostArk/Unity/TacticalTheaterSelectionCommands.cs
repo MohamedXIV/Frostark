@@ -2,18 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
+using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using UnityEngine;
+using EntityId = FrostArk.Core.World.EntityId;
 
 namespace FrostArk.Unity
 {
-    /// <summary>
-    /// Reuses the same transient TacticalSelectionController for ship and
-    /// shore orders. Pointer resolution is performed upstream by the real
-    /// tactical camera/scene adapter; ship targets are typed local cells.
-    /// This has no scene-object cache or independent order/actor state.
-    /// </summary>
     /// <summary>
     /// Shared, deterministic group-to-arrival-slot allocation. Navigation and
     /// crowd feasibility are theater-specific delegates. A click is the CENTER
@@ -56,6 +52,10 @@ namespace FrostArk.Unity
         }
     }
 
+    /// <summary>
+    /// Reuses transient RTS selection for both ship and shore physical orders.
+    /// Canonical WorldSession routing remains responsible for eligibility.
+    /// </summary>
     public static class TacticalTheaterSelectionCommands
     {
         public static IReadOnlyList<CrewMoveDispatchDecision> MoveSelectedOnShip(
