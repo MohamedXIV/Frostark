@@ -124,11 +124,16 @@ namespace FrostArk.Unity.Tests
                     yield return null; // Real Unity Update rather than artificial Tick.
                 Assert.That(walkers[0].IsMoving || walkers[1].IsMoving, Is.False,
                     "Crew should reach the next room within the bounded frame budget.");
+                Assert.That(walkers[0].LastReachedCell.RoomId, Is.EqualTo(Engine));
+                Assert.That(walkers[1].LastReachedCell.RoomId, Is.EqualTo(Engine));
+                Assert.That(walkers[0].LastReachedCell, Is.Not.EqualTo(walkers[1].LastReachedCell),
+                    "Group movement must finish at two separate unclaimed arrival cells.");
                 foreach (var walker in walkers)
                 {
-                    Assert.That(walker.LastReachedCell, Is.EqualTo(target));
+                    Assert.That(Math.Abs(walker.LastReachedCell.X - target.X) +
+                        Math.Abs(walker.LastReachedCell.Y - target.Y), Is.LessThanOrEqualTo(3));
                     Assert.That(root.transform.InverseTransformPoint(
-                        walker.transform.position).x, Is.EqualTo(8.5f).Within(0.1f));
+                        walker.transform.position).x, Is.InRange(6.5f, 11.5f));
                 }
                 Assert.That(commander.Selection.Count, Is.Zero);
                 Assert.That(session.Revision, Is.Zero);
