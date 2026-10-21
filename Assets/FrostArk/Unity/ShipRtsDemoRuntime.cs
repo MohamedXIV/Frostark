@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
@@ -215,6 +216,12 @@ namespace FrostArk.Unity
             renderer.material = material;
         }
 
+        private static void RemoveCollider(Collider collider)
+        {
+            if (Application.isPlaying) Destroy(collider);
+            else DestroyImmediate(collider);
+        }
+
         private GameObject DecorationCube(string name, Vector3 position,
             Vector3 scale, Color color, bool clickable)
         {
@@ -227,7 +234,7 @@ namespace FrostArk.Unity
             if (!clickable)
             {
                 var collision = go.GetComponent<Collider>();
-                if (collision != null) Destroy(collision);
+                if (collision != null) RemoveCollider(collision);
             }
             return go;
         }
@@ -291,7 +298,7 @@ namespace FrostArk.Unity
             body.transform.localScale = new Vector3(0.62f, 0.70f, 0.62f);
             Tint(body, color);
             var bodyCollider = body.GetComponent<Collider>();
-            if (bodyCollider != null) Destroy(bodyCollider);
+            if (bodyCollider != null) RemoveCollider(bodyCollider);
 
             var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             ring.name = "Selected crew outline";
@@ -300,7 +307,7 @@ namespace FrostArk.Unity
             ring.transform.localScale = new Vector3(0.93f, 0.015f, 0.93f);
             Tint(ring, new Color(0.95f, 0.98f, 0.68f));
             var ringCollider = ring.GetComponent<Collider>();
-            if (ringCollider != null) Destroy(ringCollider);
+            if (ringCollider != null) RemoveCollider(ringCollider);
             ring.SetActive(false);
 
             root.AddComponent<ShipGridWalker>();
