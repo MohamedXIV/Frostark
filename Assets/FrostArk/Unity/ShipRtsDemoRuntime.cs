@@ -177,6 +177,7 @@ namespace FrostArk.Unity
             commanderObject.transform.SetParent(_environment.transform, false);
             _commander = commanderObject.AddComponent<TacticalCommandController>();
             _commander.SetCamera(camera);
+            _commander.SetPointerOverlayBlocker(IsPointerOverHud);
 
             _bootstrap.Configure(_shipRoot, _commander,
                 new[]
@@ -267,9 +268,9 @@ namespace FrostArk.Unity
             DecorationCube("Outer hull south", new Vector3(6f, 0.55f, -0.08f),
                 new Vector3(12.4f, 1.1f, 0.2f), iron, false);
             DecorationCube("Outer hull west", new Vector3(-0.08f, 0.55f, 3f),
-                new Vector3(0.2f, 1.1f, 12.3f / 2f), iron, false);
+                new Vector3(0.2f, 1.1f, 6.2f), iron, false);
             DecorationCube("Outer hull east", new Vector3(12.08f, 0.55f, 3f),
-                new Vector3(0.2f, 1.1f, 12.3f / 2f), iron, false);
+                new Vector3(0.2f, 1.1f, 6.2f), iron, false);
             DecorationCube("Bulkhead south of door", new Vector3(6f, 0.55f, 1f),
                 new Vector3(0.16f, 1.1f, 2f), iron, false);
             DecorationCube("Bulkhead north of door", new Vector3(6f, 0.55f, 4.5f),
@@ -359,6 +360,20 @@ namespace FrostArk.Unity
             }
         }
 
+        /// <summary>
+        /// Input System mouse position has bottom-left origin; legacy IMGUI
+        /// uses top-left. Reserve the *whole* HUD including every button.
+        /// The rest of the tactical controller stays HUD-agnostic.
+        /// </summary>
+        public bool IsPointerOverHud(Vector2 screenPoint)
+        {
+            if (!IsReady && string.IsNullOrEmpty(_initializationError))
+                return false;
+            var topLeft = new Vector2(screenPoint.x, Screen.height - screenPoint.y);
+            if (!IsReady) return new Rect(12, 12, 760, 110).Contains(topLeft);
+            return new Rect(12, 12, 480, _showHelp ? 198 : 102).Contains(topLeft);
+        }
+
         private void OnGUI()
         {
             if (!IsReady)
@@ -378,7 +393,7 @@ namespace FrostArk.Unity
                     normal = { textColor = Color.white }
                 };
             }
-            GUI.Box(new Rect(12, 12, 480, _showHelp ? 184 : 82), "FROSTARK | SHIP RTS DEMO");
+            GUI.Box(new Rect(12, 12, 480, _showHelp ? 198 : 102), "FROSTARK | SHIP RTS DEMO");
             GUI.Label(new Rect(28, 39, 440, 25),
                 "Selected: " + _commander.Selection.Count +
                 "    Door: " + (_doorOpen ? "OPEN" : "CLOSED") +
