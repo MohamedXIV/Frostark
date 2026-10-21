@@ -119,7 +119,8 @@ namespace FrostArk.Unity.Tests
                     Is.EquivalentTo(ids));
                 commander.ClearSelection();
                 root.transform.position = new Vector3(30, 0, -12);
-                for (int frame = 0; frame < 150 &&
+                // Allow for the new acceleration phase and serialized one-cell door queue.
+                for (int frame = 0; frame < 450 &&
                     (walkers[0].IsMoving || walkers[1].IsMoving); frame++)
                     yield return null; // Real Unity Update rather than artificial Tick.
                 Assert.That(walkers[0].IsMoving || walkers[1].IsMoving, Is.False,
