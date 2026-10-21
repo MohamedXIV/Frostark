@@ -49,6 +49,12 @@ namespace FrostArk.Unity.Tests
             Assert.That(commander.LastTheaterMoveDispatch.Count, Is.EqualTo(2));
             Assert.That(commander.LastTheaterMoveDispatch.Values.All(x => x.Accepted), Is.True);
             Assert.That(actors.Count(x => x.Walker.IsMoving), Is.EqualTo(2));
+            // Deterministic PlayMode tick: let both walkers reserve a step
+            // without depending on Editor focus/runInBackground.
+            actors[0].Walker.Tick(0.2f);
+            actors[1].Walker.Tick(0.2f);
+            Assert.That(actors.Take(2).All(x => x.Walker.HasIncomingReservation),
+                Is.True, "Both ordered actors should be mid-edge before closure.");
 
             commander.ClearSelection();
             Assert.That(commander.Selection.Count, Is.Zero);
@@ -60,11 +66,22 @@ namespace FrostArk.Unity.Tests
                 Is.True, "Only the two ordered actors had a route to invalidate.");
             Assert.That(actors.Skip(2).All(x => x.Walker.LastError == null),
                 Is.True, "Idle crew must not acquire a false route failure.");
+            Assert.That(actors.All(x => x.Walker.LastReachedCell.RoomId.Value !=
+                    ShipRtsDemoRuntime.EngineRoomId),
+                Is.True, "Closing the bulkhead must stop every actor on the bridge side.");
+            Assert.That(actors.Any(x => x.Walker.IsRecovering), Is.True,
+                "At least one ordered actor was between cells when the door closed.");
+            for (int i = 0; i < 30 && actors.Any(x => x.Walker.IsRecovering); i++)
+                foreach (var actor in actors) actor.Walker.Tick(0.1f);
+            Assert.That(actors.Any(x => x.Walker.IsRecovering), Is.False);
+            Assert.That(actors.All(x => !x.Walker.HasIncomingReservation), Is.True,
+                "Recovery must release the doorway reservation before a new order.");
             Assert.That(demo.Session.Revision, Is.Zero);
             demo.SetDoorOpen(true);
 
             commander.SelectActor(actors[0].ActorId);
-            Assert.That(commander.ProcessContextClick(target), Is.True);
+            Assert.That(commander.ProcessContextClick(target), Is.True,
+                "A recovered actor accepts a fresh route after the door reopens.");
             yield return null;
             Assert.That(actors[0].Walker.IsMoving, Is.True);
             Assert.That(demo.Session.Revision, Is.Zero);

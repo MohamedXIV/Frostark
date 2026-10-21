@@ -29,8 +29,10 @@ namespace FrostArk.Unity
         private bool _nextCellReserved;
         private ShipGridCell _reservedCell;
         private float _trafficWaitSeconds;
+        private bool _recovering;
         public bool HasIncomingReservation => _nextCellReserved;
         public ShipGridCell IncomingReservation => _reservedCell;
+        public bool IsRecovering => _recovering;
 
         // Current and next-step occupancy are intentionally different from
         // the exclusive station/work-slot claim owned by canonical crew logic.
@@ -112,6 +114,11 @@ namespace FrostArk.Unity
                 LastError = "NotConfigured";
                 return false;
             }
+            if (_recovering)
+            {
+                LastError = "RecoveringToSafeCell";
+                return false; // Finish retreating to the last reached cell center.
+            }
             if (_nextCellReserved)
             {
                 LastError = "AwaitingSafeRestart";
@@ -173,10 +180,15 @@ namespace FrostArk.Unity
         {
             if (updated == null) throw new ArgumentNullException(nameof(updated));
             if (!IsConfigured) { LastError = "NotConfigured"; return false; }
+            if (_recovering)
+            {
+                _map = updated;
+                return false; // Keep retreating along the already-walked edge.
+            }
             // If the actor is physically between discrete cell centers, a
             // fresh path beginning at _lastReachedCell could diagonally cut
-            // through an obstacle. Stop without teleporting; the scene can
-            // issue a new validated order after reaching a safe restart pose.
+            // through an obstacle. Retreat to that center without teleporting;
+            // the reservation stays held until the actor is safely back.
             if (IsMoving && (!TryCenter(_lastReachedCell, out var reachedCenter) ||
                 (_localPosition - reachedCenter).sqrMagnitude > 0.0001f))
             {
@@ -185,8 +197,7 @@ namespace FrostArk.Unity
                 _nextIndex = 0;
                 LastError = "RouteInvalidated";
                 _currentSpeed = 0f;
-                // If physically between cells, keep the incoming cell
-                // reserved until a safe recovery, not free for ghosting.
+                _recovering = _nextCellReserved;
                 return false;
             }
             var next = IsMoving ? updated.FindPath(_lastReachedCell, _orderedCell) :
@@ -198,6 +209,9 @@ namespace FrostArk.Unity
                 _nextIndex = 0;
                 LastError = "RouteInvalidated";
                 _currentSpeed = 0f;
+                // At a cell center no physical step was taken, so releasing the
+                // reserved destination is safe and unblocks the doorway.
+                _nextCellReserved = false;
                 return false;
             }
             _map = updated;
@@ -230,6 +244,49 @@ namespace FrostArk.Unity
             if (deltaTime < 0 || float.IsNaN(deltaTime) || float.IsInfinity(deltaTime))
                 throw new ArgumentOutOfRangeException(nameof(deltaTime));
 
+            if (_recovering)
+            {
+                if (TryCenter(_lastReachedCell, out var recoveryPoint))
+                {
+                    var before = _localPosition;
+                    var remaining = Vector3.Distance(before, recoveryPoint);
+                    float desiredSpeed = Mathf.Min(_speed,
+                        Mathf.Sqrt(2f * Braking * remaining));
+                    _currentSpeed = Mathf.MoveTowards(_currentSpeed,
+                        desiredSpeed, Acceleration * deltaTime);
+                    _localPosition = Vector3.MoveTowards(before, recoveryPoint,
+                        _currentSpeed * deltaTime);
+                    var direction = _localPosition - before;
+                    if (direction.sqrMagnitude > 0.000001f)
+                    {
+                        var desired = Quaternion.LookRotation(
+                            _shipRoot.TransformDirection(direction.normalized), _shipRoot.up);
+                        transform.rotation = Quaternion.RotateTowards(transform.rotation,
+                            desired, 360f * deltaTime);
+                    }
+                    if ((_localPosition - recoveryPoint).sqrMagnitude <= 0.000001f)
+                    {
+                        _localPosition = recoveryPoint;
+                        _nextCellReserved = false;
+                        _recovering = false;
+                        _route = null;
+                        _nextIndex = 0;
+                        _currentSpeed = 0f;
+                    }
+                }
+                else
+                {
+                    _nextCellReserved = false;
+                    _recovering = false;
+                    _route = null;
+                    _nextIndex = 0;
+                    _currentSpeed = 0f;
+                    LastError = "MissingRoomOrigin";
+                }
+                transform.position = _shipRoot.TransformPoint(_localPosition);
+                return;
+            }
+
             if (IsMoving)
             {
                 var nextCell = _route[_nextIndex];
@@ -239,6 +296,7 @@ namespace FrostArk.Unity
                     _nextIndex = 0;
                     LastError = "RouteInvalidated";
                     _currentSpeed = 0f;
+                    _recovering = _nextCellReserved;
                 }
                 else if (_traffic != null && !_nextCellReserved &&
                          !_traffic.CanEnter(this, _lastReachedCell, nextCell))

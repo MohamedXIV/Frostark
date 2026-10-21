@@ -34,6 +34,14 @@ namespace FrostArk.Unity
                 .SelectMany(a => a.Walker.IsMoving
                     ? new[] { a.Walker.LastReachedCell, a.Walker.OrderedCell }
                     : new[] { a.Walker.LastReachedCell }));
+            var selectedOccupancy = new Dictionary<ShipGridCell, EntityId>();
+            foreach (var pair in positions)
+            {
+                if (!selected.Contains(pair.Key)) continue;
+                selectedOccupancy[pair.Value.LastReachedCell] = pair.Key;
+                if (pair.Value.IsMoving)
+                    selectedOccupancy[pair.Value.OrderedCell] = pair.Key;
+            }
 
             var candidates = new List<ShipGridCell>();
             // Expand toward the nearest legal parking spots; always favor a
@@ -45,7 +53,8 @@ namespace FrostArk.Unity
                         if (Math.Max(Math.Abs(dx), Math.Abs(dy)) != radius) continue;
                         var spot = new ShipGridCell(center.RoomId,
                             center.X + dx, center.Y + dy);
-                        if (map.Walkable(spot) && !reserved.Contains(spot))
+                        if (map.Walkable(spot) && !map.IsPortalEndpoint(spot) &&
+                            !reserved.Contains(spot))
                             candidates.Add(spot);
                     }
             var chosen = TacticalGroupGoalPlanner.Allocate(
@@ -53,6 +62,9 @@ namespace FrostArk.Unity
                 (EntityId id, ShipGridCell spot) =>
                 {
                     if (!positions.TryGetValue(id, out var walker)) return (float?)null;
+                    if (selectedOccupancy.TryGetValue(spot, out var occupant) &&
+                        occupant != id)
+                        return (float?)null;
                     var route = map.FindPath(walker.LastReachedCell, spot);
                     if (route.Count == 0) return (float?)null;
                     float travel = 0f;

@@ -116,6 +116,8 @@ namespace FrostArk.Core.Ship
             cell.X >= 0 && cell.Y >= 0 && cell.X < room.Width && cell.Y < room.Height;
 
         public bool Contains(ShipGridCell cell) => Inside(_rooms, cell);
+        public bool IsPortalEndpoint(ShipGridCell cell) =>
+            Array.Exists(_portals, portal => portal.A == cell || portal.B == cell);
         public bool Walkable(ShipGridCell cell) =>
             Inside(_rooms, cell) && !_solid.Contains(cell);
         public bool BuildReserved(ShipGridCell cell) =>

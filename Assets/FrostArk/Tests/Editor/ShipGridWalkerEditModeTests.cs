@@ -218,7 +218,7 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
-        public void ClosingDoorInvalidatesActiveRouteWithoutChangingActorIdentityOrPosition()
+        public void ClosingDoorInvalidatesActiveRouteAndRetreatsToSafeCellBeforeNewOrder()
         {
             var ship = new GameObject("G2-Ship");
             var crew = new GameObject("G2-Crew");
@@ -234,8 +234,24 @@ namespace FrostArk.Unity.Tests
                 Assert.That(walker.RebindMap(Map(false)), Is.False);
                 Assert.That(walker.LastError, Is.EqualTo("RouteInvalidated"));
                 Assert.That(walker.IsMoving, Is.False);
-                walker.Tick(0.3f);
-                Assert.That(crew.transform.position, Is.EqualTo(before));
+                Assert.That(walker.IsRecovering, Is.True);
+                Assert.That(walker.HasIncomingReservation, Is.True,
+                    "The next cell stays reserved until the actor is safely back.");
+                Assert.That(walker.TryMoveTo(Cell(Bridge, 4, 2)), Is.False);
+                Assert.That(walker.LastError, Is.EqualTo("RecoveringToSafeCell"));
+
+                for (int i = 0; i < 20 && walker.IsRecovering; i++) walker.Tick(0.1f);
+                Assert.That(walker.IsRecovering, Is.False);
+                Assert.That(walker.HasIncomingReservation, Is.False);
+                Assert.That(crew.transform.position, Is.Not.EqualTo(before),
+                    "Recovery walks back to the reached cell, never teleports.");
+                Assert.That(crew.transform.position,
+                    Is.EqualTo(new Vector3(1.5f, 0f, 2.5f)).Within(0.0001f));
+
+                Assert.That(walker.RebindMap(Map(true)), Is.True);
+                Assert.That(walker.TryMoveTo(Cell(Engine, 2, 2)), Is.True);
+                for (int i = 0; i < 100 && walker.IsMoving; i++) walker.Tick(0.1f);
+                Assert.That(walker.LastReachedCell, Is.EqualTo(Cell(Engine, 2, 2)));
             }
             finally
             {
