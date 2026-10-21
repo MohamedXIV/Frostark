@@ -54,3 +54,30 @@ First **actual local Unity 6000.6.0f1 run** on `34ad9940dd1db00f7d698d8d22a20b23
 - Back-to-back async PlayMode test runs destabilized Unity's Test Runner; perform a domain reload or separate test run between suites, not a claims-based product regression. An old `InitTestScene` temporary cleanup caused runner state complaints, not a demonstrated gameplay failure.
 - Source fix on **this later branch head** binds selection notifications idempotently via `EnsureSelectionBinding()` when direct `Selection`, actor registration and box-selection APIs are used, not only in `Awake`. Added Unity G2 `EditModeSelectionNotificationsUpdateRegisteredShipVisualsWithoutAwake` to cover direct selection, exclusion, solo replacement, and clear, plus a G0 static assertion.
 - **Unity retest of the lifecycle fix still required.** First run's 26/27 PASS is evidence for the old head only; do not claim 28/28 until actual editor reports. With the new authored EditMode test there are **28 expected targeted tests** (26 EditMode, 2 PlayMode), not 27. Specifically rerun the prior failure, then all G2 and both independent G3 fixtures.
+
+
+## 2026-10-21 — verified current-head Unity re-test: ship RTS G2/G3 TARGETED PASS
+
+**Exact tested source HEAD:** `0c775bed7402e5294f22bb3bc0176a49d58bfb1f`; `feat/111-rts-selection-input`.
+**Tester evidence:** user-provided local agent report from actual Unity **6000.6.0f1** (Editor PID 7536; port 7800). Git working tree and source diff clean; `compilationFailed=false`; final Console **0 errors, 0 warnings**, Editor ready and Play Mode stopped.
+
+**G2 EditMode: 26/26 PASS (actual execution, by fixture)**
+
+| Fixture | Result |
+| --- | --- |
+| `ShipRtsDemoSceneEditModeTests` | 2/2 |
+| `ShipRtsPointerBridgeEditModeTests` | 7/7 |
+| `ShipTheaterDispatchEditModeTests` | 5/5 |
+| `ShipGridWalkerEditModeTests` | 4/4 |
+| `CrewTheaterMoveDispatchEditModeTests` | 8/8 |
+
+The prior failure `BoxSelectAndRoomRightClickDispatchTwoRealShipWalkers` **PASS** (1/1, 0.1895s). The new `EditModeSelectionNotificationsUpdateRegisteredShipVisualsWithoutAwake` **PASS** (1/1, 0.0069s). Thus the lifecycle/selection-visual defect is closed at the tested HEAD.
+
+**G3 PlayMode: 2/2 PASS (actual execution, separate runs)**
+
+- `ShipRtsDemoScenePlayModeTests.OpenCheckedInSceneThenSelectAndMoveAcrossRooms`: 1/1 PASS (0.6746s).
+- `ShipTheaterMovePlayModeTests.GroupMoveTraversesAuthoredDoorWhileShipRootMoves`: 1/1 PASS (0.8625s) **after an explicit domain reload**.
+
+The first asynchronous attempt at the second PlayMode test was **0/0** (stale runner state), not a failure of the actual test. The tester temporarily disabled `DisableDomainReload` **in Editor memory**, entered/exited Play Mode to force reload, reran successfully, and restored its prior `True|DisableDomainReload, DisableSceneReload` settings. No persisted Unity settings, generated probes, or source changes remained.
+
+**Scope clarification:** This is **G2 pass and G3 targeted ship-RTS slice pass**, not a full Epic #108 or dual-domain #114 release gate. Manual ship Play Mode gestures were passed in an earlier report on `34ad9940`, not reconfirmed on this exact head; neither report verifies OS-level mouse input or IMGUI HUD **button activation**. It also does not establish autonomous Needs/order lifecycle (#112), ship group congestion/real collision (#113), ship↔shore+save/reentry acceptance (#114), or a platform build. Preserve these outstanding scopes in their issues; don't mark them complete.
