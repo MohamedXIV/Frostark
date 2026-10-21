@@ -43,3 +43,14 @@
 - No persistent authored door states; door status in this fixture is transient and resets on Play.
 - This demo is ship-only. Real two-theater transfer and full #114 end-to-end acceptance still need an actual G3 Unity run.
 - Do not merge Draft PR #116 before parent #118 → #117 and actual Unity import/PlayMode evidence.
+
+## 2026-10-21 — real Unity G2/G3 smoke on prior head + lifecycle repair
+
+First **actual local Unity 6000.6.0f1 run** on `34ad9940dd1db00f7d698d8d22a20b23c95632fb` established:
+
+- **Unity compilation PASS** (`compilationFailed=false`, no errors, fresh branch-111 assemblies).
+- **EditMode 24/25 PASS; PlayMode 2/2 PASS** (separate runs after domain reload). The sole failing EditMode case was `ShipRtsPointerBridgeEditModeTests.BoxSelectAndRoomRightClickDispatchTwoRealShipWalkers`: selection controller returned 2 IDs, but `FirstActor.IsSelected` remained false. Root cause: `TacticalCommandController` only subscribed to `TacticalSelectionController.SelectionChanged` in `Awake`, which the manually constructed EditMode fixture did not invoke.
+- Manual PlayMode camera/selection/drag/blank-click/room-aware right-click/movement-after-deselect/door C and O/ship M/help H/HUD click-through isolation all **PASS** in the agent's synthetic input tests. Cross-room Move completed; physical scene and selected-four visual markers rendered. Real OS-level pointer input and IMGUI **button activation** remain unverified.
+- Back-to-back async PlayMode test runs destabilized Unity's Test Runner; perform a domain reload or separate test run between suites, not a claims-based product regression. An old `InitTestScene` temporary cleanup caused runner state complaints, not a demonstrated gameplay failure.
+- Source fix on **this later branch head** binds selection notifications idempotently via `EnsureSelectionBinding()` when direct `Selection`, actor registration and box-selection APIs are used, not only in `Awake`. Added Unity G2 `EditModeSelectionNotificationsUpdateRegisteredShipVisualsWithoutAwake` to cover direct selection, exclusion, solo replacement, and clear, plus a G0 static assertion.
+- **Unity retest of the lifecycle fix still required.** First run's 26/27 PASS is evidence for the old head only; do not claim 28/28 until actual editor reports. With the new authored EditMode test there are **28 expected targeted tests** (26 EditMode, 2 PlayMode), not 27. Specifically rerun the prior failure, then all G2 and both independent G3 fixtures.
