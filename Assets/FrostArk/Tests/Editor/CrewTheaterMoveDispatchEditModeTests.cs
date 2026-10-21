@@ -19,6 +19,7 @@ namespace FrostArk.Unity.Tests
         private static readonly EntityId ShipScene = EntityId.Parse("scene:ship");
         private static readonly EntityId ShoreScene = EntityId.Parse("scene:shore");
         private static readonly EntityId Bridge = EntityId.Parse("anchor:bridge");
+        private static readonly EntityId Engine = EntityId.Parse("room:engine");
         private static readonly EntityId Landing = EntityId.Parse("anchor:landing");
         private static readonly EntityId Island = EntityId.Parse("island:one");
 
