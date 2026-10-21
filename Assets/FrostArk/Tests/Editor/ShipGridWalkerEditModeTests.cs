@@ -114,6 +114,52 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void StationaryCrewBlocksNextCellUntilItPhysicallyVacates()
+        {
+            var ship = new GameObject("G2-TrafficShip");
+            try
+            {
+                var firstGo = new GameObject("G2-WaitingCrew");
+                firstGo.transform.SetParent(ship.transform, false);
+                firstGo.transform.localPosition = new Vector3(1.5f, 0f, 2.5f);
+                var nextGo = new GameObject("G2-BlockingCrew");
+                nextGo.transform.SetParent(ship.transform, false);
+                nextGo.transform.localPosition = new Vector3(2.5f, 0f, 2.5f);
+                var map = Map(true);
+                var first = firstGo.AddComponent<ShipGridWalker>();
+                first.Configure(ship.transform, map, Origins(),
+                    Cell(Bridge, 1, 2), 2.5f);
+                var blocker = nextGo.AddComponent<ShipGridWalker>();
+                blocker.Configure(ship.transform, map, Origins(),
+                    Cell(Bridge, 2, 2), 2.5f);
+
+                Assert.That(first.TryMoveTo(Cell(Bridge, 2, 2)), Is.False,
+                    "A stationary peer's real position must not be an arrival target.");
+                Assert.That(first.LastError, Is.EqualTo("DestinationOccupied"));
+                Assert.That(first.TryMoveTo(Cell(Bridge, 3, 2)), Is.True);
+                first.Tick(0.25f);
+                Assert.That(first.LastError, Is.EqualTo("WaitingForTraffic"));
+                Assert.That(first.LastReachedCell, Is.EqualTo(Cell(Bridge, 1, 2)));
+                Assert.That(firstGo.transform.localPosition.x, Is.EqualTo(1.5f).Within(0.001f));
+
+                Assert.That(blocker.TryMoveTo(Cell(Bridge, 4, 2)), Is.True);
+                blocker.Tick(0.5f); // Vacates (2,2) and occupies (3,2).
+                Assert.That(blocker.LastReachedCell, Is.EqualTo(Cell(Bridge, 3, 2)));
+                first.Tick(0.5f);
+                Assert.That(first.LastReachedCell, Is.EqualTo(Cell(Bridge, 2, 2)),
+                    "Waiting crew may enter only after the blocker physically leaves.");
+                Assert.That(first.LastReachedCell, Is.Not.EqualTo(blocker.LastReachedCell));
+                Assert.That(first.TryMoveTo(Cell(Bridge, 4, 2)), Is.False,
+                    "Another moving actor's reserved destination cannot be stolen.");
+                Assert.That(first.LastError, Is.EqualTo("DestinationOccupied"));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(ship);
+            }
+        }
+
+        [Test]
         public void ClosedDoorRejectsGroupTargetWithoutTeleporting()
         {
             var ship = new GameObject("G2-Ship");
