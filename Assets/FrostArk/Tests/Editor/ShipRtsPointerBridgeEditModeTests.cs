@@ -201,6 +201,39 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void EditModeSelectionNotificationsUpdateRegisteredShipVisualsWithoutAwake()
+        {
+            // EditMode AddComponent does not necessarily invoke Awake, unlike
+            // the already verified PlayMode scene. Public registration and
+            // direct selection API must establish the same notification bridge.
+            using (var scene = new Scene(true))
+            {
+                Assert.That(scene.FirstActor.IsSelected, Is.False);
+                Assert.That(scene.SecondActor.IsSelected, Is.False);
+
+                scene.Commander.Selection.SelectMultiple(new[] { First, Second });
+                Assert.That(scene.Commander.Selection.Count, Is.EqualTo(2));
+                Assert.That(scene.FirstActor.IsSelected, Is.True);
+                Assert.That(scene.SecondActor.IsSelected, Is.True);
+
+                scene.Commander.Selection.Exclude(First);
+                Assert.That(scene.FirstActor.IsSelected, Is.False);
+                Assert.That(scene.SecondActor.IsSelected, Is.True);
+
+                scene.Commander.SelectActor(First);
+                Assert.That(scene.FirstActor.IsSelected, Is.True);
+                Assert.That(scene.SecondActor.IsSelected, Is.False);
+
+                scene.Commander.ClearSelection();
+                Assert.That(scene.Commander.Selection.Count, Is.Zero);
+                Assert.That(scene.FirstActor.IsSelected, Is.False);
+                Assert.That(scene.SecondActor.IsSelected, Is.False);
+                Assert.That(scene.Session.Revision, Is.Zero,
+                    "Transient selection visuals cannot commit world state.");
+            }
+        }
+
+        [Test]
         public void ClosedDoorRejectsBridgeCrewAndAcceptsEngineCrewIndividually()
         {
             using (var scene = new Scene(false, secondInEngine: true))
