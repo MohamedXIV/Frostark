@@ -27,7 +27,9 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("m_Script: {fileID: 11500000, guid: " + script_id + ", type: 3}", scene)
         self.assertIn("FrostArk.Unity.ShipRtsDemoRuntime", scene)
         self.assertIn("public sealed class ShipRtsDemoRuntime : MonoBehaviour", script)
-        self.assertIn("private void Start() => BuildDemo()", script)
+        self.assertIn("private void Start()", script)
+        self.assertIn("try { BuildDemo(); }", script)
+        self.assertIn("Debug.LogException(ex, this)", script)
 
     def test_scene_is_registered_without_overwriting_other_launchers(self):
         build = BUILD.read_text(encoding="utf-8")
