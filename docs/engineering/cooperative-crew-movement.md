@@ -1,6 +1,6 @@
 # E11 — Cooperative crew movement and adaptive group destinations (execution contract)
 
-**Status:** user-approved design direction; implementation **NOT STARTED** in this document.  
+**Status:** implementation **IN PROGRESS** on Draft PR #116; source changes present, **Unity G2/G3 retest NOT RUN on the new source**.  
 **Last reviewed:** 2026-10-21.  
 **Design authority:** [Miro D01 Ship Navigation](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660187), [D03 Smart Interactions](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764660188), [D09 Crew Agency](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875097). This is a scoped implementation agreement, not a replacement for Miro.
 
@@ -77,3 +77,15 @@ Implementation can add small tests/commits at each gate, but **do not declare a 
 ## First code slice after this contract
 
 Begin with **Gate A**, keeping the public ship/shore command semantics unchanged; then deliver **Gate B** before treating movement as a completed RTS user experience. Work on the existing stacked PR path or a clean dependency-aware branch; avoid overlapping changes with the currently open #116/#117/#118 drafts and do not merge without Unity evidence.
+
+## 2026-10-21 — first executable slice shipped to draft branch (NOT Unity-verified)
+
+The following changes were implemented on the existing `feat/111-rts-selection-input` stacked PR branch, without touching `main` or merging the draft:
+
+- **Gate A / #113, implementation:** `ShipSpatialMap` now generates eight neighbors, with cardinal cost 10, diagonal cost 14, prohibited diagonal corner cutting, and safe octile A* heuristic when no arbitrary portal shortcuts exist. A room-local supercover line check verifies shortcuts cannot tunnel through machines or across rooms. `ShipGridWalker` uses the farthest clear room-local waypoint when alone, ramps speed and turns smoothly, with existing ship-root-local transforms preserved. Core G1 diagonal/corner tests and a Unity G2 accelerated diagonal test were added.
+- **Gate B / #32, first implementation:** `TacticalGroupGoalPlanner` is a shared deterministic, geometry-agnostic actor→arrival allocator. It scores each actor's feasible candidates by travel cost plus distance from group click center, resolves ties by stable EntityId and candidate order, and prevents overlapping arrival slots. `TacticalTheaterSelectionCommands.MoveSelectedAssigned` uses existing `CrewTheaterMoveDispatcher` per actor and emits `DestinationUnavailable` when no legal stop exists; the RTS controller reuses it in both domains. Ship candidates are derived from walkable local cells and per-crew A* paths; shore candidates are sampled from NavMesh with complete-path checks and native NavMeshAgent movement/avoidance. The interaction/attack contracts remain separate. Unity G2 suite now checks distinct ship stops and deterministic/group-capacity assignment; existing moving-ship G3 assertion updated to expect separate goals.
+- **Gate C / #113, conservative first implementation:** new per-ship-root `ShipTrafficCoordinator` registers physical walkers and prevents stopping on another actor or taking its active final goal. Each walker retains its current occupancy while reserving its next step; entering an occupied next cell or squeezing diagonally between two occupied side cells causes explicit `WaitingForTraffic` instead of ghosting. With multiple walkers, route traversal uses discrete next cells to make reservations meaningful; single-walker safe long-line smoothing remains available. EditMode test added for a stationary blocker physically vacating a cell. An interrupted midway step remains conservatively occupied until a safe restart, not teleported or silently unlocked.
+
+**Important limits / not yet done:** This is NOT the full planned Gate D or overall Gate E. Static module A* still has no dynamic occupancy-based reroute; agents may wait indefinitely when a route needs replanning or head-on yielding/backtracking. No bounded multi-step time-window reservations, starvation-prevention, slot-claim ownership integration, #112 Needs/autonomy arbitration, complete #114 ship↔shore scene transit, or OS-level mouse/IMGUI button validation. The new Unity G2/G3 source code must actually compile and run on Unity 6000.6.0f1 before calling G2/G3 PASS. The previously proven 28/28 Unity tests apply **only** to the older source HEAD `0c775bed7402e5294f22bb3bc0176a49d58bfb1f`.
+
+Next: run full Unity EditMode and PlayMode suites, fix any actual compiler/test regressions, then implement bounded door-queue yielding/replanning with a reproducible two-way corridor stress fixture before claiming completion of #113.
