@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
+using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -28,13 +31,75 @@ namespace FrostArk.Unity
         private TacticalDestinationMarker destinationMarker;
 
         private readonly List<TacticalActorProxy> _registeredActors = new List<TacticalActorProxy>();
+        private readonly List<ShipCrewSelectionProxy> _shipActors = new List<ShipCrewSelectionProxy>();
+        private ShipSpatialMap _shipSpatialMap;
         private readonly List<TacticalInteractableProxy> _registeredInteractables = new List<TacticalInteractableProxy>();
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
+        private bool _selectionEventsBound;
         private WorldSession _session;
+        private readonly Dictionary<EntityId, bool> _lastMoveDispatch =
+            new Dictionary<EntityId, bool>();
+        /// <summary>
+        /// Per-actor acceptance of the latest move DISPATCH (not completion).
+        /// False means no executor or a rejected NavMesh destination.
+        /// </summary>
+        public IReadOnlyDictionary<EntityId, bool> LastMoveDispatch => _lastMoveDispatch;
+        private readonly Dictionary<EntityId, CrewMoveDispatchDecision> _theaterDispatch =
+            new Dictionary<EntityId, CrewMoveDispatchDecision>();
+        public IReadOnlyDictionary<EntityId, CrewMoveDispatchDecision> LastTheaterMoveDispatch =>
+            _theaterDispatch;
+        [SerializeField, Min(3f)] private float dragThresholdPixels = 12f;
+        private const int MaxSelection = 4;
+        private bool _selectionPointerHeld;
+        private Vector2 _selectionPointerOrigin;
 
-        public TacticalSelectionController Selection => _selectionController ?? (_selectionController = new TacticalSelectionController());
+        // Optional scene-local IMGUI overlay blocker. EventSystem alone only
+        // handles uGUI, not GUI.Button/GUI.Box in an OnGUI() fixture.
+        private Func<Vector2, bool> _isPointerOverSceneOverlay;
+
+        /// <summary>
+        /// Hook non-EventSystem overlays without coupling this reusable RTS
+        /// controller to any specific scene/HUD implementation. Screen points
+        /// use bottom-left InputSystem coordinates, just like screen rays.
+        /// </summary>
+        public void SetPointerOverlayBlocker(Func<Vector2, bool> blocker)
+        {
+            _isPointerOverSceneOverlay = blocker;
+        }
+
+        public bool IsPointerBlocked(Vector2 screenPoint)
+        {
+            return (EventSystem.current != null &&
+                    EventSystem.current.IsPointerOverGameObject()) ||
+                   (_isPointerOverSceneOverlay?.Invoke(screenPoint) ?? false);
+        }
+
+        // An EditMode-created MonoBehaviour may be configured through its public
+        // API before Unity invokes Awake. Bind selection notifications when first
+        // used as well as in Awake, once per controller instance.
+        private void EnsureSelectionBinding()
+        {
+            if (_selectionController == null)
+            {
+                _selectionController = new TacticalSelectionController();
+                _selectionEventsBound = false;
+            }
+            if (_selectionEventsBound) return;
+            _selectionController.SelectionChanged += OnSelectionChanged;
+            _selectionEventsBound = true;
+        }
+
+        public TacticalSelectionController Selection
+        {
+            get
+            {
+                EnsureSelectionBinding();
+                return _selectionController;
+            }
+        }
         public IReadOnlyList<TacticalActorProxy> Actors => _registeredActors;
+        public IReadOnlyList<ShipCrewSelectionProxy> ShipActors => _shipActors;
         public IReadOnlyList<TacticalInteractableProxy> Interactables => _registeredInteractables;
         public IReadOnlyList<TacticalCombatTargetProxy> Targets => _registeredTargets;
         public TacticalOrderIntent LastIssuedIntent { get; private set; }
@@ -50,10 +115,7 @@ namespace FrostArk.Unity
             if (tacticalCamera == null)
                 tacticalCamera = Camera.main;
 
-            if (_selectionController == null)
-                _selectionController = new TacticalSelectionController();
-            _selectionController.SelectionChanged -= OnSelectionChanged;
-            _selectionController.SelectionChanged += OnSelectionChanged;
+            EnsureSelectionBinding();
 
             // Automatically find scene actors, interactables, and targets
             RefreshSceneRegistrations();
@@ -101,6 +163,16 @@ namespace FrostArk.Unity
             }
         }
 
+        /// <summary>
+        /// Scene authoring bootstrap supplies a map derived from the canonical
+        /// ShipLayoutState and authored portals. Absent map rejects ship clicks.
+        /// This is a presentation projection, never a shadow world state.
+        /// </summary>
+        public void SetShipSpatialMap(ShipSpatialMap map)
+        {
+            _shipSpatialMap = map ?? throw new ArgumentNullException(nameof(map));
+        }
+
         public void SetDestinationMarker(TacticalDestinationMarker marker)
         {
             destinationMarker = marker;
@@ -113,12 +185,17 @@ namespace FrostArk.Unity
 
         public void RefreshSceneRegistrations()
         {
+            EnsureSelectionBinding();
             _registeredActors.Clear();
             var foundActors = FindObjectsByType<TacticalActorProxy>();
             foreach (var actor in foundActors)
             {
                 RegisterActor(actor);
             }
+
+            _shipActors.Clear();
+            foreach (var shipActor in FindObjectsByType<ShipCrewSelectionProxy>())
+                RegisterShipActor(shipActor);
 
             _registeredInteractables.Clear();
             var foundInteractables = FindObjectsByType<TacticalInteractableProxy>();
@@ -139,6 +216,7 @@ namespace FrostArk.Unity
 
         public void RegisterActor(TacticalActorProxy actor)
         {
+            EnsureSelectionBinding();
             if (actor != null && !_registeredActors.Contains(actor))
             {
                 _registeredActors.Add(actor);
@@ -149,6 +227,26 @@ namespace FrostArk.Unity
                 actor.OnTargetHit += HandleActorTargetHit;
                 actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
             }
+        }
+
+        public void RegisterShipActor(ShipCrewSelectionProxy actor)
+        {
+            EnsureSelectionBinding();
+            if (actor == null || _shipActors.Contains(actor)) return;
+            if (!actor.ActorId.IsValid) return;
+            _shipActors.Add(actor);
+            actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
+        }
+
+        public void UnregisterShipActor(ShipCrewSelectionProxy actor)
+        {
+            if (actor == null) return;
+            _shipActors.Remove(actor);
+            // Only remove selection when no other registered scene proxy uses
+            // the stable ID; dispatch itself refuses duplicate executors.
+            if (!_shipActors.Any(a => a != null && a.ActorId == actor.ActorId) &&
+                !_registeredActors.Any(a => a != null && a.ActorId == actor.ActorId))
+                _selectionController.Exclude(actor.ActorId);
         }
 
         public void UnregisterActor(TacticalActorProxy actor)
@@ -191,33 +289,49 @@ namespace FrostArk.Unity
 
         public void SelectActor(EntityId actorId, bool addToSelection = false)
         {
+            EnsureSelectionBinding();
             if (addToSelection)
-                _selectionController.Toggle(actorId);
+            {
+                if (_selectionController.IsSelected(actorId) ||
+                    _selectionController.Count < MaxSelection)
+                    _selectionController.Toggle(actorId);
+            }
             else
                 _selectionController.Select(actorId);
         }
 
         public void ClearSelection()
         {
+            EnsureSelectionBinding();
             _selectionController.Clear();
         }
 
         public bool IssueMoveOrder(Vector3 worldDestination)
         {
-            if (_selectionController.Count == 0)
-                return false;
+            // A ship-local move MUST carry RoomId: world X/Z is not enough.
+            if (_session != null && _session.SceneCheckpoint != null)
+            {
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+                    return false;
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Shore)
+                    return IssueShoreMoveOrder(worldDestination);
+            }
+            _theaterDispatch.Clear();
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
 
             var selectedActors = GetSelectedActorProxies();
             if (selectedActors.Count == 0)
                 return false;
 
-            bool anyDispatched = false;
+            var accepted = new List<EntityId>();
             for (int i = 0; i < selectedActors.Count; i++)
             {
                 var actor = selectedActors[i];
                 Vector3 target = worldDestination;
 
-                // Subtle offset spread if multiple actors ordered
+                // Small group spacing; advanced NavMesh formations are owned by #32.
                 if (selectedActors.Count > 1)
                 {
                     float angle = (i * 360f / selectedActors.Count) * Mathf.Deg2Rad;
@@ -225,28 +339,100 @@ namespace FrostArk.Unity
                     target += offset;
                 }
 
-                if (actor.MoveTo(target))
-                {
-                    anyDispatched = true;
-                }
+                bool dispatched = actor.MoveTo(target);
+                _lastMoveDispatch[actor.ActorId] = dispatched;
+                if (dispatched)
+                    accepted.Add(actor.ActorId);
             }
 
-            if (!anyDispatched)
-            {
+            if (accepted.Count == 0)
                 return false;
-            }
 
+            // Never announce rejected crew members as successfully ordered.
             var intent = TacticalOrderIntent.MoveTo(
-                _selectionController.SelectedActorIds,
-                worldDestination.x,
-                worldDestination.z);
-
+                accepted, worldDestination.x, worldDestination.z);
             LastIssuedIntent = intent;
             OrderIssued?.Invoke(intent);
 
             if (destinationMarker != null)
                 destinationMarker.Show(worldDestination);
 
+            return true;
+        }
+
+        /// <summary>
+        /// Move selected crew in the loaded ship scene through room-aware A*.
+        /// Target cell is resolved from the clicked, authored room floor.
+        /// Every accepted actor gets the current physical order; changing
+        /// selection does not cancel the walker's already-accepted path.
+        /// </summary>
+        public bool IssueShipMoveOrder(ShipGridCell cell, Vector3 clickedWorldPoint)
+        {
+            _theaterDispatch.Clear();
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
+            if (_session == null || _session.SceneCheckpoint == null ||
+                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                _shipSpatialMap == null || !_shipSpatialMap.Walkable(cell) ||
+                _selectionController.Count == 0)
+                return false;
+
+            var scene = _session.SceneCheckpoint.SceneId;
+            var executors = _shipActors
+                .Where(actor => actor != null && actor.isActiveAndEnabled &&
+                                actor.gameObject.activeInHierarchy && actor.Walker != null)
+                .Select(actor => (ICrewTheaterMoveExecutor)new ShipGridCrewExecutor(
+                    actor.ActorId, actor.SceneId, actor.Walker)).ToArray();
+
+            var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
+                _shipSpatialMap, _selectionController.SelectedActorIds, _shipActors, cell);
+            var outcomes = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
+                _session, _selectionController, clickedWorldPoint, PhysicalTheater.Ship,
+                goals, executors);
+            return RecordPhysicalDispatch(outcomes, clickedWorldPoint);
+        }
+
+        private bool IssueShoreMoveOrder(Vector3 worldPoint)
+        {
+            _theaterDispatch.Clear();
+            _lastMoveDispatch.Clear();
+            foreach (var id in _selectionController.SelectedActorIds)
+                _lastMoveDispatch[id] = false;
+            if (_session == null || _session.SceneCheckpoint == null ||
+                _session.SceneCheckpoint.Theater != PhysicalTheater.Shore ||
+                _selectionController.Count == 0)
+                return false;
+            var scene = _session.SceneCheckpoint.SceneId;
+            var executors = _registeredActors
+                .Where(actor => actor != null && actor.isActiveAndEnabled &&
+                                actor.gameObject.activeInHierarchy)
+                .Select(actor => (ICrewTheaterMoveExecutor)new ShoreNavMeshCrewExecutor(
+                    actor, scene)).ToArray();
+            var goals = TacticalGroupDestinationAdapters.PlanShoreGoals(
+                _selectionController.SelectedActorIds, _registeredActors, worldPoint);
+            var outcomes = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
+                _session, _selectionController, worldPoint, PhysicalTheater.Shore,
+                goals, executors);
+            return RecordPhysicalDispatch(outcomes, worldPoint);
+        }
+
+        private bool RecordPhysicalDispatch(
+            IReadOnlyList<CrewMoveDispatchDecision> outcomes, Vector3 worldPoint)
+        {
+            var accepted = new List<EntityId>();
+            foreach (var result in outcomes)
+            {
+                _lastMoveDispatch[result.ActorId] = result.Accepted;
+                _theaterDispatch[result.ActorId] = result;
+                if (result.Accepted) accepted.Add(result.ActorId);
+            }
+            if (accepted.Count == 0) return false;
+
+            LastIssuedIntent = TacticalOrderIntent.MoveTo(
+                accepted, worldPoint.x, worldPoint.z);
+            OrderIssued?.Invoke(LastIssuedIntent);
+            if (destinationMarker != null) destinationMarker.Show(worldPoint);
             return true;
         }
 
@@ -372,67 +558,141 @@ namespace FrostArk.Unity
             return anyReloaded;
         }
 
+        /// <summary>
+        /// Primary pointer gesture: select a visible actor, or clear transient
+        /// selection on empty space. Never issues Move, Attack or Interact.
+        /// Those are explicit context/right-click commands.
+        /// </summary>
         public bool ProcessPointerClick(Vector2 screenPoint, bool isAdditive = false)
         {
-            if (tacticalCamera == null)
-                tacticalCamera = Camera.main;
-            if (tacticalCamera == null)
-                return false;
-
-            Ray ray = tacticalCamera.ScreenPointToRay(screenPoint);
-            var hits = Physics.RaycastAll(ray, 100f);
-            var sortedHits = hits.OrderBy(h => h.distance).ToArray();
-
-            // 1. If actors are selected, check for clicking an attackable hostile target first
-            if (_selectionController.Count > 0)
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return false;
+            var ray = tacticalCamera.ScreenPointToRay(screenPoint);
+            var hits = Physics.RaycastAll(ray, 100f, ~0,
+                QueryTriggerInteraction.Ignore).OrderBy(h => h.distance);
+            // Only the first physical surface counts: no selecting through walls.
+            foreach (var hit in hits)
             {
-                foreach (var hit in sortedHits)
+                var shipActor = hit.collider.GetComponentInParent<ShipCrewSelectionProxy>();
+                if (shipActor != null && _shipActors.Contains(shipActor))
                 {
-                    var target = hit.collider.GetComponentInParent<TacticalCombatTargetProxy>();
-                    if (target != null && target.IsHostile && !target.IsDead)
-                    {
-                        return IssueAttackOrder(target);
-                    }
+                    SelectActor(shipActor.ActorId, isAdditive);
+                    return true;
                 }
-            }
-
-            // 2. Check for clicking a friendly actor (selection)
-            foreach (var hit in sortedHits)
-            {
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
-                if (actor != null)
+                if (actor != null && _registeredActors.Contains(actor))
                 {
                     SelectActor(actor.ActorId, isAdditive);
                     return true;
                 }
+                break;
             }
+            if (!isAdditive) ClearSelection();
+            return false;
+        }
 
-            // 3. Check for clicking an interactable (if actors are selected)
-            if (_selectionController.Count > 0)
+        /// <summary>
+        /// Drag rectangle uses camera projections plus an unoccluded collider
+        /// ray. Actors outside this scene's registrations cannot be selected.
+        /// Selection is ephemeral; no order or duty is cancelled by replacement.
+        /// </summary>
+        public int ProcessBoxSelection(Vector2 screenStart, Vector2 screenEnd,
+            bool isAdditive = false)
+        {
+            EnsureSelectionBinding();
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return 0;
+            var rect = Rect.MinMaxRect(
+                Mathf.Min(screenStart.x, screenEnd.x),
+                Mathf.Min(screenStart.y, screenEnd.y),
+                Mathf.Max(screenStart.x, screenEnd.x),
+                Mathf.Max(screenStart.y, screenEnd.y));
+            var ids = new List<EntityId>();
+            if (isAdditive)
+                ids.AddRange(_selectionController.SelectedActorIds);
+            foreach (var actor in _registeredActors
+                .Where(a => a != null)
+                .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
             {
-                foreach (var hit in sortedHits)
-                {
-                    var interactable = hit.collider.GetComponentInParent<TacticalInteractableProxy>();
-                    if (interactable != null && !interactable.IsDepleted)
-                    {
-                        return IssueInteractOrder(interactable);
-                    }
-                }
+                if (ids.Count >= MaxSelection) break;
+                if (ids.Contains(actor.ActorId)) continue;
+                var collider = actor.GetComponent<Collider>();
+                if (collider == null || !collider.enabled) continue;
+                var center = collider.bounds.center;
+                var projected = tacticalCamera.WorldToScreenPoint(center);
+                if (projected.z <= 0 || !rect.Contains(new Vector2(projected.x, projected.y)))
+                    continue;
+                var ray = tacticalCamera.ScreenPointToRay(projected);
+                var hits = Physics.RaycastAll(ray, 100f, ~0,
+                    QueryTriggerInteraction.Ignore);
+                var nearest = hits.OrderBy(h => h.distance).FirstOrDefault();
+                if (nearest.collider == null ||
+                    nearest.collider.GetComponentInParent<TacticalActorProxy>() != actor)
+                    continue;
+                ids.Add(actor.ActorId);
             }
-
-            // 4. Check for clicking ground
-            if (Physics.Raycast(ray, out RaycastHit groundHit, 100f, groundLayer))
+            foreach (var actor in _shipActors
+                .Where(a => a != null)
+                .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
             {
-                if (_selectionController.Count > 0)
-                {
-                    return IssueMoveOrder(groundHit.point);
-                }
-                else
-                {
-                    ClearSelection();
-                }
+                if (ids.Count >= MaxSelection) break;
+                if (ids.Contains(actor.ActorId)) continue;
+                var collider = actor.GetComponent<Collider>();
+                if (collider == null || !collider.enabled) continue;
+                var center = collider.bounds.center;
+                var projected = tacticalCamera.WorldToScreenPoint(center);
+                if (projected.z <= 0 || !rect.Contains(new Vector2(projected.x, projected.y)))
+                    continue;
+                var ray = tacticalCamera.ScreenPointToRay(projected);
+                var nearest = Physics.RaycastAll(ray, 100f, ~0,
+                    QueryTriggerInteraction.Ignore)
+                    .OrderBy(h => h.distance).FirstOrDefault();
+                if (nearest.collider == null ||
+                    nearest.collider.GetComponentInParent<ShipCrewSelectionProxy>() != actor)
+                    continue;
+                ids.Add(actor.ActorId);
+            }
+            _selectionController.SelectMultiple(ids);
+            return _selectionController.Count;
+        }
+
+        /// <summary>
+        /// Context/right-click dispatch. Actor choice remains on primary click.
+        /// The shore executor is the existing NavMesh-based TacticalActorProxy.
+        /// </summary>
+        public bool ProcessContextClick(Vector2 screenPoint)
+        {
+            if (_selectionController.Count == 0) return false;
+            if (tacticalCamera == null) tacticalCamera = Camera.main;
+            if (tacticalCamera == null) return false;
+            var ray = tacticalCamera.ScreenPointToRay(screenPoint);
+            var hits = Physics.RaycastAll(ray, 100f, ~0,
+                QueryTriggerInteraction.Ignore).OrderBy(h => h.distance).ToArray();
+            // Context actions operate on the first physical hit only: a target
+            // concealed behind a wall is not magically actionable by click.
+            if (hits.Length == 0) return false;
+            var first = hits[0];
+            if (_session != null && _session.SceneCheckpoint != null &&
+                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+            {
+                var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
+                if (surface == null || _shipSpatialMap == null ||
+                    !surface.TryResolve(first.point, _shipSpatialMap, out var localCell))
+                    return false;
+                return IssueShipMoveOrder(localCell, first.point);
             }
 
+            var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
+            if (target != null && target.IsHostile && !target.IsDead)
+                return IssueAttackOrder(target);
+            var interactable = first.collider.GetComponentInParent<TacticalInteractableProxy>();
+            if (interactable != null && !interactable.IsDepleted)
+                return IssueInteractOrder(interactable);
+            if (first.collider.GetComponentInParent<TacticalActorProxy>() != null)
+                return false;
+            if (Physics.Raycast(ray, out var groundHit, 100f, groundLayer,
+                    QueryTriggerInteraction.Ignore))
+                return IssueMoveOrder(groundHit.point);
             return false;
         }
 
@@ -458,9 +718,12 @@ namespace FrostArk.Unity
             foreach (var actor in _registeredActors)
             {
                 if (actor != null)
-                {
                     actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
-                }
+            }
+            foreach (var actor in _shipActors)
+            {
+                if (actor != null)
+                    actor.SetSelected(_selectionController.IsSelected(actor.ActorId));
             }
         }
 
@@ -512,20 +775,59 @@ namespace FrostArk.Unity
         private void Update()
         {
             var mouse = UnityEngine.InputSystem.Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
+            if (mouse == null) return;
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            bool additive = keyboard != null &&
+                (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
+            var point = mouse.position.ReadValue();
+            bool pointerOverUi = IsPointerBlocked(point);
+
+            if (mouse.leftButton.wasPressedThisFrame)
             {
-                var keyboard = UnityEngine.InputSystem.Keyboard.current;
-                bool isShift = keyboard != null && (keyboard.leftShiftKey.isPressed || keyboard.rightShiftKey.isPressed);
-                Vector2 mousePos = mouse.position.ReadValue();
-                ProcessPointerClick(mousePos, isShift);
+                _selectionPointerHeld = !pointerOverUi;
+                _selectionPointerOrigin = point;
             }
+            if (mouse.leftButton.wasReleasedThisFrame && _selectionPointerHeld)
+            {
+                if (!pointerOverUi)
+                {
+                    if ((point - _selectionPointerOrigin).sqrMagnitude >
+                        dragThresholdPixels * dragThresholdPixels)
+                        ProcessBoxSelection(_selectionPointerOrigin, point, additive);
+                    else
+                        ProcessPointerClick(point, additive);
+                }
+                _selectionPointerHeld = false;
+            }
+            if (mouse.rightButton.wasPressedThisFrame && !pointerOverUi)
+                ProcessContextClick(point);
+        }
+
+        private void OnGUI()
+        {
+            if (!_selectionPointerHeld || UnityEngine.InputSystem.Mouse.current == null)
+                return;
+            var point = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
+            if ((point - _selectionPointerOrigin).sqrMagnitude <=
+                dragThresholdPixels * dragThresholdPixels)
+                return;
+            var old = GUI.color;
+            GUI.color = new Color(0.3f, 0.77f, 1f, 0.48f);
+            GUI.Box(Rect.MinMaxRect(
+                Mathf.Min(_selectionPointerOrigin.x, point.x),
+                Screen.height - Mathf.Max(_selectionPointerOrigin.y, point.y),
+                Mathf.Max(_selectionPointerOrigin.x, point.x),
+                Screen.height - Mathf.Min(_selectionPointerOrigin.y, point.y)),
+                GUIContent.none);
+            GUI.color = old;
         }
 
         private void OnDestroy()
         {
-            if (_selectionController != null)
+            if (_selectionController != null && _selectionEventsBound)
             {
                 _selectionController.SelectionChanged -= OnSelectionChanged;
+                _selectionEventsBound = false;
             }
             foreach (var actor in _registeredActors)
             {

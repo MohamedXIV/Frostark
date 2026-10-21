@@ -62,12 +62,26 @@ namespace FrostArk.Unity
                 }
             }
 
-            // Explicit constructor selection: WorldSession initializes with the provided
-            // initial state or default foundation state (minute 0).
-            builder.Register<WorldSession>(_ => _restoreSnapshot != null
-                ? WorldSession.Restore(_restoreSnapshot, ambientMilliC: _restoreAmbient)
-                : _initialState != null ? new WorldSession(_initialState)
-                : new WorldSession(), Lifetime.Scoped);
+            var shipRts = GetComponentInChildren<ShipTacticalSceneBootstrap>() ??
+                FindAnyObjectByType<ShipTacticalSceneBootstrap>();
+
+            // The explicit ship start is honored only for a newly created run.
+            // Never infer "on ship" when a restored legacy save has no
+            // physical checkpoint; let the restore keep location unknown.
+            builder.Register<WorldSession>(_ =>
+            {
+                var session = _restoreSnapshot != null
+                    ? WorldSession.Restore(_restoreSnapshot, ambientMilliC: _restoreAmbient)
+                    : _initialState != null ? new WorldSession(_initialState)
+                    : new WorldSession();
+                if (_restoreSnapshot == null && shipRts != null)
+                {
+                    var initialScene = shipRts.InitialNewRunCheckpoint();
+                    if (initialScene != null)
+                        session.SetSceneCheckpoint(initialScene);
+                }
+                return session;
+            }, Lifetime.Scoped);
             // Optional presenter registration (replaces unconditional RegisterComponentInHierarchy<WorldSessionPresenter>() to allow presenter-free test scopes)
             var presenter = GetComponentInChildren<WorldSessionPresenter>() ?? FindAnyObjectByType<WorldSessionPresenter>();
             if (presenter != null)
@@ -86,6 +100,11 @@ namespace FrostArk.Unity
             {
                 builder.RegisterComponent(commander);
             }
+
+            // Opt-in ship scene authoring adapter uses the exact same scoped
+            // WorldSession as the commander; it must not create a second run.
+            if (shipRts != null)
+                builder.RegisterComponent(shipRts);
 
             var tickRunner = GetComponentInChildren<CombatTickRunner>() ?? FindAnyObjectByType<CombatTickRunner>();
             if (tickRunner != null)

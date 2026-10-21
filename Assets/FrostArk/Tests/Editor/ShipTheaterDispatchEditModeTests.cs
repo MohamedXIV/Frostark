@@ -83,33 +83,115 @@ namespace FrostArk.Unity.Tests
                     var map = Map(true);
                     var one = Walker(root, "Crew-A", map, Cell(Bridge, 1, 1));
                     var two = Walker(root, "Crew-B", map, Cell(Bridge, 1, 3));
+                    var oneProxy = one.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                    oneProxy.SetActorId(A);
+                    var twoProxy = two.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                    twoProxy.SetActorId(B);
                     var executors = new ICrewTheaterMoveExecutor[]
                     {
                         new ShipGridCrewExecutor(A, ShipScene, one),
                         new ShipGridCrewExecutor(B, ShipScene, two)
                     };
                     var goal = Cell(Engine, 2, 2);
-                    var intent = TacticalOrderIntent.MoveTo(new[] { B, A }, 8.5, 2.5);
+                    var selection = new TacticalSelectionController();
+                    selection.SelectMultiple(new[] { A, B });
+                    var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
+                        map, selection.SelectedActorIds, new[] { oneProxy, twoProxy }, goal);
                     var originalRevision = session.Revision;
-                    var result = CrewTheaterMoveDispatcher.Dispatch(session, intent,
-                        CrewMoveGoal.ShipCellGoal(goal), executors);
+                    var result = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
+                        session, selection, new Vector3(8.5f, 0f, 2.5f),
+                        PhysicalTheater.Ship, goals, executors);
 
                     Assert.That(result.Select(x => x.ActorId), Is.EqualTo(new[] { A, B }));
                     Assert.That(result.All(x => x.Accepted), Is.True);
+                    Assert.That(goals.Count, Is.EqualTo(2));
+                    Assert.That(goals[A].ShipCell, Is.Not.EqualTo(goals[B].ShipCell),
+                        "A group order must allocate distinct parking cells.");
                     Assert.That(one.IsMoving, Is.True);
                     Assert.That(two.IsMoving, Is.True);
                     root.transform.position = new Vector3(42f, 0f, -19f);
-                    for (int i = 0; i < 100 && (one.IsMoving || two.IsMoving); i++)
+                    for (int i = 0; i < 150 && (one.IsMoving || two.IsMoving); i++)
                     {
                         one.Tick(0.1f);
                         two.Tick(0.1f);
                     }
-                    Assert.That(one.LastReachedCell, Is.EqualTo(goal));
-                    Assert.That(two.LastReachedCell, Is.EqualTo(goal));
-                    Assert.That(one.transform.localPosition.x, Is.EqualTo(8.5f).Within(0.01f));
-                    Assert.That(two.transform.localPosition.x, Is.EqualTo(8.5f).Within(0.01f));
+                    Assert.That(one.LastReachedCell.RoomId, Is.EqualTo(Engine));
+                    Assert.That(two.LastReachedCell.RoomId, Is.EqualTo(Engine));
+                    Assert.That(one.LastReachedCell, Is.Not.EqualTo(two.LastReachedCell));
+                    Assert.That(one.transform.localPosition.x, Is.InRange(6.5f, 11.5f));
+                    Assert.That(two.transform.localPosition.x, Is.InRange(6.5f, 11.5f));
                     Assert.That(session.Revision, Is.EqualTo(originalRevision),
                         "Physical move presentation must not mutate canonical resources.");
+                }
+                finally { UnityEngine.Object.DestroyImmediate(root); }
+            }
+        }
+
+        [Test]
+        public void GroupGoalsNeverParkCrewOnDoorPortalEndpoints()
+        {
+            var root = new GameObject("G2-Ship");
+            try
+            {
+                var map = Map(true);
+                var one = Walker(root, "Crew-A", map, Cell(Bridge, 1, 2));
+                var two = Walker(root, "Crew-B", map, Cell(Bridge, 2, 2));
+                var oneProxy = one.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                oneProxy.SetActorId(A);
+                var twoProxy = two.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                twoProxy.SetActorId(B);
+                var selection = new TacticalSelectionController();
+                selection.SelectMultiple(new[] { A, B });
+                var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
+                    map, selection.SelectedActorIds, new[] { oneProxy, twoProxy },
+                    Cell(Engine, 0, 2));
+
+                Assert.That(goals.Count, Is.EqualTo(2));
+                Assert.That(goals[A].ShipCell, Is.Not.EqualTo(goals[B].ShipCell));
+                Assert.That(goals.Values.Any(x => map.IsPortalEndpoint(x.ShipCell)), Is.False,
+                    "Stopping on a single-cell door would block followers indefinitely.");
+                Assert.That(goals[A].ShipCell.RoomId, Is.EqualTo(Engine));
+                Assert.That(goals[B].ShipCell.RoomId, Is.EqualTo(Engine));
+            }
+            finally { UnityEngine.Object.DestroyImmediate(root); }
+        }
+
+        [Test]
+        public void GroupGoalsNeverTargetAnotherSelectedWalkersOccupiedCell()
+        {
+            using (var session = NewSession())
+            {
+                var root = new GameObject("G2-Ship");
+                try
+                {
+                    var map = Map(true);
+                    var one = Walker(root, "Crew-A", map, Cell(Bridge, 1, 1));
+                    var two = Walker(root, "Crew-B", map, Cell(Bridge, 2, 1));
+                    var oneProxy = one.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                    oneProxy.SetActorId(A);
+                    var twoProxy = two.gameObject.AddComponent<ShipCrewSelectionProxy>();
+                    twoProxy.SetActorId(B);
+                    var selection = new TacticalSelectionController();
+                    selection.SelectMultiple(new[] { A, B });
+                    var center = Cell(Bridge, 0, 1);
+                    var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
+                        map, selection.SelectedActorIds, new[] { oneProxy, twoProxy }, center);
+
+                    Assert.That(goals.Count, Is.EqualTo(2));
+                    Assert.That(goals[B].ShipCell, Is.Not.EqualTo(one.LastReachedCell),
+                        "A group goal must not send one actor into another selected actor's cell.");
+                    Assert.That(goals[A].ShipCell, Is.Not.EqualTo(two.LastReachedCell),
+                        "A group goal must not send one actor into another selected actor's cell.");
+                    var result = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
+                        session, selection, new Vector3(0.5f, 0f, 1.5f),
+                        PhysicalTheater.Ship, goals,
+                        new ICrewTheaterMoveExecutor[]
+                        {
+                            new ShipGridCrewExecutor(A, ShipScene, one),
+                            new ShipGridCrewExecutor(B, ShipScene, two)
+                        });
+                    Assert.That(result.All(x => x.Accepted), Is.True,
+                        "Every selected actor needs a non-conflicting parking goal.");
                 }
                 finally { UnityEngine.Object.DestroyImmediate(root); }
             }

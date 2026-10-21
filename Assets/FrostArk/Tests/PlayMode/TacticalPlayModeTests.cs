@@ -511,5 +511,94 @@ namespace FrostArk.Unity.Tests
             Assert.That(salvage.IsDepleted, Is.True, "Salvage in saved scene must be depleted after collection.");
             Assert.That(presenter.Read().Revision, Is.EqualTo(1), "WorldSession revision must advance in saved scene.");
         }
+
+        [UnityTest]
+        public IEnumerator Test10_PrimaryEmptyClick_DeselectsWithoutCancellingNavMeshOrder()
+        {
+            _commander.ClearSelection();
+            _commander.SelectActor(_protagonist.ActorId);
+            var destination = new Vector3(-2.5f, 0f, 4f);
+            Assert.That(_commander.IssueMoveOrder(destination), Is.True);
+            var issued = _commander.LastIssuedIntent;
+            var from = _protagonist.transform.position;
+
+            var blank = _camera.WorldToScreenPoint(new Vector3(0f, 0f, -6f));
+            Assert.That(_commander.ProcessPointerClick(blank), Is.False);
+            Assert.That(_commander.Selection.Count, Is.Zero);
+            Assert.That(_commander.LastIssuedIntent, Is.SameAs(issued),
+                "Deselect must not issue/erase a persistent player command.");
+
+            yield return new WaitForSeconds(0.25f);
+            Assert.That(FlatDistance(_protagonist.transform.position, from),
+                Is.GreaterThan(0.05f),
+                "The NavMesh order must continue after deselection.");
+            Assert.That(_protagonist.IsSelected, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator Test11_BoxSelection_AndContextGroupMove_ReuseNavMeshAgents()
+        {
+            _commander.ClearSelection();
+            var a = (Vector2)_camera.WorldToScreenPoint(
+                _protagonist.GetComponent<Collider>().bounds.center);
+            var b = (Vector2)_camera.WorldToScreenPoint(
+                _companion.GetComponent<Collider>().bounds.center);
+            var lo = Vector2.Min(a, b) - new Vector2(60f, 60f);
+            var hi = Vector2.Max(a, b) + new Vector2(60f, 60f);
+            Assert.That(_commander.ProcessBoxSelection(lo, hi), Is.EqualTo(2));
+            Assert.That(_protagonist.IsSelected && _companion.IsSelected, Is.True);
+            var startHero = _protagonist.transform.position;
+            var startCompanion = _companion.transform.position;
+
+            var target = _camera.WorldToScreenPoint(new Vector3(0f, 0f, -4f));
+            Assert.That(_commander.ProcessContextClick(target), Is.True,
+                "Right-click ground must command the selected NavMesh group.");
+            yield return new WaitForSeconds(0.25f);
+            Assert.That(FlatDistance(startHero, _protagonist.transform.position),
+                Is.GreaterThan(0.05f));
+            Assert.That(FlatDistance(startCompanion, _companion.transform.position),
+                Is.GreaterThan(0.05f));
+        }
+
+        [UnityTest]
+        public IEnumerator Test12_EmptyBox_ReleasesOnlySelection_NotExistingOrders()
+        {
+            _commander.SelectActor(_protagonist.ActorId);
+            Assert.That(_commander.IssueMoveOrder(new Vector3(-2.5f, 0f, 4f)),
+                Is.True);
+            var issued = _commander.LastIssuedIntent;
+            // An empty viewport rectangle is deliberately not a move command.
+            var count = _commander.ProcessBoxSelection(
+                new Vector2(-100f, -100f), new Vector2(-10f, -10f));
+            Assert.That(count, Is.Zero);
+            Assert.That(_commander.LastIssuedIntent, Is.SameAs(issued));
+            Assert.That(_protagonist.IsSelected, Is.False);
+            yield return new WaitForSeconds(0.25f);
+            Assert.That(_protagonist.Agent.hasPath, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator Test13_PrimarySelection_RejectsActorHiddenBySolidObstacle()
+        {
+            _commander.ClearSelection();
+            var collider = _protagonist.GetComponent<Collider>();
+            var center = collider.bounds.center;
+            var screenPoint = _camera.WorldToScreenPoint(center);
+            var ray = _camera.ScreenPointToRay(screenPoint);
+            var obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            obstacle.name = "TemporaryOccluder";
+            obstacle.transform.SetParent(_sceneRoot.transform, false);
+            obstacle.transform.position =
+                ray.GetPoint(Vector3.Distance(ray.origin, center) * 0.5f);
+            obstacle.transform.localScale = new Vector3(2f, 2f, 0.4f);
+            Physics.SyncTransforms();
+
+            Assert.That(_commander.ProcessPointerClick(screenPoint), Is.False);
+            Assert.That(_commander.Selection.Count, Is.Zero,
+                "Unit selection must not raycast through a solid wall.");
+            UnityEngine.Object.Destroy(obstacle);
+            yield return null;
+        }
+
     }
 }
