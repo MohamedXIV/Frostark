@@ -127,5 +127,36 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertTrue((root / "TacticalGroupDestinationAdapters.cs.meta").is_file())
 
 
+    def test_crew_agency_policy_and_ship_adapter_contract(self):
+        """Static import/connection proof; Unity behavior still requires G2/G3."""
+        core = ROOT / "Assets/FrostArk/Core/Crew"
+        unity = ROOT / "Assets/FrostArk/Unity"
+        policy = (core / "CrewAgencyPolicy.cs").read_text(encoding="utf-8")
+        coordinator = (unity / "ShipCrewAgencyCoordinator.cs").read_text(
+            encoding="utf-8"
+        )
+        bootstrap = (unity / "ShipTacticalSceneBootstrap.cs").read_text(
+            encoding="utf-8"
+        )
+        walker = (unity / "ShipGridWalker.cs").read_text(encoding="utf-8")
+        for path in [
+            core / "CrewAgencyPolicy.cs.meta",
+            unity / "ShipCrewAgencyCoordinator.cs.meta",
+            ROOT / "Assets/FrostArk/Tests/Editor/ShipCrewAgencyEditModeTests.cs.meta",
+        ]:
+            self.assertTrue(path.is_file(), str(path))
+        self.assertIn("CrewProvisionInteractionDiscovery.Find(world, crewId)", policy)
+        self.assertIn("WorldSession", coordinator)
+        self.assertIn("UseCrewProvisionInteractionCommand", coordinator)
+        self.assertIn("ClaimCrewInteractionCommand", coordinator)
+        self.assertIn("ReleaseCrewInteractionCommand", coordinator)
+        self.assertIn("RequestStopAtSafeCell()", coordinator)
+        self.assertIn("RequestStopAtSafeCell()", walker)
+        self.assertIn("agency.Configure(session, commander, _map)", bootstrap)
+        self.assertIn("agency.SetMap(_map)", bootstrap)
+        self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", coordinator)
+        self.assertIn("using FrostArk.Core.Save;", coordinator)
+
+
 if __name__ == "__main__":
     unittest.main()
