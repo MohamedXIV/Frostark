@@ -95,5 +95,29 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("scene.Commander.Selection.SelectMultiple(new[] { First, Second })", tests)
 
 
+    def test_cooperative_movement_wiring_and_import_guids(self):
+        """Static G0 wiring proof only; does not claim Unity G2/G3 PASS."""
+        root = ROOT / "Assets/FrostArk/Unity"
+        traffic = root / "ShipTrafficCoordinator.cs"
+        traffic_meta = root / "ShipTrafficCoordinator.cs.meta"
+        walker = (root / "ShipGridWalker.cs").read_text(encoding="utf-8")
+        controller = (root / "TacticalCommandController.cs").read_text(encoding="utf-8")
+        group = (root / "TacticalTheaterSelectionCommands.cs").read_text(
+            encoding="utf-8"
+        )
+        spatial = (ROOT / "Assets/FrostArk/Core/Ship/ShipSpatialMap.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertTrue(traffic.is_file())
+        self.assertRegex(guid(traffic_meta.read_text(encoding="utf-8")), r"^[a-f0-9]{32}$")
+        self.assertIn("class ShipTrafficCoordinator : MonoBehaviour", traffic.read_text(encoding="utf-8"))
+        self.assertIn("CanEnter(this, _lastReachedCell, nextCell)", walker)
+        self.assertIn("CanTraverseStraight", spatial)
+        self.assertIn("new[] {", spatial)
+        self.assertIn("MoveSelectedAssigned", controller)
+        self.assertIn("TacticalGroupGoalPlanner.Allocate", controller)
+        self.assertIn("public static class TacticalGroupGoalPlanner", group)
+
+
 if __name__ == "__main__":
     unittest.main()
