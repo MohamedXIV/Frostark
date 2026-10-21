@@ -103,3 +103,17 @@ Source validation after the first G1 path changes: automatic Core suite 297/297;
 - **Actual automatic GitHub CI on code commit `925e122337c6a5748d92565a078fba31f0e875d7`: PASS** (24/24 G0 static validation and 298/298 full Core NUnit; workflow [#39548789662](https://github.com/MohamedXIV/Frostark/actions/runs/39548789662), logs inspected). This is not a Unity Editor compile.
 - Expected Unity targeted suite is **30 EditMode + 2 PlayMode**: the baseline 26+2 on old head, plus three `ShipGridWalkerEditModeTests` (diagonal acceleration, stationary blocking, bounded traffic detour) and one `ShipRtsPointerBridgeEditModeTests` (shared stable group planner). No new Unity test results have yet been received on this batch.
 - The demo scene's IMGUI HUD/mouse logic is unchanged. Full multi-actor opposite-direction door yielding, starvation-free retry, safe recovery from mid-cell cancellation, #112 persistent order/Needs arbitration and full #114 shore/reentry validation are **not claimed delivered**.
+
+
+## Unity QA follow-up — 2026-10-21
+
+Unity agent reported testing exact source commit `46d5f51fa5638a59669963f69360bd81d1cb21a8` with Unity 6000.6.0f1:
+
+- Clean Unity compilation: 0 errors, 0 warnings.
+- EditMode: **67/67 passed**, including **32 movement tests**.
+- PlayMode: `ShipRtsDemoScenePlayModeTests` 1/1 and `ShipTheaterMovePlayModeTests` 1/1 passed.
+- Manual ship demo checks passed for stationary blocker, moving blocker, and bulkhead closure midway through transit followed by reopening. Four crew had four distinct final positions (`unique=4`, `minPair=1.00`), with no lingering reservations.
+- The agent's commit repairs safe mid-edge retreat while retaining incoming-cell reservations, and prevents assigned group destinations from occupying portal endpoints or another selected crew member's cell. Regression tests were added.
+- GitHub Core CI on the same commit independently passed: 24/24 G0 and 298/298 G1 ([workflow 39642939987](https://github.com/MohamedXIV/Frostark/actions/runs/39642939987)).
+
+These Unity results are **reported by the local testing agent**, while GitHub CI was checked separately. Remaining unverified: OS-level mouse / IMGUI button activation, device and standalone builds, shore multi-crew scene acceptance, and long-running head-on deadlock/starvation scenarios. This entry supersedes the earlier 'Unity not run' note for the original implementation batch; it does not complete issues #112, #113, or #114.
