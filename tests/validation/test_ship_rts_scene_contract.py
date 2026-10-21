@@ -122,6 +122,8 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("TacticalGroupDestinationAdapters.PlanShoreGoals", controller)
         self.assertIn("TacticalGroupGoalPlanner.Allocate", adapters)
         self.assertIn("public static class TacticalGroupGoalPlanner", group)
+        self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", group)
+        self.assertIn("using FrostArk.Core.Save;", group)
         self.assertTrue((root / "TacticalGroupDestinationAdapters.cs.meta").is_file())
 
 
