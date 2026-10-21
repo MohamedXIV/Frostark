@@ -24,6 +24,11 @@ namespace FrostArk.Unity
         private Vector3 _localPosition;
         private int _nextIndex;
         private float _speed;
+        private float _currentSpeed;
+        private const float Acceleration = 8f;
+        private const float Braking = 10f;
+
+        public float CurrentSpeed => _currentSpeed;
 
         public bool IsConfigured => _map != null;
         public bool IsMoving => _route != null && _nextIndex < _route.Count;
@@ -66,6 +71,7 @@ namespace FrostArk.Unity
             _nextIndex = 0;
             _localPosition = actual;
             _speed = speedMetersPerSecond;
+            _currentSpeed = 0f;
             LastError = null;
         }
 
@@ -103,9 +109,26 @@ namespace FrostArk.Unity
             }
             _orderedCell = goal;
             _route = path;
-            _nextIndex = path.Count > 1 ? 1 : path.Count;
+            _nextIndex = path.Count > 1 ? ChooseNextWaypoint(1) : path.Count;
+            if (!IsMoving) _currentSpeed = 0f;
             LastError = null;
             return true;
+        }
+
+        // Use the furthest unobstructed cell center IN THE CURRENT ROOM.
+        // Never skip a physical bulkhead portal or shortcut a module corner.
+        private int ChooseNextWaypoint(int startIndex)
+        {
+            if (_route == null || startIndex >= _route.Count) return startIndex;
+            int chosen = startIndex;
+            for (int i = startIndex; i < _route.Count; i++)
+            {
+                if (_route[i].RoomId != _lastReachedCell.RoomId ||
+                    !_map.CanTraverseStraight(_lastReachedCell, _route[i]))
+                    break;
+                chosen = i;
+            }
+            return chosen;
         }
 
         /// <summary>
@@ -128,6 +151,7 @@ namespace FrostArk.Unity
                 _route = null;
                 _nextIndex = 0;
                 LastError = "RouteInvalidated";
+                _currentSpeed = 0f;
                 return false;
             }
             var next = IsMoving ? updated.FindPath(_lastReachedCell, _orderedCell) :
@@ -138,13 +162,14 @@ namespace FrostArk.Unity
                 _route = null;
                 _nextIndex = 0;
                 LastError = "RouteInvalidated";
+                _currentSpeed = 0f;
                 return false;
             }
             _map = updated;
             if (IsMoving)
             {
                 _route = next;
-                _nextIndex = next.Count > 1 ? 1 : next.Count;
+                _nextIndex = next.Count > 1 ? ChooseNextWaypoint(1) : next.Count;
             }
             LastError = null;
             return true;
@@ -178,25 +203,46 @@ namespace FrostArk.Unity
                     _route = null;
                     _nextIndex = 0;
                     LastError = "RouteInvalidated";
+                    _currentSpeed = 0f;
                 }
                 else if (TryCenter(nextCell, out var nextPoint))
                 {
                     var before = _localPosition;
-                    _localPosition = Vector3.MoveTowards(before, nextPoint, _speed * deltaTime);
+                    // Accelerate on departure, brake toward the final arrival.
+                    // Keep intermediate waypoints fast; never overshoot.
+                    var remaining = Vector3.Distance(before, nextPoint);
+                    for (int i = _nextIndex + 1; i < _route.Count; i++)
+                    {
+                        if (TryCenter(_route[i - 1], out var a) &&
+                            TryCenter(_route[i], out var b))
+                            remaining += Vector3.Distance(a, b);
+                    }
+                    float desiredSpeed = Mathf.Min(_speed,
+                        Mathf.Sqrt(2f * Braking * remaining));
+                    _currentSpeed = Mathf.MoveTowards(_currentSpeed,
+                        desiredSpeed, Acceleration * deltaTime);
+                    _localPosition = Vector3.MoveTowards(before, nextPoint,
+                        _currentSpeed * deltaTime);
                     var direction = _localPosition - before;
                     if (direction.sqrMagnitude > 0.000001f)
                     {
                         var desired = Quaternion.LookRotation(
                             _shipRoot.TransformDirection(direction.normalized), _shipRoot.up);
                         transform.rotation = Quaternion.RotateTowards(transform.rotation,
-                            desired, 540f * deltaTime);
+                            desired, 360f * deltaTime);
                     }
                     if ((_localPosition - nextPoint).sqrMagnitude <= 0.000001f)
                     {
                         _localPosition = nextPoint;
                         _lastReachedCell = nextCell;
                         _nextIndex++;
-                        if (!IsMoving) _route = null;
+                        if (!IsMoving)
+                        {
+                            _route = null;
+                            _currentSpeed = 0f;
+                        }
+                        else
+                            _nextIndex = ChooseNextWaypoint(_nextIndex);
                     }
                 }
                 else
@@ -204,6 +250,7 @@ namespace FrostArk.Unity
                     _route = null;
                     _nextIndex = 0;
                     LastError = "MissingRoomOrigin";
+                    _currentSpeed = 0f;
                 }
             }
             transform.position = _shipRoot.TransformPoint(_localPosition);
