@@ -52,5 +52,30 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         )
 
 
+    def test_compile_blockers_from_first_real_unity_smoke_are_fixed(self):
+        """Static regression only; Unity 6000.6.0f1 must recompile separately."""
+        dispatch = (
+            ROOT / "Assets/FrostArk/Tests/Editor/CrewTheaterMoveDispatchEditModeTests.cs"
+        ).read_text(encoding="utf-8")
+        imported = (
+            ROOT / "Assets/FrostArk/Tests/Editor/ShipRtsDemoSceneEditModeTests.cs"
+        ).read_text(encoding="utf-8")
+        self.assertRegex(
+            dispatch,
+            r'private static readonly EntityId Engine\s*=\s*EntityId\.Parse\("room:engine"\)',
+        )
+        self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", imported)
+
+    def test_scene_imgui_overlay_consumes_world_pointer_input(self):
+        runtime = SCRIPT.read_text(encoding="utf-8")
+        tactical = (ROOT / "Assets/FrostArk/Unity/TacticalCommandController.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("_commander.SetPointerOverlayBlocker(IsPointerOverHud)", runtime)
+        self.assertIn("Screen.height - screenPoint.y", runtime)
+        self.assertIn("bool pointerOverUi = IsPointerBlocked(point)", tactical)
+        self.assertIn("(_isPointerOverSceneOverlay?.Invoke(screenPoint) ?? false)", tactical)
+
+
 if __name__ == "__main__":
     unittest.main()
