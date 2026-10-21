@@ -238,6 +238,30 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void SharedGroupGoalPlannerIsStableDistinctAndRejectsInsufficientSpace()
+        {
+            var actors = new[] { Second, First };
+            var candidates = new[] { 10, 11, 12 };
+            Func<EntityId, int, float?> reachable = (actor, goal) =>
+                goal == 12 ? (float?)null :
+                (actor == First ? Math.Abs(goal - 10) : Math.Abs(goal - 11));
+            var a = TacticalGroupGoalPlanner.Allocate(actors, candidates,
+                reachable, (x, y) => x == y, _ => 0f);
+            var b = TacticalGroupGoalPlanner.Allocate(actors.Reverse(), candidates,
+                reachable, (x, y) => x == y, _ => 0f);
+            Assert.That(a.Count, Is.EqualTo(2));
+            Assert.That(a[First], Is.EqualTo(10));
+            Assert.That(a[Second], Is.EqualTo(11));
+            Assert.That(b[First], Is.EqualTo(a[First]));
+            Assert.That(b[Second], Is.EqualTo(a[Second]));
+
+            var limited = TacticalGroupGoalPlanner.Allocate(actors,
+                new[] { 10 }, reachable, (x, y) => x == y, _ => 0f);
+            Assert.That(limited.Count, Is.EqualTo(1),
+                "If only one stop is free, do not assign two actors to it.");
+        }
+
+        [Test]
         public void ClosedDoorRejectsBridgeCrewAndAcceptsEngineCrewIndividually()
         {
             using (var scene = new Scene(false, secondInEngine: true))
