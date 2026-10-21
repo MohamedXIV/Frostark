@@ -271,7 +271,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(scene.Commander.ProcessContextClick(
                     scene.Screen(new Vector3(8.5f, 0f, 2.5f))), Is.True);
                 Assert.That(scene.Commander.LastTheaterMoveDispatch[First].Status,
-                    Is.EqualTo(CrewMoveDispatchStatus.ExecutorRejected));
+                    Is.EqualTo(CrewMoveDispatchStatus.DestinationUnavailable));
                 Assert.That(scene.Commander.LastTheaterMoveDispatch[Second].Accepted, Is.True);
                 Assert.That(scene.Commander.LastMoveDispatch[First], Is.False);
                 Assert.That(scene.Commander.LastMoveDispatch[Second], Is.True);
@@ -315,7 +315,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(scene.Commander.ProcessContextClick(
                     scene.Screen(new Vector3(8.5f, 0f, 2.5f))), Is.False);
                 Assert.That(scene.Commander.LastTheaterMoveDispatch[First].Status,
-                    Is.EqualTo(CrewMoveDispatchStatus.ExecutorRejected));
+                    Is.EqualTo(CrewMoveDispatchStatus.DestinationUnavailable));
             }
         }
         [Test]
@@ -344,7 +344,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(scene.Commander.ProcessContextClick(
                     scene.Screen(new Vector3(8.5f, 0f, 2.5f))), Is.False);
                 Assert.That(scene.Commander.LastTheaterMoveDispatch[First].Status,
-                    Is.EqualTo(CrewMoveDispatchStatus.ExecutorRejected));
+                    Is.EqualTo(CrewMoveDispatchStatus.DestinationUnavailable));
             }
         }
 
