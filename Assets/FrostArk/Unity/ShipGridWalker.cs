@@ -236,7 +236,7 @@ namespace FrostArk.Unity
                     _currentSpeed = 0f;
                 }
                 else if (_traffic != null && !_nextCellReserved &&
-                         !_traffic.CanEnter(this, nextCell))
+                         !_traffic.CanEnter(this, _lastReachedCell, nextCell))
                 {
                     LastError = "WaitingForTraffic";
                     _currentSpeed = 0f;
