@@ -28,6 +28,9 @@ namespace FrostArk.Unity
         private ShipTrafficCoordinator _traffic;
         private bool _nextCellReserved;
         private ShipGridCell _reservedCell;
+        private float _trafficWaitSeconds;
+        public bool HasIncomingReservation => _nextCellReserved;
+        public ShipGridCell IncomingReservation => _reservedCell;
 
         // Current and next-step occupancy are intentionally different from
         // the exclusive station/work-slot claim owned by canonical crew logic.
@@ -83,6 +86,7 @@ namespace FrostArk.Unity
             _speed = speedMetersPerSecond;
             _currentSpeed = 0f;
             _nextCellReserved = false;
+            _trafficWaitSeconds = 0f;
             _traffic = shipRoot.GetComponent<ShipTrafficCoordinator>();
             if (_traffic == null)
                 _traffic = shipRoot.gameObject.AddComponent<ShipTrafficCoordinator>();
@@ -133,6 +137,7 @@ namespace FrostArk.Unity
                 }
             }
             _orderedCell = goal;
+            _trafficWaitSeconds = 0f;
             _route = path;
             _nextIndex = path.Count > 1 ? ChooseNextWaypoint(1) : path.Count;
             if (!IsMoving) _currentSpeed = 0f;
@@ -240,11 +245,27 @@ namespace FrostArk.Unity
                 {
                     LastError = "WaitingForTraffic";
                     _currentSpeed = 0f;
+                    // Reconsider temporary agents at a bounded interval, not
+                    // each rendered frame. Preserve the accepted goal and
+                    // return explicit waiting if no occupied-cell detour exists.
+                    _trafficWaitSeconds += deltaTime;
+                    if (_trafficWaitSeconds >= 0.75f)
+                    {
+                        _trafficWaitSeconds = 0f;
+                        var alternate = _map.FindPath(_lastReachedCell, _orderedCell,
+                            _traffic.BlockedCellsExcept(this));
+                        if (alternate.Count > 1)
+                        {
+                            _route = alternate;
+                            _nextIndex = ChooseNextWaypoint(1);
+                        }
+                    }
                 }
                 else if (TryCenter(nextCell, out var nextPoint))
                 {
                     _nextCellReserved = true;
                     _reservedCell = nextCell;
+                    _trafficWaitSeconds = 0f;
                     LastError = null;
                     var before = _localPosition;
                     // Accelerate on departure, brake toward the final arrival.
