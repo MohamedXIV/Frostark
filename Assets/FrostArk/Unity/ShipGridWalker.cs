@@ -25,6 +25,15 @@ namespace FrostArk.Unity
         private int _nextIndex;
         private float _speed;
         private float _currentSpeed;
+        private ShipTrafficCoordinator _traffic;
+        private bool _nextCellReserved;
+        private ShipGridCell _reservedCell;
+
+        // Current and next-step occupancy are intentionally different from
+        // the exclusive station/work-slot claim owned by canonical crew logic.
+        public bool HoldsCell(ShipGridCell cell) =>
+            IsConfigured && (cell == _lastReachedCell ||
+                             (_nextCellReserved && cell == _reservedCell));
         private const float Acceleration = 8f;
         private const float Braking = 10f;
 
@@ -62,6 +71,7 @@ namespace FrostArk.Unity
             if (Vector3.Distance(expected, actual) > 0.1f)
                 throw new ArgumentException("Crew proxy must already be at its authored cell.");
 
+            if (_traffic != null) _traffic.Unregister(this);
             _shipRoot = shipRoot;
             _map = map;
             _roomOrigins = origins;
@@ -72,6 +82,11 @@ namespace FrostArk.Unity
             _localPosition = actual;
             _speed = speedMetersPerSecond;
             _currentSpeed = 0f;
+            _nextCellReserved = false;
+            _traffic = shipRoot.GetComponent<ShipTrafficCoordinator>();
+            if (_traffic == null)
+                _traffic = shipRoot.gameObject.AddComponent<ShipTrafficCoordinator>();
+            _traffic.Register(this);
             LastError = null;
         }
 
@@ -91,6 +106,16 @@ namespace FrostArk.Unity
             if (!IsConfigured)
             {
                 LastError = "NotConfigured";
+                return false;
+            }
+            if (_nextCellReserved)
+            {
+                LastError = "AwaitingSafeRestart";
+                return false; // Never redirect midway between reserved cells.
+            }
+            if (_traffic != null && !_traffic.CanPark(this, goal))
+            {
+                LastError = "DestinationOccupied";
                 return false;
             }
             var path = _map.FindPath(_lastReachedCell, goal);
@@ -120,6 +145,9 @@ namespace FrostArk.Unity
         private int ChooseNextWaypoint(int startIndex)
         {
             if (_route == null || startIndex >= _route.Count) return startIndex;
+            // Shared corridors reserve one cell/edge at a time. Use the
+            // smoothed long waypoint only when there are no other crew.
+            if (_traffic != null && _traffic.Count > 1) return startIndex;
             int chosen = startIndex;
             for (int i = startIndex; i < _route.Count; i++)
             {
@@ -152,6 +180,8 @@ namespace FrostArk.Unity
                 _nextIndex = 0;
                 LastError = "RouteInvalidated";
                 _currentSpeed = 0f;
+                // If physically between cells, keep the incoming cell
+                // reserved until a safe recovery, not free for ghosting.
                 return false;
             }
             var next = IsMoving ? updated.FindPath(_lastReachedCell, _orderedCell) :
@@ -205,8 +235,17 @@ namespace FrostArk.Unity
                     LastError = "RouteInvalidated";
                     _currentSpeed = 0f;
                 }
+                else if (_traffic != null && !_nextCellReserved &&
+                         !_traffic.CanEnter(this, nextCell))
+                {
+                    LastError = "WaitingForTraffic";
+                    _currentSpeed = 0f;
+                }
                 else if (TryCenter(nextCell, out var nextPoint))
                 {
+                    _nextCellReserved = true;
+                    _reservedCell = nextCell;
+                    LastError = null;
                     var before = _localPosition;
                     // Accelerate on departure, brake toward the final arrival.
                     // Keep intermediate waypoints fast; never overshoot.
@@ -235,6 +274,7 @@ namespace FrostArk.Unity
                     {
                         _localPosition = nextPoint;
                         _lastReachedCell = nextCell;
+                        _nextCellReserved = false;
                         _nextIndex++;
                         if (!IsMoving)
                         {
@@ -254,6 +294,11 @@ namespace FrostArk.Unity
                 }
             }
             transform.position = _shipRoot.TransformPoint(_localPosition);
+        }
+
+        private void OnDestroy()
+        {
+            if (_traffic != null) _traffic.Unregister(this);
         }
     }
 }
