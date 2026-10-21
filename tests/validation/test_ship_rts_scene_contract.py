@@ -77,5 +77,23 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("(_isPointerOverSceneOverlay?.Invoke(screenPoint) ?? false)", tactical)
 
 
+    def test_editmode_selection_visuals_are_bound_without_awake(self):
+        """Protect the real Unity smoke failure: 2 selected but proxy rings off."""
+        tactical = (ROOT / "Assets/FrostArk/Unity/TacticalCommandController.cs").read_text(
+            encoding="utf-8"
+        )
+        tests = (
+            ROOT / "Assets/FrostArk/Tests/Editor/ShipRtsPointerBridgeEditModeTests.cs"
+        ).read_text(encoding="utf-8")
+        self.assertIn("private void EnsureSelectionBinding()", tactical)
+        self.assertIn("_selectionController.SelectionChanged += OnSelectionChanged;", tactical)
+        self.assertIn("public void RegisterShipActor(ShipCrewSelectionProxy actor)", tactical)
+        self.assertIn(
+            "public void EditModeSelectionNotificationsUpdateRegisteredShipVisualsWithoutAwake()",
+            tests,
+        )
+        self.assertIn("scene.Commander.Selection.SelectMultiple(new[] { First, Second })", tests)
+
+
 if __name__ == "__main__":
     unittest.main()
