@@ -151,7 +151,12 @@ namespace FrostArk.Core.Ship
         // Orthogonal = 10, diagonal = 14. The extra four diagonals are
         // legal only when BOTH adjacent cardinal cells are walkable, so a
         // character never clips through a blocked module/bulkhead corner.
-        private IEnumerable<(ShipGridCell Cell, int Cost)> Neighbors(ShipGridCell from)
+        private bool Traversable(ShipGridCell cell, HashSet<ShipGridCell> temporarilyBlocked) =>
+            Walkable(cell) &&
+            (temporarilyBlocked == null || !temporarilyBlocked.Contains(cell));
+
+        private IEnumerable<(ShipGridCell Cell, int Cost)> Neighbors(
+            ShipGridCell from, HashSet<ShipGridCell> temporarilyBlocked)
         {
             foreach (var (dx, dy) in new[]
             {
@@ -160,18 +165,22 @@ namespace FrostArk.Core.Ship
             })
             {
                 var next = new ShipGridCell(from.RoomId, from.X + dx, from.Y + dy);
-                if (!Walkable(next)) continue;
+                if (!Traversable(next, temporarilyBlocked)) continue;
                 if (dx != 0 && dy != 0 &&
-                    (!Walkable(new ShipGridCell(from.RoomId, from.X + dx, from.Y)) ||
-                     !Walkable(new ShipGridCell(from.RoomId, from.X, from.Y + dy))))
+                    (!Traversable(new ShipGridCell(from.RoomId, from.X + dx, from.Y),
+                        temporarilyBlocked) ||
+                     !Traversable(new ShipGridCell(from.RoomId, from.X, from.Y + dy),
+                        temporarilyBlocked)))
                     continue;
                 yield return (next, dx != 0 && dy != 0 ? 14 : 10);
             }
             foreach (var portal in _portals)
             {
                 if (!portal.Open) continue;
-                if (portal.A == from && Walkable(portal.B)) yield return (portal.B, 10);
-                if (portal.B == from && Walkable(portal.A)) yield return (portal.A, 10);
+                if (portal.A == from && Traversable(portal.B, temporarilyBlocked))
+                    yield return (portal.B, 10);
+                if (portal.B == from && Traversable(portal.A, temporarilyBlocked))
+                    yield return (portal.A, 10);
             }
         }
 
@@ -231,9 +240,12 @@ namespace FrostArk.Core.Ship
             return c != 0 ? c : a.X.CompareTo(b.X);
         }
 
-        public IReadOnlyList<ShipGridCell> FindPath(ShipGridCell start, ShipGridCell goal)
+        public IReadOnlyList<ShipGridCell> FindPath(ShipGridCell start, ShipGridCell goal,
+            IEnumerable<ShipGridCell> temporarilyBlocked = null)
         {
-            if (!Walkable(start) || !Walkable(goal))
+            var blocked = temporarilyBlocked == null ? null :
+                new HashSet<ShipGridCell>(temporarilyBlocked);
+            if (!Walkable(start) || !Traversable(goal, blocked))
                 return Array.Empty<ShipGridCell>();
             if (start == goal) return Array.AsReadOnly(new[] { start });
             var open = new List<ShipGridCell> { start };
@@ -266,7 +278,7 @@ namespace FrostArk.Core.Ship
                     return Array.AsReadOnly(path.ToArray());
                 }
                 closed.Add(current);
-                foreach (var edge in Neighbors(current))
+                foreach (var edge in Neighbors(current, blocked))
                 {
                     var next = edge.Cell;
                     if (closed.Contains(next)) continue;
