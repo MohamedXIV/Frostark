@@ -44,13 +44,22 @@ namespace FrostArk.Unity
         private bool _simulateShipMotion;
         private float _bobClock;
         private GUIStyle _hudStyle;
+        private string _initializationError;
 
         public bool IsReady { get; private set; }
         public WorldSession Session => _session;
         public TacticalCommandController Commander => _commander;
         public ShipTacticalSceneBootstrap Bootstrap => _bootstrap;
 
-        private void Start() => BuildDemo();
+        private void Start()
+        {
+            try { BuildDemo(); }
+            catch (Exception ex)
+            {
+                _initializationError = ex.Message;
+                Debug.LogException(ex, this);
+            }
+        }
 
         /// <summary>Idempotent scene bootstrap; also callable by EditMode tests.</summary>
         public void BuildDemo()
@@ -352,7 +361,15 @@ namespace FrostArk.Unity
 
         private void OnGUI()
         {
-            if (!IsReady) return;
+            if (!IsReady)
+            {
+                if (!string.IsNullOrEmpty(_initializationError))
+                    GUI.Box(new Rect(12, 12, 760, 110),
+                        "FrostArk Ship RTS Demo could not initialize.\n" +
+                        _initializationError +
+                        "\nCheck Unity Console / assembly errors; scene is not validated yet.");
+                return;
+            }
             if (_hudStyle == null)
             {
                 _hudStyle = new GUIStyle(GUI.skin.label)
