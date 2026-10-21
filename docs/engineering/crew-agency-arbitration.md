@@ -1,6 +1,6 @@
 # E11 #112 — Crew agency vs player orders (first executable slice)
 
-**Status:** implementation IN PROGRESS on [Draft PR #119](https://github.com/MohamedXIV/Frostark/pull/119), stacked on Draft #116, **not merged**. Local G1/G2/G3 verification ran on 2026-10-22 (G2/G3 on Unity 6000.6.0f1); targeted agency and demo suites pass, with full-suite isolation failures documented below.
+**Status:** implementation IN PROGRESS on [Draft PR #119](https://github.com/MohamedXIV/Frostark/pull/119), stacked on Draft #116, **not merged**. Local G1/G2/G3 verification ran on 2026-10-22 (G2/G3 on Unity 6000.6.0f1); targeted agency/demo suites and both full local suites pass at this working tree. G4 desktop/device and real OS input remain unverified.
 **Design authority:** [Miro D09 Crew Agency](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875097), D03 Smart Interactions; issue [#112](https://github.com/MohamedXIV/Frostark/issues/112).
 
 ## Already authoritative — not duplicated
@@ -23,9 +23,8 @@ Local verification on 2026-10-22, Unity 6000.6.0f1:
 - G2: `ShipCrewAgencyEditModeTests` (6 cases) passed 6/6. Coverage includes selected restraint, real provision claim/use after a completed player move, safe-cell cancellation and claim release, emergency stocked vs empty, accepted player move superseding a claim, and empty-stock critical need.
 - G3: `ShipRtsDemoScenePlayModeTests` passed 2/2 against the checked-in demo, including selecting and moving across rooms and deselection mid-move.
 - Manual `ShipRtsDemo` QA: selected-move accepted and advancing; deselect did not cancel the accepted walk; closing a bulkhead mid-edge stopped at a safe boundary with `RouteInvalidated`, no canonical revision change, and no fake consumption. Screenshot captured at `Temp/pipeline-screenshots/crew-agency-manual.png`.
-- Full EditMode: 72/73 passed. `PackageSmokeTests.AddressablesLoadsAndReleasesConfiguredTextAsset` timed out at 180 seconds; this is unrelated to the agency slice and remains unisolated.
-- Full PlayMode: 25/26 passed. `CombatPlayModeTests.Test05_ArmorMitigation_MitigatesBallisticDamageInRealPhysics` took double damage (expected 875, got 750) in the full suite but passed alone after a forced reload; order-dependent test isolation remains unresolved.
-- No claim is made that the full suite is green or that desktop/device, real OS mouse/HUD activation, or on-stage provision interaction with saved stock has been proven.
+- Full EditMode: 73/73 passed, including the Addressables smoke test twice in the same Editor session. Full PlayMode: 26/26 passed after a clean domain reload, including `CombatPlayModeTests.Test05_ArmorMitigation_MitigatesBallisticDamageInRealPhysics` and `TacticalPlayModeTests.Test08_RealInputSystem_PointerClickInjected_DispatchesThroughUpdate`.
+- No claim is made that desktop/device, real OS mouse/HUD activation, or on-stage provision interaction with saved stock has been proven.
 
 ## Remaining #112 acceptance (do not mark issue complete)
 
@@ -37,17 +36,15 @@ Local verification on 2026-10-22, Unity 6000.6.0f1:
 
 ## Next dependency-ready implementation
 
-Resolve the unrelated full-suite isolation gates (Addressables smoke timeout and Combat Test05 order dependence), repeat G2/G3 at the exact committed head, then add **canonical pending player-order persistence and reentry reconciliation**, followed by authored duty/Rest/Work targets. Keep parent #116 and other stack PRs in Draft until independent scene acceptance gates are complete.
+Repeat G1/G2/G3 at the exact committed head after committing the Addressables test fix, then add **canonical pending player-order persistence and reentry reconciliation**, followed by authored duty/Rest/Work targets. Keep parent #116 and other stack PRs in Draft until independent scene acceptance gates are complete.
 
 
-## 2026-10-22 — full-suite armor test timing follow-up (new Unity result pending)
+## 2026-10-22 — full-suite isolation follow-up (resolved)
 
-On exact source `57a811423bd8fa164fb732a00a2ab8a4a0cf6497`, the Unity local agent reported **6/6** agency G2 tests, **2/2** checked-in demo G3 tests, **72/73** full EditMode (Addressables editor build smoke timed out at 180 seconds), and **25/26** full PlayMode (`CombatPlayModeTests.Test05`: expected 875 health but saw 750, passed separately). The agent reported Unity compilation with no errors and no main/merge changes.
+Earlier on `57a8114` the same suites reported 72/73 EditMode and 25/26 PlayMode. On `0da01cc`, after pulling commit `73d3c70`, the first post-pull `CombatPlayModeTests.Test05` failure was stale compiled test code rather than gameplay: the stack line referenced the old source, and an explicit `unity command recompile` followed by a run after compilation settled passed the test alone. The committed test asserts the first synchronous shot before FixedUpdate advances the 10 Hz auto-fire cooldown; it retains the real physics raycast, exact 125 damage and 875 health assertions. After a clean domain reload, full PlayMode passed **26/26**, including Test05 and the previously order-dependent `TacticalPlayModeTests.Test08`.
 
-Inspected source of `CombatPlayModeTests.Test05`, `TacticalActorProxy.AttackTarget`, `TacticalActorProxy.UpdateCombat` and `CombatTickRunner.FixedUpdate`: a direct clear-range attack executes its FIRST ballistic shot synchronously. The old test then waited 0.25 seconds, during which the independent 10 Hz combat-tick runner and auto-fire logic may legitimately fire a SECOND (also armor-mitigated) shot. Health 750 means two 125-damage shots; the test conflated first-shot armor mitigation with subsequent weapon cadence.
+`PackageSmokeTests.AddressablesLoadsAndReleasesConfiguredTextAsset` was then isolated with stage timing. `BootstrapSetup` took 72–304ms, `FastModeBuildData` 6–57ms with no error, and `InitializeAsync` 5–44ms with `Succeeded`; the timeout was entirely in `LoadAssetAsync` (56,499ms once, then 179,981ms with `status=None`). Frame diagnostics showed `unscaled=0.01` and `delayedActive=True`. Fast mode's `AssetDatabaseProvider` schedules the read through `DelayedActionManager`, which uses `Time.unscaledTime`; EditMode test time does not advance, so the delayed action never fires.
 
-The next code commit changes **only the PlayMode test** to assert immediately after the synchronous accepted attack before FixedUpdate advances the cooldown; it retains exact 125 damage and 875 health assertions, uses the same real physics raycast and does NOT weaken combat/game logic or the assertion. **This specific follow-up has NOT yet been run in Unity**. Run `CombatPlayModeTests.Test05` alone, then full 26 PlayMode tests after a proper domain reload; verify full suite genuinely reaches 26/26. If it still fails, collect actual output rather than modifying gameplay without evidence.
-
-`PackageSmokeTests.AddressablesLoadsAndReleasesConfiguredTextAsset` uses a `BuildScriptFastMode.BuildData` call and awaits Addressables initialization/load. Its reported **180s timeout is an unresolved test-runner/environment/content build failure**; no cause has yet been established and it has NOT been fixed. Capture which stage hangs and address independently after a clean Editor/domain reload. Do not count either full suite as PASS until confirmed.
+The fix is test-only in `Assets/Tests/Editor/PackageSmokeTests.cs`: set `settings.SimulatedLoadDelay = 0f` before `BuildData` and restore the previous value in `finally`; after initialization also apply zero delay to the live `AssetDatabaseProvider` so an already-initialized provider cannot retain the frozen-time delay. No Addressables settings asset is saved; only in-memory settings/provider delay is changed for this test. The test also calls `handle.Release()` directly so the local struct is invalidated; `Addressables.Release(handle)` passes the struct by value and cannot invalidate the caller's copy, so the old `handle.IsValid() == false` assertion could never pass. The smoke test passed twice in the same Editor session (0.36s and 0.23s), full EditMode passed **73/73**, and full `FrostArk.Core.Tests` passed **303/303** on the final working tree.
 
 #112 still requires saved pending orders/reentry, real staged provision and duty/work autonomy. The code-level original QA is valid but not a full release gate.
