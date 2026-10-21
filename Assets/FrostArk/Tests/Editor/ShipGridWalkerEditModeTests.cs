@@ -160,6 +160,41 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void TrafficReplanFindsOpenDetourAfterBoundedWaitNotEveryFrame()
+        {
+            var ship = new GameObject("G2-DetourShip");
+            try
+            {
+                var firstGo = new GameObject("G2-DetourCrew");
+                firstGo.transform.SetParent(ship.transform, false);
+                firstGo.transform.localPosition = new Vector3(0.5f, 0f, 2.5f);
+                var blockingGo = new GameObject("G2-StaticBlocker");
+                blockingGo.transform.SetParent(ship.transform, false);
+                blockingGo.transform.localPosition = new Vector3(1.5f, 0f, 2.5f);
+                var map = Map(true);
+                var mover = firstGo.AddComponent<ShipGridWalker>();
+                mover.Configure(ship.transform, map, Origins(), Cell(Bridge, 0, 2));
+                var blocker = blockingGo.AddComponent<ShipGridWalker>();
+                blocker.Configure(ship.transform, map, Origins(), Cell(Bridge, 1, 2));
+                Assert.That(mover.TryMoveTo(Cell(Bridge, 3, 2)), Is.True);
+                mover.Tick(0.25f);
+                Assert.That(mover.LastError, Is.EqualTo("WaitingForTraffic"));
+                Assert.That(firstGo.transform.localPosition.x, Is.EqualTo(0.5f).Within(0.001f));
+                mover.Tick(0.50f); // Bounded timeout recomputes around the occupied cell.
+                mover.Tick(0.40f); // Executes new detour; it must not use (1,2).
+                Assert.That(mover.LastError, Is.Null);
+                Assert.That(firstGo.transform.localPosition.z, Is.Not.EqualTo(2.5f).Within(0.01f));
+                Assert.That(blocker.LastReachedCell, Is.EqualTo(Cell(Bridge, 1, 2)));
+                Assert.That(map.Walkable(Cell(Bridge, 1, 2)), Is.True,
+                    "Transient crew occupation never changes immutable authored floor.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(ship);
+            }
+        }
+
+        [Test]
         public void ClosedDoorRejectsGroupTargetWithoutTeleporting()
         {
             var ship = new GameObject("G2-Ship");
