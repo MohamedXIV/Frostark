@@ -38,3 +38,16 @@ Local verification on 2026-10-22, Unity 6000.6.0f1:
 ## Next dependency-ready implementation
 
 Resolve the unrelated full-suite isolation gates (Addressables smoke timeout and Combat Test05 order dependence), repeat G2/G3 at the exact committed head, then add **canonical pending player-order persistence and reentry reconciliation**, followed by authored duty/Rest/Work targets. Keep parent #116 and other stack PRs in Draft until independent scene acceptance gates are complete.
+
+
+## 2026-10-22 — full-suite armor test timing follow-up (new Unity result pending)
+
+On exact source `57a811423bd8fa164fb732a00a2ab8a4a0cf6497`, the Unity local agent reported **6/6** agency G2 tests, **2/2** checked-in demo G3 tests, **72/73** full EditMode (Addressables editor build smoke timed out at 180 seconds), and **25/26** full PlayMode (`CombatPlayModeTests.Test05`: expected 875 health but saw 750, passed separately). The agent reported Unity compilation with no errors and no main/merge changes.
+
+Inspected source of `CombatPlayModeTests.Test05`, `TacticalActorProxy.AttackTarget`, `TacticalActorProxy.UpdateCombat` and `CombatTickRunner.FixedUpdate`: a direct clear-range attack executes its FIRST ballistic shot synchronously. The old test then waited 0.25 seconds, during which the independent 10 Hz combat-tick runner and auto-fire logic may legitimately fire a SECOND (also armor-mitigated) shot. Health 750 means two 125-damage shots; the test conflated first-shot armor mitigation with subsequent weapon cadence.
+
+The next code commit changes **only the PlayMode test** to assert immediately after the synchronous accepted attack before FixedUpdate advances the cooldown; it retains exact 125 damage and 875 health assertions, uses the same real physics raycast and does NOT weaken combat/game logic or the assertion. **This specific follow-up has NOT yet been run in Unity**. Run `CombatPlayModeTests.Test05` alone, then full 26 PlayMode tests after a proper domain reload; verify full suite genuinely reaches 26/26. If it still fails, collect actual output rather than modifying gameplay without evidence.
+
+`PackageSmokeTests.AddressablesLoadsAndReleasesConfiguredTextAsset` uses a `BuildScriptFastMode.BuildData` call and awaits Addressables initialization/load. Its reported **180s timeout is an unresolved test-runner/environment/content build failure**; no cause has yet been established and it has NOT been fixed. Capture which stage hangs and address independently after a clean Editor/domain reload. Do not count either full suite as PASS until confirmed.
+
+#112 still requires saved pending orders/reentry, real staged provision and duty/work autonomy. The code-level original QA is valid but not a full release gate.
