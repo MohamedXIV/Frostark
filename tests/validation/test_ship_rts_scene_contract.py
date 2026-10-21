@@ -115,8 +115,14 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("CanTraverseStraight", spatial)
         self.assertIn("new[] {", spatial)
         self.assertIn("MoveSelectedAssigned", controller)
-        self.assertIn("TacticalGroupGoalPlanner.Allocate", controller)
+        adapters = (root / "TacticalGroupDestinationAdapters.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("TacticalGroupDestinationAdapters.PlanShipGoals", controller)
+        self.assertIn("TacticalGroupDestinationAdapters.PlanShoreGoals", controller)
+        self.assertIn("TacticalGroupGoalPlanner.Allocate", adapters)
         self.assertIn("public static class TacticalGroupGoalPlanner", group)
+        self.assertTrue((root / "TacticalGroupDestinationAdapters.cs.meta").is_file())
 
 
 if __name__ == "__main__":
