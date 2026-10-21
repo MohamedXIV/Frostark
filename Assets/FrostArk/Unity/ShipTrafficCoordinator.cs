@@ -34,6 +34,19 @@ namespace FrostArk.Unity
             return true;
         }
 
+        public IReadOnlyCollection<ShipGridCell> BlockedCellsExcept(ShipGridWalker caller)
+        {
+            var blocked = new HashSet<ShipGridCell>();
+            foreach (var other in _walkers)
+            {
+                if (other == null || other == caller || !other.IsConfigured) continue;
+                blocked.Add(other.LastReachedCell);
+                if (other.HasIncomingReservation)
+                    blocked.Add(other.IncomingReservation);
+            }
+            return blocked;
+        }
+
         public bool CanEnter(ShipGridWalker caller, ShipGridCell from, ShipGridCell next)
         {
             // Own the crossing edge and prevent diagonal squeezing between
