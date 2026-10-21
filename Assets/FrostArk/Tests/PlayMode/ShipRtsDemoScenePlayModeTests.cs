@@ -87,6 +87,45 @@ namespace FrostArk.Unity.Tests
             Assert.That(demo.Session.Revision, Is.Zero);
         }
 
+        [UnityTest]
+        public IEnumerator SelectedCrewWaitsForPlayerAndDeselectDoesNotCancelAcceptedWalk()
+        {
+            var load = SceneManager.LoadSceneAsync("ShipRtsDemo", LoadSceneMode.Single);
+            Assert.That(load, Is.Not.Null);
+            yield return load;
+            yield return null;
+            var demo = UnityEngine.Object.FindFirstObjectByType<ShipRtsDemoRuntime>();
+            Assert.That(demo, Is.Not.Null);
+            Assert.That(demo.IsReady, Is.True);
+            var actor = UnityEngine.Object.FindObjectsByType<ShipCrewSelectionProxy>(
+                FindObjectsSortMode.None).First(a => a.ActorId.Value == "crew:demo:captain");
+            var agency = demo.Commander.GetComponent<ShipCrewAgencyCoordinator>();
+            Assert.That(agency, Is.Not.Null,
+                "Checked-in scene bootstrap must attach one ship crew agency coordinator.");
+            demo.Commander.SelectActor(actor.ActorId);
+            agency.Tick();
+            Assert.That(agency.LastDecision(actor.ActorId),
+                Is.EqualTo(FrostArk.Core.Crew.CrewAgencyDecisionKind.HoldForPlayerSelection));
+            Assert.That(demo.Commander.IssueShipMoveOrder(
+                new ShipGridCell(FrostArk.Core.World.EntityId.Parse(
+                    ShipRtsDemoRuntime.BridgeRoomId), 4, 1),
+                new Vector3(4.5f, 0f, 1.5f)), Is.True);
+            Assert.That(agency.HasActivePlayerMove(actor.ActorId), Is.True);
+            demo.Commander.ClearSelection();
+            agency.Tick();
+            Assert.That(actor.Walker.IsMoving, Is.True);
+            Assert.That(agency.HasActivePlayerMove(actor.ActorId), Is.True);
+            for (int frame = 0; frame < 240 && actor.Walker.IsMoving; frame++)
+                yield return null;
+            agency.Tick();
+            Assert.That(actor.Walker.IsMoving, Is.False);
+            Assert.That(actor.Walker.LastReachedCell.X, Is.EqualTo(4));
+            Assert.That(actor.Walker.LastReachedCell.Y, Is.EqualTo(1));
+            Assert.That(agency.HasActivePlayerMove(actor.ActorId), Is.False);
+            Assert.That(demo.Session.Revision, Is.Zero,
+                "Transient selection and physical walk cannot manufacture world commands.");
+        }
+
         [UnityTearDown]
         public IEnumerator RestoreStarterScene()
         {

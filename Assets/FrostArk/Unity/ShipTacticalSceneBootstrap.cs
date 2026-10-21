@@ -152,6 +152,12 @@ namespace FrostArk.Unity
                 binding.Actor.BindScene(checkpoint.SceneId);
                 commander.RegisterShipActor(binding.Actor);
             }
+            // One scene-local arbitration adapter reuses canonical crew state
+            // and the existing RTS commander; no autonomous duplicate clock.
+            var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
+            if (agency == null)
+                agency = commander.gameObject.AddComponent<ShipCrewAgencyCoordinator>();
+            agency.Configure(session, commander, _map);
             _session.Changed += OnWorldChanged;
         }
 
@@ -201,6 +207,8 @@ namespace FrostArk.Unity
             _map = BuildMap(layout);
             _layoutFingerprint = layout.Fingerprint();
             commander.SetShipSpatialMap(_map);
+            var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
+            if (agency != null) agency.SetMap(_map);
             foreach (var binding in crew)
                 if (binding != null && binding.Actor != null && binding.Actor.Walker != null)
                     binding.Actor.Walker.RebindMap(_map);
