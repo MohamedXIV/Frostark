@@ -35,17 +35,21 @@ namespace FrostArk.Core.Save
         private readonly ScheduledWorldEvent[] _pending;
         private readonly EntityId[] _reserved;
         private readonly ProceduralOverride[] _overrides;
+        private readonly PendingCrewMove[] _crewMoves;
 
         public WorldState State { get; }
         public uint Seed { get; }
         public PhysicalSceneCheckpoint SceneCheckpoint { get; }
         public IReadOnlyList<ProceduralOverride> ProceduralOverrides =>
             Array.AsReadOnly(_overrides);
+        public IReadOnlyList<PendingCrewMove> PendingCrewMoves =>
+            Array.AsReadOnly(_crewMoves);
 
         private SaveGameDto(WorldState state, uint seed,
             IEnumerable<ScheduledWorldEvent> pending, IEnumerable<EntityId> reserved,
             IEnumerable<ProceduralOverride> overrides,
-            PhysicalSceneCheckpoint sceneCheckpoint)
+            PhysicalSceneCheckpoint sceneCheckpoint,
+            IEnumerable<PendingCrewMove> crewMoves)
         {
             State = state ?? throw new ArgumentNullException(nameof(state));
             Seed = seed;
@@ -68,11 +72,26 @@ namespace FrostArk.Core.Save
                 list.Add(item);
             }
             _overrides = list.OrderBy(o => o.Id.Value, StringComparer.Ordinal).ToArray();
+            var moves = (crewMoves ?? Array.Empty<PendingCrewMove>()).ToArray();
+            var seenCrew = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var move in moves)
+            {
+                if (move == null || !seenCrew.Add(move.CrewId.Value) ||
+                    !state.HasCrew(move.CrewId) ||
+                    state.CrewDuty.Get(move.CrewId) == null ||
+                    state.CrewDuty.Get(move.CrewId).IsAway ||
+                    state.CrewDuty.Get(move.CrewId).Wounds >= 1000 ||
+                    !state.Layout.Rooms.Any(r => r.Id == move.ShipGoal.RoomId))
+                    throw new ArgumentException("Pending Move must belong to unique available ship crew in an authored room.",
+                        nameof(crewMoves));
+            }
+            _crewMoves = moves.OrderBy(m => m.CrewId.Value, StringComparer.Ordinal).ToArray();
         }
 
         public static SaveGameDto Capture(WorldState state, SimulationScheduler scheduler,
             IEnumerable<ProceduralOverride> overrides = null,
-            PhysicalSceneCheckpoint sceneCheckpoint = null)
+            PhysicalSceneCheckpoint sceneCheckpoint = null,
+            IEnumerable<PendingCrewMove> crewMoves = null)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
             if (scheduler == null) throw new ArgumentNullException(nameof(scheduler));
@@ -80,14 +99,15 @@ namespace FrostArk.Core.Save
                 throw new ArgumentException("The world state and scheduler must share the same authoritative minute.");
             return new SaveGameDto(state, scheduler.Seed,
                 scheduler.SnapshotPending(), scheduler.SnapshotReservedIds(),
-                overrides ?? Array.Empty<ProceduralOverride>(), sceneCheckpoint);
+                overrides ?? Array.Empty<ProceduralOverride>(), sceneCheckpoint, crewMoves);
         }
 
         internal static SaveGameDto Rehydrate(WorldState state, uint seed,
             IEnumerable<ScheduledWorldEvent> pending, IEnumerable<EntityId> reserved,
             IEnumerable<ProceduralOverride> overrides,
-            PhysicalSceneCheckpoint sceneCheckpoint = null) =>
-            new SaveGameDto(state, seed, pending, reserved, overrides, sceneCheckpoint);
+            PhysicalSceneCheckpoint sceneCheckpoint = null,
+            IEnumerable<PendingCrewMove> crewMoves = null) =>
+            new SaveGameDto(state, seed, pending, reserved, overrides, sceneCheckpoint, crewMoves);
 
         internal IReadOnlyList<ScheduledWorldEvent> SnapshotPending() =>
             Array.AsReadOnly(_pending);
