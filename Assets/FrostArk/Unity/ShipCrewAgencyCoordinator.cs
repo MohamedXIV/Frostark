@@ -120,6 +120,7 @@ namespace FrostArk.Unity
             if (selected && !emergency && !pending.CancelRequested)
             {
                 pending.CancelRequested = true;
+                _decisions[id] = CrewAgencyDecisionKind.HoldForPlayerSelection;
                 walker.RequestStopAtSafeCell();
             }
             var world = _session.Capture().State;
@@ -228,7 +229,11 @@ namespace FrostArk.Unity
                 if ((decision.Kind == CrewAgencyDecisionKind.SeekProvision ||
                      decision.Kind == CrewAgencyDecisionKind.EmergencyNeedsHandover) &&
                     decision.HasProvision && !activeOrder)
-                    TryBeginProvision(id, walker, decision.Provision);
+                {
+                    if (!TryBeginProvision(id, walker, decision.Provision) &&
+                        decision.Severity >= CrewMember.CriticalNeedAt)
+                        _decisions[id] = CrewAgencyDecisionKind.UnmetCriticalNeed;
+                }
             }
         }
 
