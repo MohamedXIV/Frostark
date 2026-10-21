@@ -76,8 +76,11 @@ namespace FrostArk.Unity
                 _playerMoveGoals[id] = actor.Walker.OrderedCell;
                 if (_provisions.TryGetValue(id, out var need))
                 {
-                    need.CancelRequested = true;
-                    actor.Walker.RequestStopAtSafeCell();
+                    // The accepted player route already supersedes the
+                    // autonomous activity. Release its reservation without
+                    // stopping the newly issued order.
+                    _provisions.Remove(id);
+                    ReleaseOwned(id, need.SlotId);
                 }
             }
         }

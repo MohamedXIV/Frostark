@@ -131,8 +131,6 @@ namespace FrostArk.Unity
 
             commander.SetSession(session);
             commander.SetShipSpatialMap(_map);
-            var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
-            if (agency != null) agency.SetMap(_map);
             foreach (var binding in crew)
             {
                 if (binding == null || binding.Actor == null)
@@ -209,6 +207,8 @@ namespace FrostArk.Unity
             _map = BuildMap(layout);
             _layoutFingerprint = layout.Fingerprint();
             commander.SetShipSpatialMap(_map);
+            var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
+            if (agency != null) agency.SetMap(_map);
             foreach (var binding in crew)
                 if (binding != null && binding.Actor != null && binding.Actor.Walker != null)
                     binding.Actor.Walker.RebindMap(_map);

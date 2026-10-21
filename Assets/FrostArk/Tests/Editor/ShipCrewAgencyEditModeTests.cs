@@ -189,6 +189,54 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void AcceptedPlayerMoveSupersedesProvisionAndReleasesItsClaim()
+        {
+            using (var f = new Fixture())
+            {
+                f.Agency.Tick();
+                Assert.That(f.Agency.HasPendingProvision(A), Is.True);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Slot),
+                    Is.Not.Null);
+
+                f.Commander.SelectActor(A);
+                Assert.That(f.Commander.IssueShipMoveOrder(C(2, 1),
+                    new Vector3(2.5f, 0f, 1.5f)), Is.True,
+                    "A player order must still accept at a safe route boundary.");
+                Assert.That(f.Walker.IsMoving, Is.True,
+                    "Issuing the player order must not stop the order it just accepted.");
+                Assert.That(f.Agency.HasPendingProvision(A), Is.False);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty, "Superseded autonomy must release its claim immediately.");
+                Assert.That(f.Session.Revision, Is.EqualTo(2),
+                    "Claim and release are both canonical commands.");
+
+                f.AdvanceWalk();
+                Assert.That(f.Walker.LastReachedCell, Is.EqualTo(C(2, 1)));
+                Assert.That(f.Session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, Water), Is.EqualTo(2),
+                    "An interrupted provision cannot spend stock.");
+                f.Agency.Tick();
+                Assert.That(f.Agency.HasActivePlayerMove(A), Is.False);
+                Assert.That(f.Agency.HasPendingProvision(A), Is.False);
+            }
+        }
+
+        [Test]
+        public void CriticalNeedWithEmptyStockStaysUnmetAndCreatesNoClaim()
+        {
+            using (var f = new Fixture(thirst: 900, stocked: false))
+            {
+                f.Agency.Tick();
+                Assert.That(f.Agency.LastDecision(A),
+                    Is.EqualTo(CrewAgencyDecisionKind.UnmetCriticalNeed));
+                Assert.That(f.Agency.HasPendingProvision(A), Is.False);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
+                Assert.That(f.Session.Revision, Is.Zero);
+            }
+        }
+
+        [Test]
         public void EmergencyCanPreemptPlayerMoveAtSafeBoundaryAndNeedsRealStock()
         {
             using (var f = new Fixture(thirst: 975))
