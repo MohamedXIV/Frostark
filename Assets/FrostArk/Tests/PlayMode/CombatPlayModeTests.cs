@@ -291,9 +291,12 @@ namespace FrostArk.Unity.Tests
             int reportedDamage = -1;
             _protagonist.OnTargetHit += (_, _, dmg) => reportedDamage = dmg;
 
-            _commander.IssueAttackOrder(_enemy);
-
-            yield return new WaitForSeconds(0.25f);
+            // AttackTarget fires the first verified ballistic shot synchronously
+            // when already in clear range. Assert THAT hit immediately. Waiting
+            // 0.25 seconds allows CombatTickRunner to advance weapon cooldown
+            // and correctly fire a SECOND shot on slower full-suite runs.
+            // This is a one-shot armor mitigation test, not an auto-fire test.
+            Assert.That(_commander.IssueAttackOrder(_enemy), Is.True);
 
             Assert.That(reportedDamage, Is.EqualTo(125), "250 damage should mitigate to 125 with 500 permille armor.");
             Assert.That(_enemy.CurrentHealth, Is.EqualTo(875), "Enemy health should be reduced by 125 (1000 -> 875).");
