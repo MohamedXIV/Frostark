@@ -81,6 +81,39 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void OpenRoomSmoothsDiagonalAndRampsSpeedWithoutDriftingFromShip()
+        {
+            var ship = new GameObject("G2-DiagonalShip");
+            var crew = new GameObject("G2-DiagonalCrew");
+            try
+            {
+                crew.transform.position = new Vector3(1.5f, 0f, 1.5f);
+                var walker = crew.AddComponent<ShipGridWalker>();
+                walker.Configure(ship.transform, Map(true), Origins(),
+                    Cell(Bridge, 1, 1), 3f);
+                Assert.That(walker.TryMoveTo(Cell(Bridge, 4, 4)), Is.True);
+                walker.Tick(0.05f);
+                var local = ship.transform.InverseTransformPoint(crew.transform.position);
+                Assert.That(local.x, Is.GreaterThan(1.5f));
+                Assert.That(local.z, Is.GreaterThan(1.5f),
+                    "Crew must move diagonally, not always along an L-shaped axis.");
+                Assert.That(Mathf.Abs(local.x - local.z), Is.LessThan(0.01f));
+                Assert.That(walker.CurrentSpeed, Is.GreaterThan(0f).And.LessThan(3f),
+                    "Departure must accelerate rather than instantly snap to full speed.");
+                for (int i = 0; i < 100 && walker.IsMoving; i++) walker.Tick(0.05f);
+                Assert.That(walker.IsMoving, Is.False);
+                Assert.That(walker.LastReachedCell, Is.EqualTo(Cell(Bridge, 4, 4)));
+                Assert.That(ship.transform.InverseTransformPoint(crew.transform.position).x,
+                    Is.EqualTo(4.5f).Within(0.002f));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(crew);
+                UnityEngine.Object.DestroyImmediate(ship);
+            }
+        }
+
+        [Test]
         public void ClosedDoorRejectsGroupTargetWithoutTeleporting()
         {
             var ship = new GameObject("G2-Ship");
