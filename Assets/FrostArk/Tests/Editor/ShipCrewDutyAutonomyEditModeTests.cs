@@ -24,6 +24,7 @@ namespace FrostArk.Unity.Tests
         private static readonly EntityId Work = EntityId.Parse("slot:duty:g2:work");
         private static readonly EntityId Rest = EntityId.Parse("slot:duty:g2:rest");
         private static readonly EntityId RepairJobId = EntityId.Parse("repair:duty:g2:job");
+        private static readonly EntityId BoilerFuel = EntityId.Parse("supply:fuel");
         private static ShipGridCell C(int x, int y) => new ShipGridCell(Room, x, y);
 
         private sealed class Setup : IDisposable
@@ -37,7 +38,7 @@ namespace FrostArk.Unity.Tests
             public ShipCrewDutyAutonomy Duties;
 
             public Setup(bool offShift = false, int fatigue = 0,
-                bool withRepairJob = false)
+                bool withRepairJob = false, bool withThermal = false)
             {
                 var layout = ShipLayoutState.Create(new[]
                 {
@@ -68,9 +69,18 @@ namespace FrostArk.Unity.Tests
                     new CrewInteractionSlot(Rest, Bed,
                         CrewInteractionVerb.Rest, 1, 0, 0)
                 }));
+                var thermal = withThermal ? ShipThermalState.Create(new[]
+                {
+                    new ThermalCompartment(Room, 1000, 20_000_000,
+                        0, 1000, 1000)
+                }, Array.Empty<ThermalConnection>(),
+                    new BoilerConfiguration(Room, 1, 10_000)) : null;
                 Session = new WorldSession(WorldState.Create(WorldMinute.Zero,
-                    Array.Empty<SupplyStock>(), new[] { Engineer },
-                    crewDuty: crew, layout: layout));
+                    withThermal ? new[] { new SupplyStock(BoilerFuel, 5) } :
+                        Array.Empty<SupplyStock>(),
+                    new[] { Engineer },
+                    crewDuty: crew, layout: layout, thermal: thermal),
+                    ambientMilliC: _ => 20_000);
                 Session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
                     Scene, EntityId.Parse("anchor:duty:g2:start")));
                 var map = ShipSpatialMap.Derive(layout,
@@ -114,6 +124,48 @@ namespace FrostArk.Unity.Tests
                 UnityEngine.Object.DestroyImmediate(Controller);
                 UnityEngine.Object.DestroyImmediate(Root);
                 Session.Dispose();
+            }
+        }
+
+        [Test]
+        public void BoilerHeatRequiresStaffedEngineerAtAuthoredWorkStation()
+        {
+            using (var f = new Setup(withThermal: true))
+            {
+                f.Duties.Tick();
+                Assert.That(f.Walker.IsMoving, Is.True);
+                var initialEnergy = f.Session.Capture().State.Thermal.TotalEnergy;
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.Thermal.TotalEnergy,
+                    Is.EqualTo(initialEnergy),
+                    "Travelling Engineering crew cannot produce observed boiler heat.");
+                Assert.That(f.Session.Capture().State.GetSupply(BoilerFuel), Is.EqualTo(5));
+
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.Thermal.TotalEnergy,
+                    Is.GreaterThan(initialEnergy));
+                Assert.That(f.Session.Capture().State.GetSupply(BoilerFuel), Is.EqualTo(4));
+
+                f.Commander.SelectActor(Engineer);
+                f.Duties.Tick();
+                var before = f.Session.Capture().State.Thermal.TotalEnergy;
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.Thermal.TotalEnergy,
+                    Is.EqualTo(before),
+                    "Explicit player selection interrupts physical Engineering.");
+                Assert.That(f.Session.Capture().State.GetSupply(BoilerFuel), Is.EqualTo(4));
+
+                f.Commander.ClearSelection();
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.Thermal.TotalEnergy,
+                    Is.GreaterThan(before));
+                Assert.That(f.Session.Capture().State.GetSupply(BoilerFuel), Is.EqualTo(3));
+                Assert.That(f.Session.Minute.Value, Is.EqualTo(4));
             }
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Economy;
@@ -86,7 +87,7 @@ namespace FrostArk.Core.Application
                 new ShipCrewMinuteSystem(() => _state, next => _state = next,
                     MayProduceAtWorldMinute),
                 new ShipThermalMinuteSystem(() => _state, next => _state = next,
-                    ambientMilliC ?? (_ => 0L)),
+                    ambientMilliC ?? (_ => 0L), MayProduceAtWorldMinute),
                 new WorkshopMinuteSystem(() => _state, next => _state = next),
                 new ShipTravelMinuteSystem(() => _state, next => _state = next)
             };
@@ -188,8 +189,20 @@ namespace FrostArk.Core.Application
         private bool MayProduceAtWorldMinute(EntityId crewId, DutyRole role,
             WorldMinute minute)
         {
-            if (!_shipWorkObservationActive || role != DutyRole.Repair)
-                return true; // Offscreen and non-repair systems are unchanged.
+            if (!_shipWorkObservationActive ||
+                (role != DutyRole.Repair && role != DutyRole.Engineering))
+                return true; // Offscreen and non-work systems are unchanged.
+            if (role == DutyRole.Engineering)
+            {
+                // Existing saves/ships may not author a physical Engineering
+                // Work station yet. Do not turn off their canonical boilers
+                // simply by loading the scene. Once authored, require presence.
+                var station = _state.GetCrewStation(crewId);
+                if (!station.IsValid || _state.Layout.GetModule(station) == null ||
+                    !_state.CrewDuty.Interactions.Slots.Any(slot =>
+                        slot.SourceId == station && slot.Verb == CrewInteractionVerb.Work))
+                    return true;
+            }
             if (!_workPresence.TryGetValue(crewId, out var proof) ||
                 proof.SampledAt.Value != minute.Value - 1)
                 return false;

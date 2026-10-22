@@ -282,6 +282,19 @@ namespace FrostArk.Core.Crew
             return null;
         }
 
+        /// <summary>
+        /// Read the SAME one-person-one-role staffed roster used by Tick.
+        /// The thermal reducer must gate the actual staffed Engineer, not
+        /// a nominal specialist or a second independently chosen worker.
+        /// </summary>
+        public EntityId StaffedCrewFor(DutyRole role, WorldMinute minute)
+        {
+            if (!Enum.IsDefined(typeof(DutyRole), role))
+                throw new ArgumentOutOfRangeException(nameof(role));
+            return Staff(minute).TryGetValue(role, out var member)
+                ? member.Id : default;
+        }
+
         public int EffectiveSkill(DutyRole role, WorldMinute minute)
         {
             if (!Enum.IsDefined(typeof(DutyRole), role))
