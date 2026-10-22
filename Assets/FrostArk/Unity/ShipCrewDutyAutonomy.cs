@@ -224,12 +224,13 @@ namespace FrostArk.Unity
                     }
                     // Only stationary real Work presence may authorize the
                     // next WorldClock minute's RepairJob productivity.
-                    if (activity.Verb == CrewInteractionVerb.Work &&
-                        !walker.IsMoving && !walker.IsRecovering &&
+                    if (!walker.IsMoving && !walker.IsRecovering &&
                         !walker.HasIncomingReservation &&
                         walker.LastReachedCell == activity.Arrival &&
                         walker.LastError == null)
-                        _session.ReportShipWorkPresence(id, activity.SlotId);
+                        _session.ReportShipDutyPresence(id, activity.SlotId);
+                    // Rest attestation can renew a legitimate bed lease,
+                    // never authorize Repair or Engineering productivity.
 
                     // Real Work/Rest occupancy spans many world-minutes. Keep
                     // the same canonical lease owner, renewing ONLY close to
