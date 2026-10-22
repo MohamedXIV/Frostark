@@ -35,6 +35,7 @@ namespace FrostArk.Unity
         private TacticalCommandController _commander;
         private ShipCrewAgencyCoordinator _agency;
         private ShipSpatialMap _map;
+        private EntityId _observedSceneId;
         private readonly Dictionary<EntityId, Activity> _activities =
             new Dictionary<EntityId, Activity>();
 
@@ -52,12 +53,33 @@ namespace FrostArk.Unity
             ShipCrewAgencyCoordinator agency, ShipSpatialMap map)
         {
             if (_commander != null) _commander.OrderIssued -= OnOrderIssued;
+            StopObservation();
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _commander = commander ?? throw new ArgumentNullException(nameof(commander));
             _agency = agency ?? throw new ArgumentNullException(nameof(agency));
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _activities.Clear();
+            var checkpoint = _session.SceneCheckpoint;
+            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship)
+                throw new InvalidOperationException("Physical duties require a canonical ship scene.");
+            _observedSceneId = checkpoint.SceneId;
+            _session.BeginShipWorkObservation(_observedSceneId);
             _commander.OrderIssued += OnOrderIssued;
+        }
+
+        private void StopObservation()
+        {
+            if (_session == null || !_observedSceneId.IsValid) return;
+            try
+            {
+                _session.EndShipWorkObservation(_observedSceneId);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Teardown may race session scope disposal; never submit a
+                // resource mutation from MonoBehaviour destruction.
+            }
+            _observedSceneId = default;
         }
 
         public void SetMap(ShipSpatialMap map) =>
@@ -78,6 +100,7 @@ namespace FrostArk.Unity
 
         private void End(EntityId id, Activity activity)
         {
+            _session.ClearShipWorkPresence(id);
             _activities.Remove(id);
             Release(id, activity.SlotId);
         }
@@ -88,8 +111,11 @@ namespace FrostArk.Unity
             // Event is raised AFTER a Move has actually been accepted and
             // dispatched. Don't stop the newly accepted player route!
             foreach (var id in intent.ActorIds)
+            {
+                _session.ClearShipWorkPresence(id);
                 if (_activities.TryGetValue(id, out var activity))
                     End(id, activity);
+            }
         }
 
         private bool TryStart(EntityId id, ShipGridWalker walker,
@@ -147,6 +173,8 @@ namespace FrostArk.Unity
             {
                 var id = actor.ActorId;
                 var walker = actor.Walker;
+                // Every frame re-attests only genuinely current presence.
+                _session.ClearShipWorkPresence(id);
                 var selected = _commander.Selection.IsSelected(id);
                 var hasPlayerOrder = _agency.HasActivePlayerMove(id);
                 var world = _session.Capture().State;
@@ -194,6 +222,15 @@ namespace FrostArk.Unity
                         End(id, activity);
                         continue;
                     }
+                    // Only stationary real Work presence may authorize the
+                    // next WorldClock minute's RepairJob productivity.
+                    if (activity.Verb == CrewInteractionVerb.Work &&
+                        !walker.IsMoving && !walker.IsRecovering &&
+                        !walker.HasIncomingReservation &&
+                        walker.LastReachedCell == activity.Arrival &&
+                        walker.LastError == null)
+                        _session.ReportShipWorkPresence(id, activity.SlotId);
+
                     // Real Work/Rest occupancy spans many world-minutes. Keep
                     // the same canonical lease owner, renewing ONLY close to
                     // its expiry. No new item, staff job or physical order is
@@ -249,6 +286,7 @@ namespace FrostArk.Unity
         private void OnDestroy()
         {
             if (_commander != null) _commander.OrderIssued -= OnOrderIssued;
+            StopObservation();
             // No commands during Unity destruction; claims are canonical with
             // WorldClock TTL, and the caller owns scene transit semantics.
         }
