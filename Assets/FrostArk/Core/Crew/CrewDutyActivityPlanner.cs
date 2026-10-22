@@ -40,6 +40,10 @@ namespace FrostArk.Core.Crew
             if (!world.HasCrew(crewId) || crew == null ||
                 crew.IsAway || crew.Wounds >= 1000)
                 return null;
+            // Needs outrank optional work/bed presentation even if this crew
+            // currently holds a Work claim that masks new provision offers.
+            if (Math.Max(crew.Hunger, crew.Thirst) >= CrewAgencyPolicy.SeekProvisionAt)
+                return null;
 
             var ownedClaim = world.CrewDuty.Interactions.ClaimForCrew(crewId);
             var staffed = world.CrewDuty.StaffedRoleFor(crewId, world.Minute);
