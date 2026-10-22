@@ -23,12 +23,12 @@ namespace FrostArk.Core.Tests
         private static readonly EntityId RestSlot = EntityId.Parse("slot:duty:rest");
 
         private static WorldSession Fixture(bool engineerAway = false,
-            int restingFatigue = 700)
+            int restingFatigue = 700, int engineerThirst = 0)
         {
             var crew = CrewState.Create(new[]
             {
                 new CrewMember(Engineer, DutyRole.Engineering, 950, 100, 0, 1440,
-                    isAway: engineerAway),
+                    isAway: engineerAway, thirst: engineerThirst),
                 new CrewMember(Watch, DutyRole.Watch, 850, 350, 0, 1440),
                 new CrewMember(Resting, DutyRole.Cooking, 850, 100, 720, 480,
                     fatigue: restingFatigue),
@@ -138,6 +138,21 @@ namespace FrostArk.Core.Tests
                 Assert.That(CrewDutyActivityPlanner.Find(
                     session.Capture().State, Engineer), Is.Null,
                     "An arbitrary stored assignment is not a physical GameObject.");
+            }
+        }
+
+        [Test]
+        public void ProvisionSeekingNeedSuppressesEvenAnAssignedStaffedWorkOffer()
+        {
+            using (var session = Fixture(engineerThirst: 700))
+            {
+                Assign(session, Engineer, Station);
+                var world = session.Capture().State;
+                Assert.That(world.CrewDuty.StaffedRoleFor(Engineer, world.Minute),
+                    Is.EqualTo(DutyRole.Engineering),
+                    "Canonical staff projections remain truthful.");
+                Assert.That(CrewDutyActivityPlanner.Find(world, Engineer), Is.Null,
+                    "Physical Work must yield to thirsty crew; no fabricated resource.");
             }
         }
 
