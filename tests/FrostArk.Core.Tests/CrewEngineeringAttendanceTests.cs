@@ -22,7 +22,7 @@ namespace FrostArk.Core.Tests
         private static readonly EntityId Fuel = EntityId.Parse("supply:fuel");
 
         private static WorldSession Session(bool assignStation = true,
-            bool staffedBackup = false)
+            bool staffedBackup = false, bool restSlot = false)
         {
             var crew = staffedBackup ? new[]
             {
@@ -36,7 +36,8 @@ namespace FrostArk.Core.Tests
             var duty = CrewState.Create(crew,
                 interactions: CrewInteractionState.Create(new[]
                 {
-                    new CrewInteractionSlot(Work, Station, CrewInteractionVerb.Work,
+                    new CrewInteractionSlot(Work, Station,
+                        restSlot ? CrewInteractionVerb.Rest : CrewInteractionVerb.Work,
                         -1, 0, 0)
                 }));
             var layout = ShipLayoutState.Create(
@@ -138,6 +139,100 @@ namespace FrostArk.Core.Tests
                 Assert.That(Energy(s), Is.GreaterThan(start),
                     "Legacy ship without an assigned physical Work station must not lose heating.");
                 Assert.That(s.Capture().State.GetSupply(Fuel), Is.EqualTo(19));
+            }
+        }
+
+        [Test]
+        public void FreshObservedSingleMinutesRenewSameWorkLeaseWithoutRepeatedCommands()
+        {
+            using (var s = Session())
+            {
+                s.BeginShipWorkObservation(Scene);
+                for (int minute = 1; minute <= 22; minute++)
+                {
+                    Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.True);
+                    s.Advance(1);
+                }
+                Assert.That(s.Minute.Value, Is.EqualTo(22));
+                var held = s.Capture().State.CrewDuty.Interactions.GetClaim(Work);
+                Assert.That(held, Is.Not.Null);
+                Assert.That(held.ExpiresAt.Value, Is.EqualTo(35),
+                    "Observed renewals occur at t10 and t20 only.");
+                Assert.That(s.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1));
+                Assert.That(s.Revision, Is.EqualTo(4),
+                    "One station assignment, one claim, two due renewals; " +
+                    "no per-minute revision churn.");
+                var snapshot = SaveCodec.TryDecode(SaveCodec.Encode(s.Capture()));
+                Assert.That(snapshot.Success, Is.True);
+                Assert.That(snapshot.Value.State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(35),
+                    "Renewed canonical lease survives SaveCodec without a new field.");
+            }
+        }
+
+        [Test]
+        public void OneRenderedFrameCannotRenewThroughTwentyMinuteTimeSkip()
+        {
+            using (var s = Session())
+            {
+                s.BeginShipWorkObservation(Scene);
+                s.Advance(11);
+                Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.True);
+                var previousRevision = s.Revision;
+                s.Advance(20);
+                Assert.That(s.Revision, Is.EqualTo(previousRevision),
+                    "No implicit lease commands inside batched fast-forward.");
+                Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Null, "A stale attended claim must expire normally.");
+                Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.False,
+                    "An expired claim cannot be revived with a stale report.");
+                Assert.That(s.Capture().State.GetSupply(Fuel), Is.EqualTo(19),
+                    "Only the first attested minute may produce on-stage heat.");
+                s.EndShipWorkObservation(Scene);
+                s.Advance(1);
+                Assert.That(s.Capture().State.GetSupply(Fuel), Is.EqualTo(18),
+                    "Offscreen heating resumes without an on-stage claim.");
+            }
+        }
+
+        [Test]
+        public void RestSlotCanRenewWhileWorkOnlyProofRemainsRejected()
+        {
+            using (var s = Session(restSlot: true))
+            {
+                s.BeginShipWorkObservation(Scene);
+                s.Advance(11);
+                Assert.That(s.ReportShipWorkPresence(Engineer, Work), Is.False,
+                    "Physical Rest is never productive Work attestation.");
+                Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.True);
+                s.Advance(1);
+                Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(26),
+                    "An occupied authored Rest claim may also renew.");
+                Assert.That(s.Revision, Is.EqualTo(3));
+                s.ClearShipWorkPresence(Engineer);
+                s.Advance(14);
+                Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Null, "Unattended Rest must not become a permanent bed lock.");
+            }
+        }
+
+        [Test]
+        public void AdvanceUntilOneWorldMinuteUsesSameRealLeaseBoundary()
+        {
+            using (var s = Session())
+            {
+                s.BeginShipWorkObservation(Scene);
+                s.Advance(11);
+                Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.True);
+                s.AdvanceUntil(s.Minute.Add(1));
+                Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(26));
+                Assert.That(s.Revision, Is.EqualTo(3));
+                s.AdvanceUntil(s.Minute.Add(2));
+                Assert.That(s.Revision, Is.EqualTo(3),
+                    "A bulk AdvanceUntil cannot reuse last frame for renewal.");
             }
         }
 
