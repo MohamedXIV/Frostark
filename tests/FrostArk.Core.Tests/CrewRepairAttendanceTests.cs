@@ -99,14 +99,31 @@ namespace FrostArk.Core.Tests
                 Assert.That(session.Minute.Value, Is.EqualTo(10));
                 Assert.That(session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
                     Is.Not.Null);
+                long before = Remaining(session);
+                int actualSkill = session.Capture().State.CrewDuty.Get(Worker)
+                    .SkillFor(DutyRole.Repair);
+                long oneMinuteWork = Math.Max(1, actualSkill / 100);
                 Assert.That(session.ReportShipWorkPresence(Worker, Work), Is.True);
                 session.Advance(2);
-                Assert.That(Remaining(session), Is.EqualTo(484),
-                    "Re-attestation allows exactly the next minute, not the following.");
-                session.EndShipWorkObservation(Scene);
-                session.Advance(4);
-                Assert.That(Remaining(session), Is.EqualTo(452),
-                    "After unloading, legacy offscreen repair simulation resumes.");
+                Assert.That(Remaining(session), Is.EqualTo(before - oneMinuteWork),
+                    "Re-attestation allows only the NEXT productive minute; true " +
+                    "fatigue-adjusted skill still determines work output.");
+
+                // Compare the same saved canonical world against a separately
+                // restored fully offscreen session. Do not hardcode repair
+                // rates that properly change with canonical fatigue.
+                var saved = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+                Assert.That(saved.Success, Is.True);
+                using (var offscreen = WorldSession.Restore(saved.Value))
+                {
+                    session.EndShipWorkObservation(Scene);
+                    session.Advance(4);
+                    offscreen.Advance(4);
+                    Assert.That(session.Capture().State.Fingerprint(),
+                        Is.EqualTo(offscreen.Capture().State.Fingerprint()),
+                        "After unload, the canonical world stays byte-deterministic " +
+                        "with offscreen Save/Restore behavior.");
+                }
             }
         }
 
