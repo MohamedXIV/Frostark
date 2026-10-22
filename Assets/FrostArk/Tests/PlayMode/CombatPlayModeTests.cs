@@ -159,9 +159,6 @@ namespace FrostArk.Unity.Tests
             bool attackIssued = _commander.IssueAttackOrder(_enemy);
             Assert.That(attackIssued, Is.True);
 
-            // Yield frames for raycast verification, fire command, and damage command
-            yield return new WaitForSeconds(0.2f);
-
             long ammoAfter = _session.Capture().State.Inventory.GetAmount(
                 InventoryContainer.Pack, TacticalSliceFixtureState.AmmoItemId);
             Assert.That(ammoAfter, Is.EqualTo(19), "One carried ammo round must be consumed from pack.");
