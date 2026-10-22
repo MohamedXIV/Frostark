@@ -209,6 +209,16 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
                         encoding="utf-8"
                     )
         self.assertIn("IEnumerator EngineerReturnsToAuthoredStation", playmode)
+        galley = (ROOT / "Assets/FrostArk/Tests/PlayMode"
+                  / "ShipCrewProvisionPlayModeTests.cs")
+        self.assertTrue(galley.is_file())
+        self.assertTrue((ROOT / "Assets/FrostArk/Tests/PlayMode"
+                         / "ShipCrewProvisionPlayModeTests.cs.meta").is_file())
+        galley_source = galley.read_text(encoding="utf-8")
+        self.assertIn("IEnumerator ThirstyCrewOnlyConsumesRealWaterAfterReachingAuthoredGalleySlot",
+                      galley_source)
+        self.assertIn("ShipCrewAgencyCoordinator", galley_source)
+        self.assertIn("InventoryContainer.ShipHold", galley_source)
         self.assertIn("UnityTest", playmode)
 
 
