@@ -233,7 +233,18 @@ namespace FrostArk.Unity
                      decision.Kind == CrewAgencyDecisionKind.EmergencyNeedsHandover) &&
                     decision.HasProvision && !activeOrder)
                 {
-                    if (!TryBeginProvision(id, walker, decision.Provision) &&
+                    // Offers are canonically ordered, but first in the list
+                    // can be unplaced, unreachable or temporarily occupied.
+                    // Don't strand thirsty crew when another real source works.
+                    bool started = false;
+                    foreach (var offer in CrewProvisionInteractionDiscovery.Find(
+                        _session.Capture().State, id))
+                    {
+                        if (!TryBeginProvision(id, walker, offer)) continue;
+                        started = true;
+                        break;
+                    }
+                    if (!started &&
                         decision.Severity >= CrewMember.CriticalNeedAt)
                         _decisions[id] = CrewAgencyDecisionKind.UnmetCriticalNeed;
                 }
