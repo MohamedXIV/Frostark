@@ -147,6 +147,14 @@ namespace FrostArk.Unity
                 var world = _session.Capture().State;
                 var policy = CrewAgencyPolicy.Evaluate(world, id,
                     selected, hasPlayerOrder);
+                var member = world.CrewDuty.Get(id);
+                // An owned Work/Rest claim can hide provision offers from the
+                // existing offer discovery. Yield that physical slot once a
+                // Need crosses the seek threshold, then let the ordinary
+                // provision coordinator discover/claim the freed slot next Tick.
+                bool priorityNeed = member != null &&
+                    Math.Max(member.Hunger, member.Thirst) >=
+                    CrewAgencyPolicy.SeekProvisionAt;
 
                 if (_activities.TryGetValue(id, out var activity))
                 {
@@ -159,7 +167,7 @@ namespace FrostArk.Unity
                         current.Value.Verb == activity.Verb;
 
                     if (!owned || !stillAssigned || selected || hasPlayerOrder ||
-                        walker.LastError != null)
+                        priorityNeed || walker.LastError != null)
                     {
                         activity.Cancelling = true;
                         if (walker.IsMoving || walker.IsRecovering)
@@ -185,7 +193,7 @@ namespace FrostArk.Unity
                 }
 
                 if (policy.Kind != CrewAgencyDecisionKind.ReadyForDuty ||
-                    walker.IsMoving || walker.IsRecovering ||
+                    priorityNeed || walker.IsMoving || walker.IsRecovering ||
                     _agency.HasPendingProvision(id))
                     continue;
 
