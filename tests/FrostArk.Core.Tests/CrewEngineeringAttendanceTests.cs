@@ -174,6 +174,45 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void ConsecutiveObservedMinutesDifferFromSingleTwentyMinuteSkip()
+        {
+            using (var live = Session())
+            using (var skipped = Session())
+            {
+                live.BeginShipWorkObservation(Scene);
+                skipped.BeginShipWorkObservation(Scene);
+                Assert.That(live.ReportShipWorkPresence(Engineer, Work), Is.True);
+                Assert.That(skipped.ReportShipWorkPresence(Engineer, Work), Is.True);
+
+                for (int minute = 1; minute <= 20; minute++)
+                {
+                    Assert.That(live.ReportShipWorkPresence(Engineer, Work), Is.True);
+                    live.Advance(1);
+                }
+                skipped.Advance(20);
+
+                Assert.That(live.Capture().State.GetSupply(Fuel), Is.EqualTo(0),
+                    "Twenty witnessed minutes must produce twenty boiler minutes.");
+                Assert.That(skipped.Capture().State.GetSupply(Fuel), Is.EqualTo(19),
+                    "One stale frame must produce only the next minute.");
+                Assert.That(live.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Not.Null);
+                Assert.That(live.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1));
+                Assert.That(skipped.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Null);
+                Assert.That(skipped.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
+                Assert.That(live.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(25));
+                Assert.That(live.Revision, Is.EqualTo(3),
+                    "Only the t10 due boundary falls inside the first twenty minutes.");
+                Assert.That(skipped.Revision, Is.EqualTo(2),
+                    "Fast-forward must not submit lease commands.");
+            }
+        }
+
+        [Test]
         public void OneRenderedFrameCannotRenewThroughTwentyMinuteTimeSkip()
         {
             using (var s = Session())
