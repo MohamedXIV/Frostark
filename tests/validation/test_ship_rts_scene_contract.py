@@ -258,5 +258,24 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
                          / "CrewRepairAttendanceTests.cs.meta").is_file())
 
 
+    def test_authored_engineering_thermal_attendance_uses_same_world_clock(self):
+        """The existing thermal system reads actual staffed engineer presence."""
+        core = ROOT / "Assets/FrostArk/Core"
+        crew = (core / "Crew/CrewState.cs").read_text(encoding="utf-8")
+        thermal = (core / "Ship/ShipThermalMinuteSystem.cs").read_text(
+            encoding="utf-8"
+        )
+        session = (core / "Application/WorldSession.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("StaffedCrewFor(DutyRole role", crew)
+        self.assertIn("StaffedCrewFor(DutyRole.Engineering, minute)", thermal)
+        self.assertIn("DutyRole.Engineering, minute)", thermal)
+        self.assertIn("MayProduceAtWorldMinute", session)
+        self.assertIn("slot.Verb == CrewInteractionVerb.Work", session)
+        self.assertTrue((ROOT / "tests/FrostArk.Core.Tests"
+                         / "CrewEngineeringAttendanceTests.cs.meta").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()
