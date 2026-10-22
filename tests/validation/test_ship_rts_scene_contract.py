@@ -277,5 +277,29 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
                          / "CrewEngineeringAttendanceTests.cs.meta").is_file())
 
 
+    def test_minute_bound_duty_lease_cannot_inflate_fastforward(self):
+        session = (ROOT / "Assets/FrostArk/Core/Application/WorldSession.cs").read_text(
+            encoding="utf-8"
+        )
+        adapter = (ROOT / "Assets/FrostArk/Unity/ShipCrewDutyAutonomy.cs").read_text(
+            encoding="utf-8"
+        )
+        g1 = (ROOT / "tests/FrostArk.Core.Tests"
+              / "CrewEngineeringAttendanceTests.cs").read_text(
+                  encoding="utf-8"
+              )
+        g2 = (ROOT / "Assets/FrostArk/Tests/Editor"
+              / "ShipCrewDutyAutonomyEditModeTests.cs").read_text(
+                  encoding="utf-8"
+              )
+        self.assertIn("public bool ReportShipDutyPresence", session)
+        self.assertIn("RenewFreshObservedDutyLeases()", session)
+        self.assertIn("if (minutes == 1) RenewFreshObservedDutyLeases()", session)
+        self.assertIn("RenewCrewDutySlotCommand", session)
+        self.assertIn("ReportShipDutyPresence", adapter)
+        self.assertIn("OneRenderedFrameCannotRenewThroughTwentyMinuteTimeSkip", g1)
+        self.assertIn("StationedRestingCrewUsesRealBedAttestation", g2)
+
+
 if __name__ == "__main__":
     unittest.main()
