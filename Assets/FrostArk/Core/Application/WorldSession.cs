@@ -22,6 +22,24 @@ namespace FrostArk.Core.Application
         private readonly WorldCommandBus _commands = new WorldCommandBus();
         private readonly IReadOnlyList<ProceduralOverride> _overrides;
         private PhysicalSceneCheckpoint _sceneCheckpoint;
+        // Transient, scene-scoped repair attendance. Never saved, and never
+        // substitutes for the canonical crew roster, staffed role or claim.
+        private bool _shipWorkObservationActive;
+        private EntityId _shipWorkScene;
+        private readonly Dictionary<EntityId, WorkPresence> _workPresence =
+            new Dictionary<EntityId, WorkPresence>();
+
+        private readonly struct WorkPresence
+        {
+            public readonly EntityId SlotId;
+            public readonly WorldMinute SampledAt;
+            public WorkPresence(EntityId slotId, WorldMinute sampledAt)
+            {
+                SlotId = slotId;
+                SampledAt = sampledAt;
+            }
+        }
+
         private bool _disposed;
 
         public event Action<WorldSessionChange> Changed;
@@ -65,7 +83,8 @@ namespace FrostArk.Core.Application
 
             var canonical = new List<IWorldMinuteSystem>
             {
-                new ShipCrewMinuteSystem(() => _state, next => _state = next),
+                new ShipCrewMinuteSystem(() => _state, next => _state = next,
+                    MayProduceAtWorldMinute),
                 new ShipThermalMinuteSystem(() => _state, next => _state = next,
                     ambientMilliC ?? (_ => 0L)),
                 new WorkshopMinuteSystem(() => _state, next => _state = next),
@@ -89,7 +108,98 @@ namespace FrostArk.Core.Application
         {
             Guard();
             checkpoint?.ValidateAgainst(_state);
+            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship ||
+                checkpoint.SceneId != _shipWorkScene)
+                StopShipWorkObservationInternal();
             _sceneCheckpoint = checkpoint;
+        }
+
+        /// <summary>
+        /// The loaded ship scene opts in to observed physical repair attendance.
+        /// When no loaded scene owns this observation, canonical offscreen
+        /// staffing behaves exactly as before (including bulk fast-forward).
+        /// </summary>
+        public void BeginShipWorkObservation(EntityId sceneId)
+        {
+            Guard();
+            if (!sceneId.IsValid || _sceneCheckpoint == null ||
+                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                _sceneCheckpoint.SceneId != sceneId)
+                throw new InvalidOperationException("Work observation needs the loaded canonical ship scene.");
+            _shipWorkObservationActive = true;
+            _shipWorkScene = sceneId;
+            _workPresence.Clear();
+        }
+
+        public void EndShipWorkObservation(EntityId sceneId)
+        {
+            Guard();
+            // A departing stale scene must never clear a replacement scene's
+            // newer authority, even if Unity teardown events arrive late.
+            if (_shipWorkObservationActive && _shipWorkScene == sceneId)
+                StopShipWorkObservationInternal();
+        }
+
+        private void StopShipWorkObservationInternal()
+        {
+            _shipWorkObservationActive = false;
+            _shipWorkScene = default;
+            _workPresence.Clear();
+        }
+
+        /// <summary>
+        /// Scene adapter calls ONLY after checking the physical walker is
+        /// stationary at the real authored Work slot. This proves presence
+        /// for ONE following WorldClock minute, not an arbitrary time skip.
+        /// Core additionally checks the canonical assignment, slot, owner,
+        /// availability and lease. No revision or event is generated.
+        /// </summary>
+        public bool ReportShipWorkPresence(EntityId crewId, EntityId slotId)
+        {
+            Guard();
+            if (!_shipWorkObservationActive || !_shipWorkScene.IsValid ||
+                _sceneCheckpoint == null ||
+                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                _sceneCheckpoint.SceneId != _shipWorkScene)
+                return false;
+            var member = _state.CrewDuty.Get(crewId);
+            var slot = _state.CrewDuty.Interactions.GetSlot(slotId);
+            var claim = _state.CrewDuty.Interactions.GetClaim(slotId);
+            if (member == null || ! _state.HasCrew(crewId) ||
+                member.IsAway || member.Wounds >= 1000 ||
+                slot == null || slot.Verb != CrewInteractionVerb.Work ||
+                _state.Layout.GetModule(slot.SourceId) == null ||
+                _state.GetCrewStation(crewId) != slot.SourceId ||
+                claim == null || claim.CrewId != crewId ||
+                claim.ExpiresAt <= _state.Minute)
+                return false;
+            _workPresence[crewId] = new WorkPresence(slotId, _state.Minute);
+            return true;
+        }
+
+        /// <summary>Selection, issued order, moving, cancelled/invalidated
+        /// activity or scene destruction revoke the transient physical proof.</summary>
+        public void ClearShipWorkPresence(EntityId crewId)
+        {
+            Guard();
+            _workPresence.Remove(crewId);
+        }
+
+        private bool MayProduceAtWorldMinute(EntityId crewId, DutyRole role,
+            WorldMinute minute)
+        {
+            if (!_shipWorkObservationActive || role != DutyRole.Repair)
+                return true; // Offscreen and non-repair systems are unchanged.
+            if (!_workPresence.TryGetValue(crewId, out var proof) ||
+                proof.SampledAt.Value != minute.Value - 1)
+                return false;
+            var slot = _state.CrewDuty.Interactions.GetSlot(proof.SlotId);
+            var claim = _state.CrewDuty.Interactions.GetClaim(proof.SlotId);
+            return slot != null && slot.Verb == CrewInteractionVerb.Work &&
+                _state.Layout.GetModule(slot.SourceId) != null &&
+                _state.GetCrewStation(crewId) == slot.SourceId &&
+                claim != null && claim.CrewId == crewId &&
+                claim.ExpiresAt > minute;
         }
 
         public WorldSessionView Read()
@@ -183,6 +293,7 @@ namespace FrostArk.Core.Application
         {
             if (_disposed) return;
             _disposed = true;
+            StopShipWorkObservationInternal();
             Changed = null;
         }
     }

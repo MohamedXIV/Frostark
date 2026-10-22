@@ -295,7 +295,8 @@ namespace FrostArk.Core.Crew
         /// head-of-queue repair work. Caller owns minute sequencing and commit.
         /// Wounds do not magically heal during ordinary sleep.
         /// </summary>
-        public CrewState Tick(WorldMinute minute)
+        public CrewState Tick(WorldMinute minute,
+            Func<EntityId, DutyRole, bool> mayProduce = null)
         {
             var staffed = Staff(minute);
             var occupied = new HashSet<string>(staffed.Values.Select(x => x.Id.Value),
@@ -315,7 +316,8 @@ namespace FrostArk.Core.Crew
             }).ToArray();
 
             var jobs = (RepairJob[])_jobs.Clone();
-            if (jobs.Length > 0 && staffed.TryGetValue(DutyRole.Repair, out var repairer))
+            if (jobs.Length > 0 && staffed.TryGetValue(DutyRole.Repair, out var repairer) &&
+                (mayProduce == null || mayProduce(repairer.Id, DutyRole.Repair)))
             {
                 long progress = Math.Max(1, repairer.SkillFor(DutyRole.Repair) / 100);
                 long remaining = jobs[0].RemainingWork - progress;

@@ -230,5 +230,33 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("UnityTest", playmode)
 
 
+    def test_repair_production_uses_authoritative_attendance_not_unity_clock(self):
+        """Only first-class session attendance gates RepairJob progress."""
+        core = ROOT / "Assets/FrostArk/Core"
+        scene = ROOT / "Assets/FrostArk/Unity/ShipCrewDutyAutonomy.cs"
+        editor = ROOT / "Assets/FrostArk/Tests/Editor/ShipCrewDutyAutonomyEditModeTests.cs"
+        state = (core / "Crew/CrewState.cs").read_text(encoding="utf-8")
+        minute = (core / "Crew/ShipCrewMinuteSystem.cs").read_text(
+            encoding="utf-8"
+        )
+        session = (core / "Application/WorldSession.cs").read_text(
+            encoding="utf-8"
+        )
+        adapter = scene.read_text(encoding="utf-8")
+        fixture = editor.read_text(encoding="utf-8")
+        self.assertIn("mayProduce(repairer.Id, DutyRole.Repair)", state)
+        self.assertIn("MayProduceAtWorldMinute", session)
+        self.assertIn("BeginShipWorkObservation", session)
+        self.assertIn("ReportShipWorkPresence", session)
+        self.assertIn("EndShipWorkObservation", session)
+        self.assertIn("_mayProduce(crewId, role, minute)", minute)
+        self.assertIn("ReportShipWorkPresence", adapter)
+        self.assertIn("ClearShipWorkPresence", adapter)
+        self.assertIn("StopObservation()", adapter)
+        self.assertIn("RepairProgressRequiresPhysicalWorkArrival", fixture)
+        self.assertTrue((ROOT / "tests/FrostArk.Core.Tests"
+                         / "CrewRepairAttendanceTests.cs.meta").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

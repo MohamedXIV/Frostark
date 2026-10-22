@@ -23,6 +23,7 @@ namespace FrostArk.Unity.Tests
         private static readonly EntityId Blueprint = EntityId.Parse("blueprint:duty:g2");
         private static readonly EntityId Work = EntityId.Parse("slot:duty:g2:work");
         private static readonly EntityId Rest = EntityId.Parse("slot:duty:g2:rest");
+        private static readonly EntityId RepairJobId = EntityId.Parse("repair:duty:g2:job");
         private static ShipGridCell C(int x, int y) => new ShipGridCell(Room, x, y);
 
         private sealed class Setup : IDisposable
@@ -35,7 +36,8 @@ namespace FrostArk.Unity.Tests
             public ShipCrewAgencyCoordinator Agency;
             public ShipCrewDutyAutonomy Duties;
 
-            public Setup(bool offShift = false, int fatigue = 0)
+            public Setup(bool offShift = false, int fatigue = 0,
+                bool withRepairJob = false)
             {
                 var layout = ShipLayoutState.Create(new[]
                 {
@@ -51,10 +53,15 @@ namespace FrostArk.Unity.Tests
                 });
                 var crew = CrewState.Create(new[]
                 {
-                    new CrewMember(Engineer, DutyRole.Engineering, 950, 200,
+                    new CrewMember(Engineer,
+                        withRepairJob ? DutyRole.Repair : DutyRole.Engineering,
+                        950, withRepairJob ? 0 : 200,
                         offShift ? 720 : 0, offShift ? 400 : 1440,
                         fatigue: fatigue)
-                }, interactions: CrewInteractionState.Create(new[]
+                }, withRepairJob ?
+                    new[] { new RepairJob(RepairJobId, 100) } :
+                    Array.Empty<RepairJob>(),
+                interactions: CrewInteractionState.Create(new[]
                 {
                     new CrewInteractionSlot(Work, Station,
                         CrewInteractionVerb.Work, -1, 0, 0),
@@ -107,6 +114,46 @@ namespace FrostArk.Unity.Tests
                 UnityEngine.Object.DestroyImmediate(Controller);
                 UnityEngine.Object.DestroyImmediate(Root);
                 Session.Dispose();
+            }
+        }
+
+        [Test]
+        public void RepairProgressRequiresPhysicalWorkArrivalThenStopsOnPlayerOverride()
+        {
+            using (var f = new Setup(withRepairJob: true))
+            {
+                f.Duties.Tick();
+                Assert.That(f.Duties.HasActivity(Engineer), Is.True);
+                Assert.That(f.Walker.IsMoving, Is.True);
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                    .RemainingWork, Is.EqualTo(100),
+                    "A repairer walking to their station cannot repair the hull.");
+
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                    .RemainingWork, Is.EqualTo(91),
+                    "Only verified physical attendance permits canonical progress.");
+
+                f.Commander.SelectActor(Engineer);
+                f.Duties.Tick();
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                    .RemainingWork, Is.EqualTo(91),
+                    "Selected actor's interrupted Work produces nothing.");
+
+                f.Commander.ClearSelection();
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                f.Session.Advance(1);
+                Assert.That(f.Session.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                    .RemainingWork, Is.EqualTo(82),
+                    "Reaching the real station again resumes the canonical job.");
+                Assert.That(f.Session.Minute.Value, Is.EqualTo(4));
             }
         }
 
