@@ -55,7 +55,7 @@ namespace FrostArk.Unity.Tests
                 {
                     new CrewMember(Engineer,
                         withRepairJob ? DutyRole.Repair : DutyRole.Engineering,
-                        950, 200,
+                        950, withRepairJob ? 0 : 200,
                         offShift ? 720 : 0, offShift ? 400 : 1440,
                         fatigue: fatigue)
                 }, withRepairJob ?
