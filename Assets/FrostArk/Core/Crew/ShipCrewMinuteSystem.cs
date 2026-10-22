@@ -12,13 +12,16 @@ namespace FrostArk.Core.Crew
     {
         private readonly Func<WorldState> _read;
         private readonly Action<WorldState> _commit;
+        private readonly Func<EntityId, DutyRole, WorldMinute, bool> _mayProduce;
         public SimulationPhase Phase => SimulationPhase.Crew;
         public string StableKey => "ship:crew";
 
-        public ShipCrewMinuteSystem(Func<WorldState> read, Action<WorldState> commit)
+        public ShipCrewMinuteSystem(Func<WorldState> read, Action<WorldState> commit,
+            Func<EntityId, DutyRole, WorldMinute, bool> mayProduce = null)
         {
             _read = read ?? throw new ArgumentNullException(nameof(read));
             _commit = commit ?? throw new ArgumentNullException(nameof(commit));
+            _mayProduce = mayProduce;
         }
 
         public void Tick(WorldMinute minute)
@@ -29,7 +32,9 @@ namespace FrostArk.Core.Crew
             if (current.CrewDuty.Members.Count == 0 &&
                 current.CrewDuty.RepairJobs.Count == 0)
                 return;
-            _commit(current.WithCrewTick(minute, current.CrewDuty.Tick(minute)));
+            _commit(current.WithCrewTick(minute, current.CrewDuty.Tick(minute,
+                _mayProduce == null ? null :
+                    (crewId, role) => _mayProduce(crewId, role, minute))));
         }
     }
 }
