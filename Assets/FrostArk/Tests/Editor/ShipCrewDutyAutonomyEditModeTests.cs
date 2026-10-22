@@ -249,6 +249,66 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void SceneReentryResumesSameValidWorkClaimWithoutSecondWorldCommand()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                Assert.That(f.Duties.HasActivity(Engineer), Is.True);
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1));
+
+                // Simulate a new physical scene binding: current interpolation
+                // is NOT a save checkpoint. Reconstruct at the known safe spawn.
+                f.Walker.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                var map = ShipSpatialMap.Derive(f.Session.Capture().State.Layout,
+                    Array.Empty<ShipModuleSpatialProfile>(),
+                    Array.Empty<ShipRoomPortal>());
+                f.Walker.Configure(f.Root.transform, map,
+                    new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                    C(1, 1), 4f);
+                f.Duties.Configure(f.Session, f.Commander, f.Agency, map);
+                Assert.That(f.Duties.HasActivity(Engineer), Is.False);
+
+                f.Duties.Tick();
+                Assert.That(f.Duties.HasActivity(Engineer), Is.True);
+                Assert.That(f.Session.Revision, Is.EqualTo(2),
+                    "A persisted valid claim must be adopted, not re-issued.");
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1), "Exactly one canonical work slot remains claimed.");
+            }
+        }
+
+        [Test]
+        public void SelectedActorOnSceneReentryReleasesStaleUntrackedWorkClaim()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+
+                f.Walker.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                var map = ShipSpatialMap.Derive(f.Session.Capture().State.Layout,
+                    Array.Empty<ShipModuleSpatialProfile>(),
+                    Array.Empty<ShipRoomPortal>());
+                f.Walker.Configure(f.Root.transform, map,
+                    new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                    C(1, 1), 4f);
+                f.Duties.Configure(f.Session, f.Commander, f.Agency, map);
+                f.Commander.SelectActor(Engineer);
+                f.Duties.Tick();
+                Assert.That(f.Duties.HasActivity(Engineer), Is.False);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty, "Orphaned physical Work claim must not block the next task.");
+                Assert.That(f.Session.Revision, Is.EqualTo(3));
+            }
+        }
+
+        [Test]
         public void OffShiftExhaustionUsesAuthoredRestSlotAndOnlyWorldClockRestoresFatigue()
         {
             using (var f = new Setup(offShift: true, fatigue: 700))
