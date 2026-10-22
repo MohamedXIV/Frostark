@@ -314,6 +314,71 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void SavedPlayerMoveCompletesBeforeThirstyCrewClaimsAndUsesRealWater()
+        {
+            using (var f = new Fixture(thirst: 800))
+            {
+                f.Commander.SelectActor(A);
+                Assert.That(f.Commander.IssueShipMoveOrder(C(2, 1),
+                    new Vector3(2.5f, 0f, 1.5f)), Is.True);
+                f.Commander.ClearSelection();
+                f.Walker.Tick(0.08f);
+                Assert.That(f.Walker.HasIncomingReservation, Is.True);
+                var decoded = SaveCodec.TryDecode(SaveCodec.Encode(f.Session.Capture()));
+                Assert.That(decoded.Success, Is.True);
+                Assert.That(decoded.Value.PendingCrewMoves.Count, Is.EqualTo(1));
+
+                using (var restored = WorldSession.Restore(decoded.Value))
+                {
+                    var map = ShipSpatialMap.Derive(restored.Capture().State.Layout,
+                        Array.Empty<ShipModuleSpatialProfile>(),
+                        Array.Empty<ShipRoomPortal>());
+                    f.Walker.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                    f.Walker.Configure(f.Root.transform, map,
+                        new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                        C(1, 1), 4f);
+                    f.Commander.SetSession(restored);
+                    f.Agency.Configure(restored, f.Commander, map);
+                    Assert.That(f.Agency.HasActivePlayerMove(A), Is.True);
+
+                    f.Agency.Tick();
+                    Assert.That(f.Agency.HasPendingProvision(A), Is.False,
+                        "Accepted player Move outranks unrelated thirsty self-direction.");
+                    Assert.That(restored.Capture().State.CrewDuty.Interactions.Claims,
+                        Is.Empty);
+                    Assert.That(restored.Capture().State.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, Water), Is.EqualTo(2));
+
+                    f.AdvanceWalk();
+                    f.Agency.Tick();
+                    Assert.That(f.Walker.LastReachedCell, Is.EqualTo(C(2, 1)));
+                    Assert.That(f.Agency.HasActivePlayerMove(A), Is.False);
+                    Assert.That(restored.PendingCrewMoves, Is.Empty,
+                        "The accepted player intent completes exactly once.");
+                    Assert.That(f.Agency.HasPendingProvision(A), Is.True,
+                        "Only after accepted Move completes can Needs choose a goal.");
+                    Assert.That(restored.Capture().State.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, Water), Is.EqualTo(2),
+                        "Approach movement never consumes stock.");
+
+                    f.AdvanceWalk();
+                    f.Agency.Tick();
+                    Assert.That(f.Agency.HasPendingProvision(A), Is.False);
+                    Assert.That(restored.Capture().State.Inventory.GetAmount(
+                        InventoryContainer.ShipHold, Water), Is.EqualTo(1));
+                    Assert.That(restored.Capture().State.CrewDuty.Get(A).Thirst,
+                        Is.EqualTo(200));
+                    Assert.That(restored.Capture().State.CrewDuty.Interactions.Claims,
+                        Is.Empty);
+                    Assert.That(restored.Revision, Is.EqualTo(2),
+                        "One real provision claim and one Use; no replayed Move command.");
+                    f.Agency.Tick();
+                    Assert.That(restored.Revision, Is.EqualTo(2));
+                }
+            }
+        }
+
+        [Test]
         public void EmergencyCanPreemptPlayerMoveAtSafeBoundaryAndNeedsRealStock()
         {
             using (var f = new Fixture(thirst: 975))
