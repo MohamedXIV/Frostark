@@ -218,6 +218,14 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("IEnumerator ThirstyCrewOnlyConsumesRealWaterAfterReachingAuthoredGalleySlot",
                       galley_source)
         self.assertIn("ShipCrewAgencyCoordinator", galley_source)
+        agency = (unity / "ShipCrewAgencyCoordinator.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("foreach (var offer in CrewProvisionInteractionDiscovery.Find(", agency)
+        fixture = (editor / "ShipCrewAgencyEditModeTests.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("UnplacedFirstDrinkOfferFallsBackToReachableGalley", fixture)
         self.assertIn("InventoryContainer.ShipHold", galley_source)
         self.assertIn("UnityTest", playmode)
 
