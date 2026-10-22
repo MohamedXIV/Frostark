@@ -263,6 +263,20 @@ namespace FrostArk.Core.Crew
             return assigned;
         }
 
+        /// <summary>
+        /// Read-only projection of the EXACT same deterministic staffed role
+        /// used by Tick and EffectiveSkill. Never infer a physical work task
+        /// from a character's nominal role when off-shift, replacing another
+        /// specialist or recovering. Does not tick a second duty scheduler.
+        /// </summary>
+        public DutyRole? StaffedRoleFor(EntityId crewId, WorldMinute minute)
+        {
+            if (!crewId.IsValid) return null;
+            foreach (var pair in Staff(minute))
+                if (pair.Value.Id == crewId) return pair.Key;
+            return null;
+        }
+
         public int EffectiveSkill(DutyRole role, WorldMinute minute)
         {
             if (!Enum.IsDefined(typeof(DutyRole), role))
