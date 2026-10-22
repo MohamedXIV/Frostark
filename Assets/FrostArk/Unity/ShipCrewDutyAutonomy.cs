@@ -167,7 +167,9 @@ namespace FrostArk.Unity
                         current.Value.Verb == activity.Verb;
 
                     if (!owned || !stillAssigned || selected || hasPlayerOrder ||
-                        priorityNeed || walker.LastError != null)
+                        priorityNeed ||
+                        (walker.LastError != null &&
+                         walker.LastError != "WaitingForTraffic"))
                     {
                         activity.Cancelling = true;
                         if (walker.IsMoving || walker.IsRecovering)
