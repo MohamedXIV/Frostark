@@ -403,11 +403,17 @@ namespace FrostArk.Unity.Tests
             InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
             InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
 
+            Mouse testMouse = null;
+            bool mouseWasEnabled = true;
             try
             {
                 // Ensure InputSystem Mouse device exists
                 var mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
                 Assert.That(mouse, Is.Not.Null, "Input System Mouse device must be present.");
+                testMouse = mouse;
+                mouseWasEnabled = mouse.enabled;
+                if (!mouse.enabled)
+                    InputSystem.EnableDevice(mouse);
 
                 // Queue pointer position update
                 using (DeltaStateEvent.From(mouse.position, out var posEvent))
@@ -432,7 +438,12 @@ namespace FrostArk.Unity.Tests
                     mouse.leftButton.WriteValueIntoEvent(0f, releaseEvent);
                     InputSystem.QueueEvent(releaseEvent);
                 }
-                yield return null;
+                float deadline = Time.realtimeSinceStartup + 1f;
+                while (!_commander.Selection.IsSelected(_protagonist.ActorId) &&
+                       Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
 
                 // Protagonist must be selected through the real Update() -> Input System path
                 Assert.That(_commander.Selection.Count, Is.EqualTo(1), "Real pointer press must select protagonist via Update().");
@@ -443,6 +454,13 @@ namespace FrostArk.Unity.Tests
             {
                 InputSystem.settings.editorInputBehaviorInPlayMode = prevBehavior;
                 InputSystem.settings.backgroundBehavior = prevBackground;
+                if (testMouse != null && testMouse.enabled != mouseWasEnabled)
+                {
+                    if (mouseWasEnabled)
+                        InputSystem.EnableDevice(testMouse);
+                    else
+                        InputSystem.DisableDevice(testMouse);
+                }
             }
         }
 
