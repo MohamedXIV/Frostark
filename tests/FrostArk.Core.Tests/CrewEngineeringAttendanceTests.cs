@@ -31,7 +31,9 @@ namespace FrostArk.Core.Tests
                 new CrewMember(Watch, DutyRole.Watch, 850, 600, 0, 1440)
             } : new[]
             {
-                new CrewMember(Engineer, DutyRole.Engineering, 1000, 0, 0, 1440)
+                new CrewMember(Engineer, DutyRole.Engineering, 1000, 0,
+                    restSlot ? 720 : 0, restSlot ? 400 : 1440,
+                    fatigue: restSlot ? 700 : 0)
             };
             var duty = CrewState.Create(crew,
                 interactions: CrewInteractionState.Create(new[]
@@ -215,6 +217,37 @@ namespace FrostArk.Core.Tests
                 s.Advance(14);
                 Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work),
                     Is.Null, "Unattended Rest must not become a permanent bed lock.");
+            }
+        }
+
+        [Test]
+        public void UrgentNeedPreventsExtendingObsoleteObservedWorkLease()
+        {
+            using (var s = Session())
+            {
+                s.BeginShipWorkObservation(Scene);
+                s.Advance(11);
+                // An already witnessed station can stop being a legitimate
+                // Work offer when Need severity changes before the minute
+                // boundary. Claim ownership alone is not a renewal permit.
+                var crew = s.Capture().State.CrewDuty.Get(Engineer);
+                Assert.That(crew.Thirst, Is.LessThan(CrewAgencyPolicy.SeekProvisionAt));
+                // A canonical 13-minute unattended Need progression crosses
+                // the 650 seek threshold while staying within the original
+                // claim's final five minutes only if it started near threshold.
+                // Instead, a shift reassignment is a deterministic immediate
+                // invalidation of the prior Work offer.
+                Assert.That(s.Submit(new UnassignCrewCommand(
+                    EntityId.Parse("cmd:thermal:unassign"), Engineer,
+                    s.Revision)).Success, Is.True);
+                Assert.That(s.ReportShipDutyPresence(Engineer, Work), Is.False,
+                    "The unassigned slot is no longer a genuine Work presence.");
+                var rev = s.Revision;
+                s.Advance(1);
+                Assert.That(s.Revision, Is.EqualTo(rev),
+                    "Unassigned Work is never renewed by old attendance.");
+                Assert.That(s.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(15));
             }
         }
 
