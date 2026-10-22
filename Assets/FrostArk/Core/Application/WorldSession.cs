@@ -308,6 +308,12 @@ namespace FrostArk.Core.Application
                     claim.ExpiresAt <= now ||
                     claim.ExpiresAt.Value - now.Value > 5)
                     continue;
+                // Arrival and ownership are necessary but not sufficient:
+                // a shift change or an urgent Need must not prolong stale
+                // Work/Rest ownership once the canonical duty offer vanishes.
+                var offered = CrewDutyActivityPlanner.Find(_state, crew);
+                if (!offered.HasValue || offered.Value.SlotId != proof.SlotId)
+                    continue;
                 var cmdId = EntityId.Parse("cmd:observed-duty-renew:" +
                     crew.Value + ":" + now.Value.ToString(CultureInfo.InvariantCulture));
                 // The regular WorldCommandBus enforces provenance, lifetime,
