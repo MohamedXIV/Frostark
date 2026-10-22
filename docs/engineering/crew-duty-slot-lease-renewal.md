@@ -40,3 +40,14 @@ It creates a proper authored ship-room layout with a **placed galley module** an
 Its `.meta` GUID and G0 static import/wiring guard are committed. **This new G3 Unity test is authored, NOT RUN**. Expected additions on top of parent #121 are **2 new duty G2 + 1 new provision G3**; these and all earlier tests must run in Unity 6000.6.0f1. Treat parent 80/80 and 27/27 as historical, NOT #122 results.
 
 **Exact current substantive source HEAD `d77bf3c701e157b36a509023e25e1ad2592521f2`:** automatic [GitHub CI #39715959671](https://github.com/MohamedXIV/Frostark/actions/runs/39715959671) **SUCCESS 26/26 G0, 312/312 G1** (job logs reviewed). G0/G1 do **not** compile Unity PlayMode scenes.
+
+
+## 2026-10-22 — canonical provision fallback
+
+Further review of the #112 provision activity found that Core discovery correctly returned multiple deterministic stocked Eat/Drink offers, but the ship Unity adapter attempted only the first one. That could strand crew beside a viable second galley when the first source was unplaced, unreachable or physically blocked.
+
+`ShipCrewAgencyCoordinator.Tick` now iterates `CrewProvisionInteractionDiscovery.Find` in its canonical severity/slot/item order and attempts `TryBeginProvision` until an authored, placed, reachable slot actually accepts Claim+Move. It still preserves player-order priority and safe emergency handover. There is **no randomly selected provider, fabricated item or blind arrival**. If every candidate fails for a critical need, `UnmetCriticalNeed` stays visible.
+
+One **new Unity G2** regression in `ShipCrewAgencyEditModeTests.UnplacedFirstDrinkOfferFallsBackToReachableGalleyWithoutPhantomClaim` creates two valid Core offers: nominally first resolves to an unplaced module; second is a placed reachable galley. It asserts only the real second slot is claimed, crew walks/arrives, drinks exactly one stocked item, and no leftover claims. This test is authored but NOT run inside Unity.
+
+**Updated substantive source HEAD `55f9ad4c53582f745e880aefd9a1f1b0f67c148c`:** automatic [GitHub Core CI #39716318601](https://github.com/MohamedXIV/Frostark/actions/runs/39716318601) **PASS 26/26 G0, 312/312 G1** on the exact code (job logs checked). Expected newly added test cases relative to actual parent Unity suite: **3 G2 EditMode** (two lease + one fallback), **one G3 PlayMode** (authored-in-test galley). **New tests NOT RUN**; the parent's 80/80 and 27/27 should not be misreported as the child's results.
