@@ -32,8 +32,10 @@ namespace FrostArk.Core.Crew
             if (current.CrewDuty.Members.Count == 0 &&
                 current.CrewDuty.RepairJobs.Count == 0)
                 return;
-            _commit(current.WithCrewTick(minute, current.CrewDuty.Tick(minute,
-                _mayProduce == null ? null :
+            if (_mayProduce == null)
+                _commit(current.WithCrewTick(minute, current.CrewDuty.Tick(minute)));
+            else
+                _commit(current.WithCrewTick(minute, current.CrewDuty.Tick(minute,
                     (crewId, role) => _mayProduce(crewId, role, minute))));
         }
     }
