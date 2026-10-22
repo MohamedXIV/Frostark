@@ -174,6 +174,55 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void WaitingForTrafficRetainsWorkClaimAndResumesAfterBlockersClear()
+        {
+            using (var f = new Setup())
+            {
+                // Block all forward exits from (1,1), but do NOT block the
+                // authored Work goal. Traffic is dynamic, not layout geometry.
+                var blockers = new List<GameObject>();
+                var map = ShipSpatialMap.Derive(f.Session.Capture().State.Layout,
+                    Array.Empty<ShipModuleSpatialProfile>(),
+                    Array.Empty<ShipRoomPortal>());
+                try
+                {
+                    foreach (var cell in new[] { C(1, 2), C(2, 1), C(2, 2) })
+                    {
+                        var go = new GameObject("G2-TemporaryDutyTrafficBlocker");
+                        go.transform.SetParent(f.Root.transform, false);
+                        go.transform.localPosition =
+                            new Vector3(cell.X + 0.5f, 0f, cell.Y + 0.5f);
+                        go.AddComponent<ShipGridWalker>().Configure(
+                            f.Root.transform, map,
+                            new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                            cell, 4f);
+                        blockers.Add(go);
+                    }
+                    f.Duties.Tick();
+                    Assert.That(f.Duties.HasActivity(Engineer), Is.True);
+                    f.Walker.Tick(0.1f);
+                    Assert.That(f.Walker.LastError, Is.EqualTo("WaitingForTraffic"));
+                    f.Duties.Tick();
+                    Assert.That(f.Duties.HasActivity(Engineer), Is.True,
+                        "Congestion should not cancel a valid Work order.");
+                    Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                        Is.Not.Null, "Traffic wait must preserve exclusive slot ownership.");
+                    Assert.That(f.Session.Revision, Is.EqualTo(2));
+                }
+                finally
+                {
+                    foreach (var go in blockers) UnityEngine.Object.DestroyImmediate(go);
+                }
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                Assert.That(f.Walker.LastReachedCell, Is.EqualTo(C(3, 4)));
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Not.Null);
+            }
+        }
+
+        [Test]
         public void AcceptedPlayerOverrideReleasesOldWorkButDoesNotStopNewRoute()
         {
             using (var f = new Setup())
