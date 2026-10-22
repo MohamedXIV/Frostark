@@ -274,6 +274,10 @@ namespace FrostArk.Core.Application
                 _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
                 !_state.Layout.Rooms.Any(r => r.Id == goal.RoomId))
                 throw new InvalidOperationException("Cannot persist a ship Move without eligible crew and a matching ship checkpoint.");
+            // An accepted player Move revokes productive scene attendance
+            // synchronously, even when the Unity duty adapter will receive
+            // its own OrderIssued callback later in the same frame.
+            _workPresence.Remove(crewId);
             _crewMoves[crewId] = new PendingCrewMove(crewId, _sceneCheckpoint.SceneId, goal);
         }
 

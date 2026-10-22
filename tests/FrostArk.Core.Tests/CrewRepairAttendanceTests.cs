@@ -63,6 +63,43 @@ namespace FrostArk.Core.Tests
             session.Capture().State.CrewDuty.GetRepair(Job).RemainingWork;
 
         [Test]
+        public void SavedPlayerMoveRevokesRepairAttendanceAndRestoresWithoutPhantomWork()
+        {
+            using (var source = Session())
+            {
+                source.BeginShipWorkObservation(Scene);
+                Assert.That(source.ReportShipWorkPresence(Worker, Work), Is.True);
+                var target = new ShipGridCell(Room, 5, 2);
+                var beforeRevision = source.Revision;
+                source.AcceptShipCrewMove(Worker, target);
+                Assert.That(source.Revision, Is.EqualTo(beforeRevision),
+                    "Accepting a physical Move must not issue a world command.");
+                source.Advance(1);
+                Assert.That(Remaining(source), Is.EqualTo(500),
+                    "Player movement must revoke previously attested repair work.");
+
+                var saved = SaveCodec.TryDecode(SaveCodec.Encode(source.Capture()));
+                Assert.That(saved.Success, Is.True);
+                Assert.That(saved.Value.PendingCrewMoves.Count, Is.EqualTo(1));
+                using (var restored = WorldSession.Restore(saved.Value))
+                {
+                    Assert.That(restored.GetPendingCrewMove(Worker).ShipGoal,
+                        Is.EqualTo(target));
+                    Assert.That(restored.Minute.Value, Is.EqualTo(1));
+                    restored.BeginShipWorkObservation(Scene);
+                    restored.Advance(1);
+                    Assert.That(Remaining(restored), Is.EqualTo(500),
+                        "Loaded scene must reacquire real Work attendance after reentry.");
+                    Assert.That(restored.GetPendingCrewMove(Worker), Is.Not.Null,
+                        "A valid accepted destination survives without selection.");
+                    Assert.That(restored.CompleteCrewMove(Worker), Is.True);
+                    Assert.That(restored.CompleteCrewMove(Worker), Is.False);
+                    Assert.That(restored.Capture().PendingCrewMoves, Is.Empty);
+                }
+            }
+        }
+
+        [Test]
         public void LoadedShipNeedsActualStationedProofBeforeRepairProgress()
         {
             using (var session = Session())
