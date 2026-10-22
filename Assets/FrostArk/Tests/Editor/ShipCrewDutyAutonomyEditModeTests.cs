@@ -408,6 +408,26 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void MovingWorkerCannotRenewLeaseWithoutActualStationArrival()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                Assert.That(f.Walker.IsMoving, Is.True);
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                f.Session.Advance(11);
+                f.Duties.Tick(); // The actor is still genuinely travelling.
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(15),
+                    "No Work renewal may be earned from a route without arrival.");
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                f.Session.Advance(4);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Null, "The unobserved slot reservation must expire.");
+            }
+        }
+
+        [Test]
         public void StationedWorkerSingleMinuteClockPreservesLeaseWithoutFrameChurn()
         {
             using (var f = new Setup())
