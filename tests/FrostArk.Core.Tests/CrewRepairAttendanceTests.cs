@@ -125,11 +125,13 @@ namespace FrostArk.Core.Tests
                 session.Advance(1);
                 Assert.That(Remaining(session), Is.EqualTo(500));
                 Assert.That(session.ReportShipWorkPresence(Worker, Work), Is.True);
-                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
-                    EntityId.Parse("scene:attend:shore"),
-                    EntityId.Parse("site:attend:shore"),
-                    EntityId.Parse("anchor:attend:shore"),
-                    new[] { Other }));
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
+                    EntityId.Parse("scene:attend:replacement"),
+                    EntityId.Parse("anchor:attend:replacement")));
+                Assert.That(session.ReportShipWorkPresence(Worker, Work), Is.False);
+                session.Advance(1);
+                Assert.That(Remaining(session), Is.EqualTo(492),
+                    "A scene replacement discards stale attendance and uses offscreen time.");
             }
         }
 
