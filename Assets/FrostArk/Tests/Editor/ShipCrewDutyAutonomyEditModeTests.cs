@@ -210,6 +210,63 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void SavedPlayerMoveRestoresBeforeAutonomousRepairResumesOnActualArrival()
+        {
+            using (var f = new Setup(withRepairJob: true))
+            {
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+
+                f.Commander.SelectActor(Engineer);
+                Assert.That(f.Commander.IssueShipMoveOrder(C(2, 1),
+                    new Vector3(2.5f, 0f, 1.5f)), Is.True);
+                f.Commander.ClearSelection();
+                f.Walker.Tick(0.08f);
+                Assert.That(f.Walker.HasIncomingReservation, Is.True);
+                Assert.That(f.Session.GetPendingCrewMove(Engineer), Is.Not.Null);
+                var decoded = SaveCodec.TryDecode(SaveCodec.Encode(f.Session.Capture()));
+                Assert.That(decoded.Success, Is.True);
+                using (var restored = WorldSession.Restore(decoded.Value))
+                {
+                    var map = ShipSpatialMap.Derive(restored.Capture().State.Layout,
+                        Array.Empty<ShipModuleSpatialProfile>(),
+                        Array.Empty<ShipRoomPortal>());
+                    // A fresh loaded scene starts at its authored safe cell,
+                    // never at the previous interpolation midpoint.
+                    f.Walker.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                    f.Walker.Configure(f.Root.transform, map,
+                        new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                        C(1, 1), 4f);
+                    f.Commander.SetSession(restored);
+                    f.Agency.Configure(restored, f.Commander, map);
+                    f.Duties.Configure(restored, f.Commander, f.Agency, map);
+                    Assert.That(f.Agency.HasActivePlayerMove(Engineer), Is.True);
+                    Assert.That(f.Duties.HasActivity(Engineer), Is.False);
+
+                    restored.Advance(1);
+                    Assert.That(restored.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                        .RemainingWork, Is.EqualTo(100),
+                        "A saved player route cannot restore phantom Work progress.");
+                    f.WalkToCompletion();
+                    f.Agency.Tick();
+                    Assert.That(restored.PendingCrewMoves, Is.Empty);
+                    f.Duties.Tick();
+                    Assert.That(f.Duties.ActiveVerb(Engineer),
+                        Is.EqualTo(CrewInteractionVerb.Work));
+                    f.WalkToCompletion();
+                    f.Duties.Tick();
+                    Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                    restored.Advance(1);
+                    Assert.That(restored.Capture().State.CrewDuty.GetRepair(RepairJobId)
+                        .RemainingWork, Is.LessThan(100),
+                        "The canonical repairer resumes only at an authored Work slot.");
+                }
+            }
+        }
+
+        [Test]
         public void DeselectAfterPlayerMoveCompletesReturnsToAuthoredWorkWithoutFakeProgress()
         {
             using (var f = new Setup())

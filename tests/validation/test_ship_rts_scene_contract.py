@@ -301,5 +301,29 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("StationedRestingCrewUsesRealBedAttestation", g2)
 
 
+    def test_persistent_orders_and_physical_duties_integrate_without_phantom_work(self):
+        """Static seam guard; Unity EditMode/PlayMode remains a separate gate."""
+        core = ROOT / "Assets/FrostArk/Core/Application/WorldSession.cs"
+        agency = ROOT / "Assets/FrostArk/Unity/ShipCrewAgencyCoordinator.cs"
+        tests = ROOT / "Assets/FrostArk/Tests/Editor"
+        session_source = core.read_text(encoding="utf-8")
+        agency_source = agency.read_text(encoding="utf-8")
+        reentry_source = (tests / "ShipCrewAgencyEditModeTests.cs").read_text(
+            encoding="utf-8"
+        )
+        duty_source = (tests / "ShipCrewDutyAutonomyEditModeTests.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("PendingCrewMoves", session_source)
+        self.assertIn("_workPresence.Remove(crewId)", session_source)
+        self.assertIn("AcceptShipCrewMove(id, actor.Walker.OrderedCell)", agency_source)
+        self.assertIn("RevalidatePendingPlayerMoves()", agency_source)
+        self.assertIn("CrewProvisionInteractionDiscovery.Find(", agency_source)
+        self.assertIn("SavedPlayerMoveRestoresBeforeAutonomousRepairResumes", duty_source)
+        self.assertIn("SavedPlayerMoveCompletesBeforeThirstyCrewClaims", reentry_source)
+        self.assertTrue((ROOT / "Assets/FrostArk/Core/Save"
+                         / "SaveCodecPendingCrewMoves.cs.meta").is_file())
+
+
 if __name__ == "__main__":
     unittest.main()

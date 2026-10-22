@@ -24,6 +24,10 @@ namespace FrostArk.Core.Application
         private readonly WorldCommandBus _commands = new WorldCommandBus();
         private readonly IReadOnlyList<ProceduralOverride> _overrides;
         private PhysicalSceneCheckpoint _sceneCheckpoint;
+        // Accepted Move goals survive Save/Restore. Unity selection and
+        // interpolated frame positions are deliberately never persisted.
+        private readonly Dictionary<EntityId, PendingCrewMove> _crewMoves =
+            new Dictionary<EntityId, PendingCrewMove>();
         // Transient, scene-scoped repair attendance. Never saved, and never
         // substitutes for the canonical crew roster, staffed role or claim.
         private bool _shipWorkObservationActive;
@@ -69,6 +73,8 @@ namespace FrostArk.Core.Application
             _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
             _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
             _sceneCheckpoint = snapshot.SceneCheckpoint;
+            foreach (var move in snapshot.PendingCrewMoves)
+                _crewMoves.Add(move.CrewId, move);
         }
 
         // Built-in reducers must read and commit through this ONE session-owned
@@ -114,6 +120,12 @@ namespace FrostArk.Core.Application
                 checkpoint.SceneId != _shipWorkScene)
                 StopShipWorkObservationInternal();
             _sceneCheckpoint = checkpoint;
+            // A player Move belongs to the physical scene where it was
+            // accepted. Changing scene/theater revokes its stored route goal.
+            var stale = _crewMoves.Where(p =>
+                checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship ||
+                p.Value.SceneId != checkpoint.SceneId).Select(p => p.Key).ToArray();
+            foreach (var id in stale) _crewMoves.Remove(id);
         }
 
         /// <summary>
@@ -232,6 +244,49 @@ namespace FrostArk.Core.Application
                 claim.ExpiresAt > minute;
         }
 
+        public IReadOnlyList<PendingCrewMove> PendingCrewMoves
+        {
+            get
+            {
+                Guard();
+                return Array.AsReadOnly(_crewMoves.Values
+                    .OrderBy(m => m.CrewId.Value, StringComparer.Ordinal).ToArray());
+            }
+        }
+
+        public PendingCrewMove GetPendingCrewMove(EntityId crewId)
+        {
+            Guard();
+            return _crewMoves.TryGetValue(crewId, out var move) ? move : null;
+        }
+
+        /// <summary>
+        /// Record only a scene-accepted physical player order. Presentation
+        /// dispatch MUST succeed first. A repeated actor order replaces the
+        /// earlier target; mouse selection and interpolated paths never persist.
+        /// </summary>
+        public void AcceptShipCrewMove(EntityId crewId, ShipGridCell goal)
+        {
+            Guard();
+            var member = _state.CrewDuty.Get(crewId);
+            if (!_state.HasCrew(crewId) || member == null || member.IsAway ||
+                member.Wounds >= 1000 || _sceneCheckpoint == null ||
+                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                !_state.Layout.Rooms.Any(r => r.Id == goal.RoomId))
+                throw new InvalidOperationException("Cannot persist a ship Move without eligible crew and a matching ship checkpoint.");
+            // An accepted player Move revokes productive scene attendance
+            // synchronously, even when the Unity duty adapter will receive
+            // its own OrderIssued callback later in the same frame.
+            _workPresence.Remove(crewId);
+            _crewMoves[crewId] = new PendingCrewMove(crewId, _sceneCheckpoint.SceneId, goal);
+        }
+
+        public bool CompleteCrewMove(EntityId crewId)
+        {
+            Guard();
+            return _crewMoves.Remove(crewId);
+        }
+
         public WorldSessionView Read()
         {
             Guard();
@@ -338,7 +393,17 @@ namespace FrostArk.Core.Application
         public SaveGameDto Capture()
         {
             Guard();
-            return SaveGameDto.Capture(_state, _scheduler, _overrides, _sceneCheckpoint);
+            // Commands, wounds or physical dispatch can invalidate an order
+            // without rewriting crew selection or inventory. Never save a
+            // terminal/incapacitated/away crew's stale physical command.
+            var valid = _crewMoves.Values.Where(m =>
+                _state.HasCrew(m.CrewId) &&
+                _state.CrewDuty.Get(m.CrewId) != null &&
+                !_state.CrewDuty.Get(m.CrewId).IsAway &&
+                _state.CrewDuty.Get(m.CrewId).Wounds < 1000 &&
+                _state.Layout.Rooms.Any(r => r.Id == m.ShipGoal.RoomId)).ToArray();
+            return SaveGameDto.Capture(_state, _scheduler, _overrides,
+                _sceneCheckpoint, valid);
         }
 
         public static WorldSession Restore(SaveGameDto snapshot,

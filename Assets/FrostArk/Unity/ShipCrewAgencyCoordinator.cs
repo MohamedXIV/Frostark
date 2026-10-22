@@ -57,10 +57,45 @@ namespace FrostArk.Unity
             _provisions.Clear();
             _decisions.Clear();
             _commander.OrderIssued += OnOrderIssued;
+            RevalidatePendingPlayerMoves();
         }
 
-        public void SetMap(ShipSpatialMap map) =>
+        public void SetMap(ShipSpatialMap map)
+        {
             _map = map ?? throw new ArgumentNullException(nameof(map));
+            RevalidatePendingPlayerMoves();
+        }
+
+        /// <summary>
+        /// After a save re-entry, only the typed accepted goal survives. Rebuild
+        /// a fresh local path from the scene checkpoint's validated crew spawn.
+        /// Never infer a room/position from a saved animation frame.
+        /// </summary>
+        private void RevalidatePendingPlayerMoves()
+        {
+            if (_session == null || _commander == null || _map == null ||
+                _session.SceneCheckpoint == null ||
+                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship) return;
+            foreach (var saved in _session.PendingCrewMoves)
+            {
+                if (saved.SceneId != _session.SceneCheckpoint.SceneId)
+                    continue;
+                var actor = _commander.ShipActors.FirstOrDefault(a =>
+                    a != null && a.ActorId == saved.CrewId && a.Walker != null &&
+                    a.Walker.IsConfigured);
+                if (actor == null) continue;
+                _playerMoveGoals[saved.CrewId] = saved.ShipGoal;
+                if (actor.Walker.LastReachedCell == saved.ShipGoal)
+                {
+                    _session.CompleteCrewMove(saved.CrewId);
+                    _playerMoveGoals.Remove(saved.CrewId);
+                }
+                else if (_map.Walkable(saved.ShipGoal) &&
+                         !_map.IsPortalEndpoint(saved.ShipGoal) &&
+                         !actor.Walker.IsMoving && !actor.Walker.IsRecovering)
+                    actor.Walker.TryMoveTo(saved.ShipGoal);
+            }
+        }
 
         private void OnOrderIssued(TacticalOrderIntent intent)
         {
@@ -74,6 +109,7 @@ namespace FrostArk.Unity
                 // actor's individual local ordered cell is now authoritative
                 // for tracking this scene action, not the group click center.
                 _playerMoveGoals[id] = actor.Walker.OrderedCell;
+                _session.AcceptShipCrewMove(id, actor.Walker.OrderedCell);
                 if (_provisions.TryGetValue(id, out var need))
                 {
                     // The accepted player route already supersedes the
@@ -210,8 +246,20 @@ namespace FrostArk.Unity
                 bool activeOrder = _playerMoveGoals.TryGetValue(id, out var goal);
                 if (activeOrder && !walker.IsMoving && !walker.IsRecovering)
                 {
-                    _playerMoveGoals.Remove(id);
-                    activeOrder = false;
+                    if (walker.LastReachedCell == goal || walker.LastError != null ||
+                        !_map.Walkable(goal) || _map.IsPortalEndpoint(goal))
+                    {
+                        _playerMoveGoals.Remove(id);
+                        _session.CompleteCrewMove(id);
+                        activeOrder = false;
+                    }
+                    else
+                    {
+                        // Re-entered at an authored safe checkpoint, or traffic
+                        // temporarily blocked the accepted goal. Never mistake
+                        // standing at the spawn cell for order completion.
+                        walker.TryMoveTo(goal);
+                    }
                 }
 
                 var decision = CrewAgencyPolicy.Evaluate(_session.Capture().State,
@@ -224,6 +272,7 @@ namespace FrostArk.Unity
                     if (!walker.IsMoving && !walker.IsRecovering)
                     {
                         _playerMoveGoals.Remove(id);
+                        _session.CompleteCrewMove(id);
                         activeOrder = false;
                     }
                     else
