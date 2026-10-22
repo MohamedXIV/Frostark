@@ -408,6 +408,79 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void MovingWorkerCannotRenewLeaseWithoutActualStationArrival()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                Assert.That(f.Walker.IsMoving, Is.True);
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                f.Session.Advance(11);
+                f.Duties.Tick(); // The actor is still genuinely travelling.
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(15),
+                    "No Work renewal may be earned from a route without arrival.");
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                f.Session.Advance(4);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Null, "The unobserved slot reservation must expire.");
+            }
+        }
+
+        [Test]
+        public void StationedWorkerSingleMinuteClockPreservesLeaseWithoutFrameChurn()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                for (int minute = 1; minute <= 22; minute++)
+                {
+                    f.Duties.Tick(); // Fresh real walker-at-slot presence.
+                    f.Session.Advance(1);
+                }
+                var lease = f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work);
+                Assert.That(lease, Is.Not.Null);
+                Assert.That(lease.ExpiresAt.Value, Is.EqualTo(35));
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1));
+                Assert.That(f.Session.Revision, Is.EqualTo(4),
+                    "Single-minute boundaries renew only twice, without frame churn.");
+                f.Commander.SelectActor(Engineer);
+                f.Duties.Tick();
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
+            }
+        }
+
+        [Test]
+        public void StationedRestingCrewUsesRealBedAttestationWithoutWorkProduction()
+        {
+            using (var f = new Setup(offShift: true, fatigue: 700))
+            {
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.ActiveVerb(Engineer),
+                    Is.EqualTo(CrewInteractionVerb.Rest));
+                Assert.That(f.Session.ReportShipWorkPresence(Engineer, Rest), Is.False);
+                for (int minute = 1; minute <= 22; minute++)
+                {
+                    f.Duties.Tick();
+                    f.Session.Advance(1);
+                }
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Rest)
+                    .ExpiresAt.Value, Is.EqualTo(35),
+                    "The actual bed lease survives a long observed rest.");
+                Assert.That(f.Session.Revision, Is.EqualTo(4));
+                Assert.That(f.Session.Capture().State.CrewDuty.Get(Engineer).Fatigue,
+                    Is.LessThan(700), "Canonical WorldClock alone owns fatigue recovery.");
+            }
+        }
+
+        [Test]
         public void StationedWorkerRenewsSameLeaseAcrossTwentyTwoWorldMinutes()
         {
             using (var f = new Setup())

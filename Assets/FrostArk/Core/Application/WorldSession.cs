@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
@@ -158,6 +159,19 @@ namespace FrostArk.Core.Application
         public bool ReportShipWorkPresence(EntityId crewId, EntityId slotId)
         {
             Guard();
+            var workSlot = _state.CrewDuty.Interactions.GetSlot(slotId);
+            return workSlot != null && workSlot.Verb == CrewInteractionVerb.Work &&
+                ReportShipDutyPresence(crewId, slotId);
+        }
+
+        /// <summary>
+        /// A rendered stationary Work OR Rest actor can attest the real owned
+        /// physical slot for one following minute. Rest is never repair or
+        /// boiler productivity, but can safely extend its own slot lease.
+        /// </summary>
+        public bool ReportShipDutyPresence(EntityId crewId, EntityId slotId)
+        {
+            Guard();
             if (!_shipWorkObservationActive || !_shipWorkScene.IsValid ||
                 _sceneCheckpoint == null ||
                 _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
@@ -168,9 +182,12 @@ namespace FrostArk.Core.Application
             var claim = _state.CrewDuty.Interactions.GetClaim(slotId);
             if (member == null || ! _state.HasCrew(crewId) ||
                 member.IsAway || member.Wounds >= 1000 ||
-                slot == null || slot.Verb != CrewInteractionVerb.Work ||
+                slot == null ||
+                (slot.Verb != CrewInteractionVerb.Work &&
+                 slot.Verb != CrewInteractionVerb.Rest) ||
                 _state.Layout.GetModule(slot.SourceId) == null ||
-                _state.GetCrewStation(crewId) != slot.SourceId ||
+                (slot.Verb == CrewInteractionVerb.Work &&
+                 _state.GetCrewStation(crewId) != slot.SourceId) ||
                 claim == null || claim.CrewId != crewId ||
                 claim.ExpiresAt <= _state.Minute)
                 return false;
@@ -243,6 +260,9 @@ namespace FrostArk.Core.Application
         public WorldAdvanceResult Advance(long minutes)
         {
             Guard();
+            // Never let a single rendered frame renew an entire sleep/skip.
+            // One live, observed minute may extend a real occupied duty lease.
+            if (minutes == 1) RenewFreshObservedDutyLeases();
             return CommitAdvance(_scheduler.Advance(minutes));
         }
 
@@ -250,7 +270,57 @@ namespace FrostArk.Core.Application
             SleepInterruptionPolicy policy = null)
         {
             Guard();
+            if (target.Value - _scheduler.Clock.Current.Value == 1)
+                RenewFreshObservedDutyLeases();
             return CommitAdvance(_scheduler.AdvanceUntil(target, policy));
+        }
+
+        /// <summary>
+        /// Safe single-minute boundary for on-stage Work/Rest attendance:
+        /// renew via the existing revisioned command only when an actual
+        /// stationary slot was freshly witnessed THIS world minute. An
+        /// Advance(20) never reuses that observation at later boundaries.
+        /// No free extension for travelling, unclaimed, expired or offscreen.
+        /// </summary>
+        private void RenewFreshObservedDutyLeases()
+        {
+            if (!_shipWorkObservationActive || _sceneCheckpoint == null ||
+                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                _sceneCheckpoint.SceneId != _shipWorkScene) return;
+            var now = _scheduler.Clock.Current;
+            foreach (var pair in _workPresence.OrderBy(x => x.Key.Value,
+                StringComparer.Ordinal).ToArray())
+            {
+                var crew = pair.Key;
+                var proof = pair.Value;
+                if (proof.SampledAt != now) continue;
+                var slot = _state.CrewDuty.Interactions.GetSlot(proof.SlotId);
+                var claim = _state.CrewDuty.Interactions.GetClaim(proof.SlotId);
+                var member = _state.CrewDuty.Get(crew);
+                if (slot == null || claim == null || claim.CrewId != crew ||
+                    (slot.Verb != CrewInteractionVerb.Work &&
+                     slot.Verb != CrewInteractionVerb.Rest) ||
+                    member == null || member.IsAway || member.Wounds >= 1000 ||
+                    !_state.HasCrew(crew) ||
+                    _state.Layout.GetModule(slot.SourceId) == null ||
+                    (slot.Verb == CrewInteractionVerb.Work &&
+                     _state.GetCrewStation(crew) != slot.SourceId) ||
+                    claim.ExpiresAt <= now ||
+                    claim.ExpiresAt.Value - now.Value > 5)
+                    continue;
+                // Arrival and ownership are necessary but not sufficient:
+                // a shift change or an urgent Need must not prolong stale
+                // Work/Rest ownership once the canonical duty offer vanishes.
+                var offered = CrewDutyActivityPlanner.Find(_state, crew);
+                if (!offered.HasValue || offered.Value.SlotId != proof.SlotId)
+                    continue;
+                var cmdId = EntityId.Parse("cmd:observed-duty-renew:" +
+                    crew.Value + ":" + now.Value.ToString(CultureInfo.InvariantCulture));
+                // The regular WorldCommandBus enforces provenance, lifetime,
+                // expected revision and ownership; don't bypass WorldState.
+                Submit(new RenewCrewDutySlotCommand(cmdId, crew, proof.SlotId,
+                    15, _state.Revision));
+            }
         }
 
         public void AdvanceCombatTick(long tick)
