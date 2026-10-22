@@ -111,14 +111,22 @@ namespace FrostArk.Unity.Tests
                     Is.Empty, "Accepted player order releases only superseded Work claim.");
 
                 commander.ClearSelection();
-                for (int frame = 0; frame < 420 && walker.IsMoving; frame++)
+                var playerGoal = new ShipGridCell(Room, 2, 1);
+                bool sawPlayerArrival = false;
+                for (int frame = 0; frame < 420 &&
+                    agency.HasActivePlayerMove(Crew); frame++)
+                {
                     yield return null;
+                    sawPlayerArrival |= walker.LastReachedCell == playerGoal;
+                }
                 agency.Tick();
-                Assert.That(walker.LastReachedCell,
-                    Is.EqualTo(new ShipGridCell(Room, 2, 1)));
-                Assert.That(walker.HasIncomingReservation, Is.False);
+                Assert.That(sawPlayerArrival, Is.True,
+                    "Accepted player Move must physically arrive before resuming duty.");
                 Assert.That(agency.HasActivePlayerMove(Crew), Is.False);
-                duty.Tick();
+                // The scene's agency+duty Updates may already have resumed
+                // Work on the same or next frame; don't assume the walker
+                // remains idle for a test-only intermediate assertion.
+                yield return null;
                 Assert.That(duty.HasActivity(Crew), Is.True,
                     "Idle, unselected worker should return to assigned Work.");
                 for (int frame = 0; frame < 420 && walker.IsMoving; frame++)
@@ -133,6 +141,7 @@ namespace FrostArk.Unity.Tests
             }
             finally
             {
+                root.SetActive(false);
                 UnityEngine.Object.Destroy(root);
                 session?.Dispose();
             }
