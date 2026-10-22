@@ -16,3 +16,12 @@
 - Exact integration HEAD after safety correction and test needs independent CI. **New branch Unity EditMode/PlayMode has NOT been run**; the 88/88 +28/28 proof belongs to source #125 and must not be carried over as integration evidence. Parent #120 Unity tests also do not automatically prove cross-branch integration.
 - Required Unity QA: clean Unity `6000.6.0f1` compile; full EditMode and PlayMode; Core targeted save/order and duty tests; actual Save→destroy/restore→ship reentry with an accepted Move; continuing Work/Rest/repair/Engineering without fake attendance, re-claimed slots or duplicated Use. Preserve synthetic input Test08 flake as a separately tracked risk.
 - Still open after these tests: real OS pointer/HUD, production Save-menu control and staged `ShipRtsDemo` content, long on-stage sleep/offscreen handover, G4 device and builds; do not close #112 until these evidence gates are verified.
+
+
+## Second G2 integration regression: saved Move must beat thirsty auto-goals
+
+`ShipCrewAgencyEditModeTests.SavedPlayerMoveCompletesBeforeThirstyCrewClaimsAndUsesRealWater` is an **authored Unity Editor test**, separate from Core CI. It creates a stocked/placed galley and genuine Thirst=800, issues a player-selected Move, clears selection, saves halfway across a reserved cell, restores only the typed accepted goal and original canonical stock, then rebinds a fresh walker from its authored checkpoint. Before the player arrives there is no Needs claim or water consumption; after arrival the persisted Move completes exactly once and the existing physical provision coordinator may claim a placed Drink slot, walk, and consume exactly one ship-hold water. Final Thirst=200, stock 2→1, revision=2 (one Claim + one Use), no leftover reservation/claim/pending Move or replayed action.
+
+`ShipCrewDutyAutonomyEditModeTests.SavedPlayerMoveRestoresBeforeAutonomousRepairResumesOnActualArrival` similarly proves a restored Move keeps real Work paused and repair work unchanged until completion followed by physical return to the station. Both tests are **not run inside Unity on #126 yet**. These checks are also now protected by `tests/validation/test_ship_rts_scene_contract.py` G0 wiring.
+
+**CI before these last two test additions:** merge head `c6402897bc8ecad6c0505d916e2fe39c43681e8e` [run #39820573582](https://github.com/MohamedXIV/Frostark/actions/runs/39820573582) PASS: 29/29 G0, 333/333 G1. Exact latest head still requires checking; do not inherit the source #125 88/88 EditMode and 28/28 PlayMode onto the combined branch.
