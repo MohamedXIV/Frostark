@@ -4,6 +4,7 @@ using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
+using FrostArk.Core.Time;
 using FrostArk.Core.World;
 using NUnit.Framework;
 
@@ -91,6 +92,29 @@ namespace FrostArk.Core.Tests
                 Assert.Throws<InvalidOperationException>(() => session.AcceptShipCrewMove(
                     A, new ShipGridCell(EntityId.Parse("room:invalid"), 2, 2)));
                 Assert.That(session.PendingCrewMoves, Is.Empty);
+            }
+        }
+
+        [Test]
+        public void PendingMoveMustMatchSavedShipCheckpoint()
+        {
+            using (var session = Session())
+            {
+                session.AcceptShipCrewMove(A, C(4, 2));
+                var snapshot = session.Capture();
+                var move = snapshot.PendingCrewMoves.Single();
+                var foreign = new PendingCrewMove(A,
+                    EntityId.Parse("scene:order:foreign"), C(4, 2));
+
+                Assert.Throws<ArgumentException>(() => SaveGameDto.Capture(
+                    snapshot.State,
+                    snapshot.CreateScheduler(Array.Empty<IWorldMinuteSystem>()),
+                    snapshot.ProceduralOverrides, snapshot.SceneCheckpoint,
+                    new[] { foreign }));
+                Assert.Throws<ArgumentException>(() => SaveGameDto.Capture(
+                    snapshot.State,
+                    snapshot.CreateScheduler(Array.Empty<IWorldMinuteSystem>()),
+                    snapshot.ProceduralOverrides, null, new[] { move }));
             }
         }
     }
