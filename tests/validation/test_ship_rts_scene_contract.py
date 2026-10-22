@@ -188,9 +188,17 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
             core / "CrewDutyActivityPlanner.cs.meta",
             unity / "ShipCrewDutyAutonomy.cs.meta",
             editor / "ShipCrewDutyAutonomyEditModeTests.cs.meta",
+            ROOT / "Assets/FrostArk/Tests/PlayMode/ShipCrewDutyAutonomyPlayModeTests.cs.meta",
         ]:
             self.assertTrue(path.is_file(), str(path))
         self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", component)
+        self.assertIn('"WaitingForTraffic"', component)
+        playmode = (ROOT / "Assets/FrostArk/Tests/PlayMode"
+                    / "ShipCrewDutyAutonomyPlayModeTests.cs").read_text(
+                        encoding="utf-8"
+                    )
+        self.assertIn("IEnumerator EngineerReturnsToAuthoredStation", playmode)
+        self.assertIn("UnityTest", playmode)
 
 
 if __name__ == "__main__":
