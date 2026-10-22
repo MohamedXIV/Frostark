@@ -221,22 +221,15 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
-        public void UrgentNeedPreventsExtendingObsoleteObservedWorkLease()
+        public void UnassignedWorkerCannotExtendPreviouslyHeldWorkLease()
         {
             using (var s = Session())
             {
                 s.BeginShipWorkObservation(Scene);
                 s.Advance(11);
-                // An already witnessed station can stop being a legitimate
-                // Work offer when Need severity changes before the minute
-                // boundary. Claim ownership alone is not a renewal permit.
-                var crew = s.Capture().State.CrewDuty.Get(Engineer);
-                Assert.That(crew.Thirst, Is.LessThan(CrewAgencyPolicy.SeekProvisionAt));
-                // A canonical 13-minute unattended Need progression crosses
-                // the 650 seek threshold while staying within the original
-                // claim's final five minutes only if it started near threshold.
-                // Instead, a shift reassignment is a deterministic immediate
-                // invalidation of the prior Work offer.
+                // The physical slot can remain owned when a standing
+                // assignment is cancelled. That stale claim is not authority
+                // to extend an obsolete Work duty.
                 Assert.That(s.Submit(new UnassignCrewCommand(
                     EntityId.Parse("cmd:thermal:unassign"), Engineer,
                     s.Revision)).Success, Is.True);
