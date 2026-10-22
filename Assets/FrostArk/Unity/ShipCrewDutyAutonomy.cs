@@ -106,13 +106,18 @@ namespace FrostArk.Unity
             if (!_map.Walkable(goal) || _map.IsPortalEndpoint(goal) ||
                 _map.FindPath(walker.LastReachedCell, goal).Count == 0)
                 return false;
-            if (world.CrewDuty.Interactions.ClaimForCrew(id) != null)
-                return false; // Need activity or another real claim owns this crew.
-
-            var claim = _session.Submit(new ClaimCrewInteractionCommand(
-                CommandId("claim", id, world.Revision), id, slot.Id,
-                15, world.Revision));
-            if (!claim.Success) return false;
+            var previous = world.CrewDuty.Interactions.ClaimForCrew(id);
+            if (previous != null && previous.SlotId != slot.Id)
+                return false; // A Need or other authored claim owns the actor.
+            // WorldSession claims survive save/reentry. Resuming the SAME
+            // still-valid Work/Rest claim is not a new world command.
+            if (previous == null)
+            {
+                var claim = _session.Submit(new ClaimCrewInteractionCommand(
+                    CommandId("claim", id, world.Revision), id, slot.Id,
+                    15, world.Revision));
+                if (!claim.Success) return false;
+            }
             if (!walker.TryMoveTo(goal))
             {
                 Release(id, slot.Id);
@@ -194,12 +199,33 @@ namespace FrostArk.Unity
                     continue;
                 }
 
+                // A persisted claim may outlive its scene-local Activity
+                // object after reentry. Only reconcile Work/Rest here; Eat
+                // and Drink remain owned by the provision coordinator.
+                var ownedClaim = world.CrewDuty.Interactions.ClaimForCrew(id);
+                var ownedSlot = ownedClaim == null ? null :
+                    world.CrewDuty.Interactions.GetSlot(ownedClaim.SlotId);
+                bool isPhysicalDutyClaim = ownedSlot != null &&
+                    (ownedSlot.Verb == CrewInteractionVerb.Work ||
+                     ownedSlot.Verb == CrewInteractionVerb.Rest);
+
                 if (policy.Kind != CrewAgencyDecisionKind.ReadyForDuty ||
                     priorityNeed || walker.IsMoving || walker.IsRecovering ||
                     _agency.HasPendingProvision(id))
+                {
+                    if (isPhysicalDutyClaim &&
+                        !walker.HasIncomingReservation && !walker.IsRecovering)
+                        Release(id, ownedClaim.SlotId);
                     continue;
+                }
 
                 var offer = CrewDutyActivityPlanner.Find(world, id);
+                if (isPhysicalDutyClaim &&
+                    (!offer.HasValue || offer.Value.SlotId != ownedClaim.SlotId))
+                {
+                    Release(id, ownedClaim.SlotId);
+                    continue;
+                }
                 if (offer.HasValue) TryStart(id, walker, offer.Value);
             }
         }
