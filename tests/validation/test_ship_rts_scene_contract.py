@@ -158,5 +158,48 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("using FrostArk.Core.Save;", coordinator)
 
 
+    def test_physical_duty_autonomy_reuses_staffed_role_and_authored_slots(self):
+        """Static wiring only; real Unity G2/G3 is a separate gate."""
+        core = ROOT / "Assets/FrostArk/Core/Crew"
+        unity = ROOT / "Assets/FrostArk/Unity"
+        editor = ROOT / "Assets/FrostArk/Tests/Editor"
+        state = (core / "CrewState.cs").read_text(encoding="utf-8")
+        planner = (core / "CrewDutyActivityPlanner.cs").read_text(
+            encoding="utf-8"
+        )
+        component = (unity / "ShipCrewDutyAutonomy.cs").read_text(
+            encoding="utf-8"
+        )
+        bootstrap = (unity / "ShipTacticalSceneBootstrap.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("StaffedRoleFor", state)
+        self.assertIn("world.GetCrewStation(crewId)", planner)
+        self.assertIn("world.CrewDuty.StaffedRoleFor(crewId, world.Minute)", planner)
+        self.assertIn("CrewInteractionVerb.Rest", planner)
+        self.assertIn("CrewInteractionVerb.Work", planner)
+        self.assertIn("ClaimCrewInteractionCommand", component)
+        self.assertIn("ReleaseCrewInteractionCommand", component)
+        self.assertIn("RequestStopAtSafeCell", component)
+        self.assertIn("CrewAgencyPolicy.SeekProvisionAt", component)
+        self.assertIn("duty.Configure(session, commander, agency, _map)", bootstrap)
+        self.assertIn("duty.SetMap(_map)", bootstrap)
+        for path in [
+            core / "CrewDutyActivityPlanner.cs.meta",
+            unity / "ShipCrewDutyAutonomy.cs.meta",
+            editor / "ShipCrewDutyAutonomyEditModeTests.cs.meta",
+            ROOT / "Assets/FrostArk/Tests/PlayMode/ShipCrewDutyAutonomyPlayModeTests.cs.meta",
+        ]:
+            self.assertTrue(path.is_file(), str(path))
+        self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", component)
+        self.assertIn('"WaitingForTraffic"', component)
+        playmode = (ROOT / "Assets/FrostArk/Tests/PlayMode"
+                    / "ShipCrewDutyAutonomyPlayModeTests.cs").read_text(
+                        encoding="utf-8"
+                    )
+        self.assertIn("IEnumerator EngineerReturnsToAuthoredStation", playmode)
+        self.assertIn("UnityTest", playmode)
+
+
 if __name__ == "__main__":
     unittest.main()

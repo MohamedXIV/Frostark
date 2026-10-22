@@ -158,6 +158,10 @@ namespace FrostArk.Unity
             if (agency == null)
                 agency = commander.gameObject.AddComponent<ShipCrewAgencyCoordinator>();
             agency.Configure(session, commander, _map);
+            var duty = commander.GetComponent<ShipCrewDutyAutonomy>();
+            if (duty == null)
+                duty = commander.gameObject.AddComponent<ShipCrewDutyAutonomy>();
+            duty.Configure(session, commander, agency, _map);
             _session.Changed += OnWorldChanged;
         }
 
@@ -209,6 +213,8 @@ namespace FrostArk.Unity
             commander.SetShipSpatialMap(_map);
             var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
             if (agency != null) agency.SetMap(_map);
+            var duty = commander.GetComponent<ShipCrewDutyAutonomy>();
+            if (duty != null) duty.SetMap(_map);
             foreach (var binding in crew)
                 if (binding != null && binding.Actor != null && binding.Actor.Walker != null)
                     binding.Actor.Walker.RebindMap(_map);
