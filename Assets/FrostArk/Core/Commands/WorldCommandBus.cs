@@ -1,5 +1,6 @@
 using System;
 using FrostArk.Core.Events;
+using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using System.Linq;
 using System.Collections.Generic;
