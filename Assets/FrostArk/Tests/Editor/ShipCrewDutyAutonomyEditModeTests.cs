@@ -309,6 +309,65 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void StationedWorkerRenewsSameLeaseAcrossTwentyTwoWorldMinutes()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                var first = f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work);
+                Assert.That(first.ExpiresAt.Value, Is.EqualTo(15));
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+
+                f.Session.Advance(11);
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work),
+                    Is.Not.Null, "The canonical minute clock has not expired this claim.");
+                f.Duties.Tick();
+                var renewed = f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work);
+                Assert.That(renewed.ExpiresAt.Value, Is.EqualTo(26));
+                Assert.That(f.Session.Revision, Is.EqualTo(3));
+                for (int i = 0; i < 15; i++) f.Duties.Tick();
+                Assert.That(f.Session.Revision, Is.EqualTo(3),
+                    "No per-frame renewal or command-revision churn.");
+
+                f.Session.Advance(11);
+                f.Duties.Tick();
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.GetClaim(Work)
+                    .ExpiresAt.Value, Is.EqualTo(37));
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims.Count,
+                    Is.EqualTo(1));
+                Assert.That(f.Session.Revision, Is.EqualTo(4));
+                Assert.That(f.Duties.IsStationed(Engineer), Is.True);
+                Assert.That(f.Session.Minute.Value, Is.EqualTo(22));
+            }
+        }
+
+        [Test]
+        public void SelectingStationedWorkerReleasesLeaseAndNeverRenewsIt()
+        {
+            using (var f = new Setup())
+            {
+                f.Duties.Tick();
+                f.WalkToCompletion();
+                f.Duties.Tick();
+                f.Session.Advance(11);
+                f.Commander.SelectActor(Engineer);
+                f.Duties.Tick();
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
+                Assert.That(f.Session.Revision, Is.EqualTo(3),
+                    "Selected player interruption releases instead of renewing.");
+                f.Session.Advance(20);
+                f.Duties.Tick();
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
+                Assert.That(f.Session.Revision, Is.EqualTo(3));
+            }
+        }
+
+        [Test]
         public void OffShiftExhaustionUsesAuthoredRestSlotAndOnlyWorldClockRestoresFatigue()
         {
             using (var f = new Setup(offShift: true, fatigue: 700))

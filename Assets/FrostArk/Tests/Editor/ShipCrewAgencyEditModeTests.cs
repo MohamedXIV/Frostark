@@ -34,7 +34,7 @@ namespace FrostArk.Unity.Tests
             public readonly ShipGridWalker Walker;
             public readonly ShipCrewAgencyCoordinator Agency;
 
-            public Fixture(int thirst = 800, bool stocked = true)
+            public Fixture(int thirst = 800, bool stocked = true, bool unplacedFirst = false)
             {
                 var layout = ShipLayoutState.Create(new[]
                 {
@@ -51,16 +51,20 @@ namespace FrostArk.Unity.Tests
                     10000, 5, 10000, 5);
                 if (stocked)
                     inventory = inventory.TryCollect(Pickup).State.TryUnload(Water, 2).State;
+                var slots = new List<CrewInteractionSlot>();
+                if (unplacedFirst)
+                    slots.Add(new CrewInteractionSlot(
+                        EntityId.Parse("slot:agency:aa-unplaced"),
+                        EntityId.Parse("module:agency:not-placed"),
+                        CrewInteractionVerb.Drink, 0, -1, 2));
+                slots.Add(new CrewInteractionSlot(Slot, Galley,
+                    CrewInteractionVerb.Drink, 0, -1, 2));
                 var crew = CrewState.Create(new[]
                 {
                     new CrewMember(A, DutyRole.Engineering, 900, 100, 0, 1440,
                         thirst: thirst)
                 }, consumables: new[] { new CrewConsumable(Water, 0, 600) },
-                interactions: CrewInteractionState.Create(new[]
-                {
-                    new CrewInteractionSlot(Slot, Galley, CrewInteractionVerb.Drink,
-                        0, -1, 2)
-                }));
+                interactions: CrewInteractionState.Create(slots));
                 Session = new WorldSession(WorldState.Create(WorldMinute.Zero,
                     Array.Empty<SupplyStock>(), new[] { A },
                     crewDuty: crew, layout: layout, inventory: inventory));
@@ -122,6 +126,34 @@ namespace FrostArk.Unity.Tests
                 Assert.That(f.Session.Capture().State.Inventory.GetAmount(
                     InventoryContainer.ShipHold, Water), Is.EqualTo(2),
                     "A claim alone cannot spend water before physical arrival.");
+            }
+        }
+
+        [Test]
+        public void UnplacedFirstDrinkOfferFallsBackToReachableGalleyWithoutPhantomClaim()
+        {
+            using (var f = new Fixture(unplacedFirst: true))
+            {
+                f.Agency.Tick();
+                var world = f.Session.Capture().State;
+                Assert.That(f.Agency.HasPendingProvision(A), Is.True,
+                    "The invalid first source must not strand a thirsty crew.");
+                Assert.That(world.CrewDuty.Interactions.Claims.Count, Is.EqualTo(1));
+                Assert.That(world.CrewDuty.Interactions.GetClaim(Slot), Is.Not.Null,
+                    "The physically authored second station must be claimed.");
+                Assert.That(world.CrewDuty.Interactions.GetClaim(
+                    EntityId.Parse("slot:agency:aa-unplaced")), Is.Null,
+                    "No claim may be produced for an unplaced fictional module.");
+                Assert.That(f.Session.Revision, Is.EqualTo(1));
+                f.AdvanceWalk();
+                f.Agency.Tick();
+                Assert.That(f.Session.Revision, Is.EqualTo(2));
+                Assert.That(f.Session.Capture().State.CrewDuty.Get(A).Thirst,
+                    Is.EqualTo(200));
+                Assert.That(f.Session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, Water), Is.EqualTo(1));
+                Assert.That(f.Session.Capture().State.CrewDuty.Interactions.Claims,
+                    Is.Empty);
             }
         }
 

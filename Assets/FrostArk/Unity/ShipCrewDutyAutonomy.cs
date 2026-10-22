@@ -194,8 +194,24 @@ namespace FrostArk.Unity
                         End(id, activity);
                         continue;
                     }
-                    // At the slot: continue to hold the genuine claim while
-                    // the canonical world-minute system advances work/rest.
+                    // Real Work/Rest occupancy spans many world-minutes. Keep
+                    // the same canonical lease owner, renewing ONLY close to
+                    // its expiry. No new item, staff job or physical order is
+                    // created; the normal WorldClock still owns consequences.
+                    if (claim.ExpiresAt.Value - world.Minute.Value <= 5)
+                    {
+                        var renewed = _session.Submit(new RenewCrewDutySlotCommand(
+                            CommandId("renew", id, world.Revision), id, activity.SlotId,
+                            15, world.Revision));
+                        if (!renewed.Success)
+                        {
+                            activity.Cancelling = true;
+                            if (walker.IsMoving || walker.IsRecovering)
+                                walker.RequestStopAtSafeCell();
+                            else
+                                End(id, activity);
+                        }
+                    }
                     continue;
                 }
 

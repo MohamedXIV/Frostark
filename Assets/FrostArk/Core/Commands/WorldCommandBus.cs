@@ -1,5 +1,6 @@
 using System;
 using FrostArk.Core.Events;
+using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using System.Linq;
 using System.Collections.Generic;
@@ -95,6 +96,38 @@ namespace FrostArk.Core.Commands
                 return CommandResult.Committed(next, new WorldEvent(command.Id, state.Minute,
                     next.Revision, WorldEventKind.CrewSlotClaimed, claim.CrewId, claim.SlotId,
                     claim.LifetimeMinutes));
+            }
+            if (command is RenewCrewDutySlotCommand renew)
+            {
+                var member = state.CrewDuty.Get(renew.CrewId);
+                if (member == null || !state.HasCrew(renew.CrewId))
+                    return CommandResult.Rejected(state, CommandFailure.UnknownCrew);
+                if (member.IsAway)
+                    return CommandResult.Rejected(state, CommandFailure.CrewNotOnShip);
+                if (member.Wounds == 1000)
+                    return CommandResult.Rejected(state, CommandFailure.CrewIncapacitated);
+                var slot = state.CrewDuty.Interactions.GetSlot(renew.SlotId);
+                if (slot == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownInteractionSlot);
+                if (slot.Verb != CrewInteractionVerb.Work &&
+                    slot.Verb != CrewInteractionVerb.Rest)
+                    return CommandResult.Rejected(state, CommandFailure.DutySlotLeaseUnsupported);
+                if (renew.LifetimeMinutes <= 0 || renew.LifetimeMinutes > 1440)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidClaimLifetime);
+                var held = state.CrewDuty.Interactions.GetClaim(renew.SlotId);
+                if (held == null || held.CrewId != renew.CrewId)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionClaimNotOwned);
+                if (held.ExpiresAt <= state.Minute)
+                    return CommandResult.Rejected(state, CommandFailure.InteractionClaimExpired);
+                if (held.ExpiresAt.Value - state.Minute.Value > 5 ||
+                    renew.LifetimeMinutes <= held.ExpiresAt.Value - state.Minute.Value)
+                    return CommandResult.Rejected(state, CommandFailure.DutySlotLeaseNotDue);
+                var next = state.WithCrewInteraction(state.CrewDuty.RenewDutyInteraction(
+                    renew.CrewId, renew.SlotId, state.Minute, renew.LifetimeMinutes),
+                    command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewDutySlotRenewed,
+                    renew.CrewId, renew.SlotId, renew.LifetimeMinutes));
             }
             if (command is ReleaseCrewInteractionCommand release)
             {

@@ -193,11 +193,40 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
             self.assertTrue(path.is_file(), str(path))
         self.assertIn("using EntityId = FrostArk.Core.World.EntityId;", component)
         self.assertIn('"WaitingForTraffic"', component)
+        self.assertIn("RenewCrewDutySlotCommand", component)
+        lease = (ROOT / "Assets/FrostArk/Core/Commands/WorldCommands.cs").read_text(
+            encoding="utf-8"
+        )
+        bus = (ROOT / "Assets/FrostArk/Core/Commands/WorldCommandBus.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("class RenewCrewDutySlotCommand", lease)
+        self.assertIn("CrewDutySlotRenewed", bus)
+        self.assertTrue((ROOT / "tests/FrostArk.Core.Tests"
+                         / "CrewDutySlotLeaseTests.cs.meta").is_file())
         playmode = (ROOT / "Assets/FrostArk/Tests/PlayMode"
                     / "ShipCrewDutyAutonomyPlayModeTests.cs").read_text(
                         encoding="utf-8"
                     )
         self.assertIn("IEnumerator EngineerReturnsToAuthoredStation", playmode)
+        galley = (ROOT / "Assets/FrostArk/Tests/PlayMode"
+                  / "ShipCrewProvisionPlayModeTests.cs")
+        self.assertTrue(galley.is_file())
+        self.assertTrue((ROOT / "Assets/FrostArk/Tests/PlayMode"
+                         / "ShipCrewProvisionPlayModeTests.cs.meta").is_file())
+        galley_source = galley.read_text(encoding="utf-8")
+        self.assertIn("IEnumerator ThirstyCrewOnlyConsumesRealWaterAfterReachingAuthoredGalleySlot",
+                      galley_source)
+        self.assertIn("ShipCrewAgencyCoordinator", galley_source)
+        agency = (unity / "ShipCrewAgencyCoordinator.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("foreach (var offer in CrewProvisionInteractionDiscovery.Find(", agency)
+        fixture = (editor / "ShipCrewAgencyEditModeTests.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("UnplacedFirstDrinkOfferFallsBackToReachableGalley", fixture)
+        self.assertIn("InventoryContainer.ShipHold", galley_source)
         self.assertIn("UnityTest", playmode)
 
 

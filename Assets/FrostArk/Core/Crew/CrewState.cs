@@ -205,6 +205,11 @@ namespace FrostArk.Core.Crew
                 _interactions.Claim(slotId, crewId, now, lifetimeMinutes));
         }
 
+        internal CrewState RenewDutyInteraction(EntityId crewId, EntityId slotId,
+            WorldMinute now, int lifetimeMinutes) =>
+            new CrewState(_members, _jobs, _treatments, _consumables,
+                _interactions.RenewDuty(slotId, crewId, now, lifetimeMinutes));
+
         internal CrewState ReleaseInteraction(EntityId crewId, EntityId slotId) =>
             new CrewState(_members, _jobs, _treatments, _consumables,
                 _interactions.Release(slotId, crewId));
