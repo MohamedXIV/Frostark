@@ -269,6 +269,51 @@ namespace FrostArk.Unity.Tests
         }
 
         [Test]
+        public void AcceptedMoveSurvivesBinarySaveAndReentryAtSafeAuthoredSpawn()
+        {
+            using (var f = new Fixture(thirst: 0))
+            {
+                f.Commander.SelectActor(A);
+                Assert.That(f.Commander.IssueShipMoveOrder(C(3, 1),
+                    new Vector3(3.5f, 0f, 1.5f)), Is.True);
+                f.Walker.Tick(0.08f); // halfway through the accepted move
+                Assert.That(f.Walker.HasIncomingReservation, Is.True);
+                var encoded = SaveCodec.Encode(f.Session.Capture());
+                var decoded = SaveCodec.TryDecode(encoded);
+                Assert.That(decoded.Success, Is.True);
+                Assert.That(decoded.Value.PendingCrewMoves.Count, Is.EqualTo(1));
+                Assert.That(decoded.Value.PendingCrewMoves[0].ShipGoal,
+                    Is.EqualTo(C(3, 1)));
+
+                using (var restored = WorldSession.Restore(decoded.Value))
+                {
+                    // Scene loader establishes the canonical authored spawn; it
+                    // does NOT restore an interpolated midpoint or mouse selection.
+                    var map = ShipSpatialMap.Derive(restored.Capture().State.Layout,
+                        Array.Empty<ShipModuleSpatialProfile>(),
+                        Array.Empty<ShipRoomPortal>());
+                    f.Commander.ClearSelection();
+                    f.Walker.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                    f.Walker.Configure(f.Root.transform, map,
+                        new Dictionary<EntityId, Vector3> { [Room] = Vector3.zero },
+                        C(1, 1), 4f);
+                    f.Commander.SetSession(restored);
+                    f.Agency.Configure(restored, f.Commander, map);
+                    Assert.That(f.Commander.Selection.Count, Is.Zero);
+                    Assert.That(f.Agency.HasActivePlayerMove(A), Is.True);
+                    Assert.That(f.Walker.IsMoving, Is.True);
+                    f.AdvanceWalk();
+                    f.Agency.Tick();
+                    Assert.That(f.Walker.LastReachedCell, Is.EqualTo(C(3, 1)));
+                    Assert.That(f.Agency.HasActivePlayerMove(A), Is.False);
+                    Assert.That(restored.PendingCrewMoves, Is.Empty);
+                    Assert.That(restored.Revision, Is.Zero,
+                        "Replaying physical Move must not duplicate World commands.");
+                }
+            }
+        }
+
+        [Test]
         public void EmergencyCanPreemptPlayerMoveAtSafeBoundaryAndNeedsRealStock()
         {
             using (var f = new Fixture(thirst: 975))
