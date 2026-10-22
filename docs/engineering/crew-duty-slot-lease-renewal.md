@@ -29,3 +29,14 @@ An authentic Work/Rest interaction claim initially lasts 15 **WorldClock minutes
 ## Suggested Unity QA
 
 Pull this branch at its exact latest head. Compile, run the 2 new targeted G2 tests plus all previously green 7 duty G2, full EditMode and PlayMode. In Editor simulate actual `WorldSession.Advance(11)` while already stationed; one owner should renew, no slot duplication or inventory usage; select actor and confirm claim release, then advance 20 minutes to verify no implicit renewal after cancelling. Test Save/Restore of an extended `ExpiresAt` via existing Core test. Record final SHA and only claim pass for tests actually executed.
+
+
+## 2026-10-22 — real-frame shipboard Drink acceptance fixture
+
+After owner-only lease renewal landed, we also filled a separate #112 evidence gap: `Assets/FrostArk/Tests/PlayMode/ShipCrewProvisionPlayModeTests.cs` now contains one **authored-in-test** real Unity-frame `ThirstyCrewOnlyConsumesRealWaterAfterReachingAuthoredGalleySlot` PlayMode scenario.
+
+It creates a proper authored ship-room layout with a **placed galley module** and its `Drink` slot at a reachable neighboring cell, one crew member with genuine `Thirst=800`, two actual `ShipHold` water items, `ShipGridWalker`, `TacticalCommandController` and `ShipCrewAgencyCoordinator`. It asserts the actual slot is claimed while beginning to walk, **zero stock/Need change before arrival**, real frame-driven movement to the authored physical clearance cell, exactly **one** WorldSession Use at arrival (water **2 → 1**, thirst **800 → 200**), released claim, no pending movement or traffic reservation, and no duplicate consumption after additional frames. No fake simulated world-minute step. The fixture does **not** imply production scene content contains a galley yet, or establish OS-level pointer/HUD input.
+
+Its `.meta` GUID and G0 static import/wiring guard are committed. **This new G3 Unity test is authored, NOT RUN**. Expected additions on top of parent #121 are **2 new duty G2 + 1 new provision G3**; these and all earlier tests must run in Unity 6000.6.0f1. Treat parent 80/80 and 27/27 as historical, NOT #122 results.
+
+**Exact current substantive source HEAD `d77bf3c701e157b36a509023e25e1ad2592521f2`:** automatic [GitHub CI #39715959671](https://github.com/MohamedXIV/Frostark/actions/runs/39715959671) **SUCCESS 26/26 G0, 312/312 G1** (job logs reviewed). G0/G1 do **not** compile Unity PlayMode scenes.
