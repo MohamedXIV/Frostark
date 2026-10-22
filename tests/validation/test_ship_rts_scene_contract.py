@@ -250,7 +250,7 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertIn("ReportShipWorkPresence", session)
         self.assertIn("EndShipWorkObservation", session)
         self.assertIn("_mayProduce(crewId, role, minute)", minute)
-        self.assertIn("ReportShipWorkPresence", adapter)
+        self.assertIn("ReportShipDutyPresence", adapter)
         self.assertIn("ClearShipWorkPresence", adapter)
         self.assertIn("StopObservation()", adapter)
         self.assertIn("RepairProgressRequiresPhysicalWorkArrival", fixture)
