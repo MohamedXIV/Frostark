@@ -28,11 +28,23 @@ namespace FrostArk.Unity
 
         private WorldSession _session;
         private TacticalCommandController _commander;
+        private Transform _residentShipRoot;
+        private EntityId _residentShipSceneId;
 
         public bool IsBusy { get; private set; }
         public string LastError { get; private set; }
+        public Transform ResidentShipRoot => _residentShipRoot;
 
         public event Action<PhysicalSceneCheckpoint> TransitionCompleted;
+
+        public void BindResidentShipRoot(Transform shipRoot, EntityId shipSceneId)
+        {
+            _residentShipRoot = shipRoot != null ? shipRoot :
+                throw new ArgumentNullException(nameof(shipRoot));
+            if (!shipSceneId.IsValid)
+                throw new ArgumentException("Valid ship scene ID required.", nameof(shipSceneId));
+            _residentShipSceneId = shipSceneId;
+        }
 
         private void Awake()
         {
@@ -147,28 +159,38 @@ namespace FrostArk.Unity
             SceneTransitDestination destination, EntityId[] party, EntityId transitionId,
             bool commitCrew)
         {
-            var operation = SceneManager.LoadSceneAsync(destination.ScenePath, LoadSceneMode.Additive);
-            if (operation == null)
+            bool reuseLoadedShip = destination.Theater == PhysicalTheater.Ship &&
+                TryFindLoadedShipScene(destination, out var loaded);
+            if (!reuseLoadedShip)
             {
-                Reject("SceneLoadFailed");
-                IsBusy = false;
-                yield break;
-            }
-            yield return operation;
+                var operation = SceneManager.LoadSceneAsync(destination.ScenePath, LoadSceneMode.Additive);
+                if (operation == null)
+                {
+                    Reject("SceneLoadFailed");
+                    IsBusy = false;
+                    yield break;
+                }
+                yield return operation;
 
-            var loaded = SceneManager.GetSceneByPath(destination.ScenePath);
-            if (!loaded.IsValid() || !loaded.isLoaded)
+                loaded = SceneManager.GetSceneByPath(destination.ScenePath);
+                if (!loaded.IsValid() || !loaded.isLoaded)
+                {
+                    Reject("SceneLoadIncomplete");
+                    IsBusy = false;
+                    yield break;
+                }
+            }
+            else
             {
-                Reject("SceneLoadIncomplete");
-                IsBusy = false;
-                yield break;
+                PrepareResidentShipSceneForReturn(loaded, party);
             }
 
-            if (!TryResolve(loaded, destination, party, out var anchor,
-                    out var proxies, out var sceneCamera, out var failure))
+            if (!TryResolve(loaded, destination, party, reuseLoadedShip, out var anchor,
+                    out var proxies, out var shipProxies, out var sceneCamera, out var failure))
             {
                 Reject(failure);
-                yield return SceneManager.UnloadSceneAsync(loaded);
+                if (!reuseLoadedShip)
+                    yield return SceneManager.UnloadSceneAsync(loaded);
                 IsBusy = false;
                 yield break;
             }
@@ -185,7 +207,19 @@ namespace FrostArk.Unity
                     !proxies[i].Agent.Warp(hit.position) || !proxies[i].Agent.isOnNavMesh)
                 {
                     Reject("ActorSpawnNotOnNavMesh");
-                    yield return SceneManager.UnloadSceneAsync(loaded);
+                    if (!reuseLoadedShip)
+                        yield return SceneManager.UnloadSceneAsync(loaded);
+                    IsBusy = false;
+                    yield break;
+                }
+            }
+            for (var i = 0; i < shipProxies.Count; i++)
+            {
+                if (shipProxies[i].Walker == null || !shipProxies[i].Walker.IsConfigured)
+                {
+                    Reject("MissingConfiguredShipWalker");
+                    if (!reuseLoadedShip)
+                        yield return SceneManager.UnloadSceneAsync(loaded);
                     IsBusy = false;
                     yield break;
                 }
@@ -219,10 +253,16 @@ namespace FrostArk.Unity
             if (commitFailure != null)
             {
                 Reject(commitFailure);
-                yield return SceneManager.UnloadSceneAsync(loaded);
+                if (!reuseLoadedShip)
+                    yield return SceneManager.UnloadSceneAsync(loaded);
                 IsBusy = false;
                 yield break;
             }
+
+            if (destination.Theater == PhysicalTheater.Shore)
+                SyncLoadedShoreProxies(loaded, party);
+            else
+                SyncResidentShipBootstraps(loaded);
 
             if (!SceneManager.SetActiveScene(loaded))
             {
@@ -232,8 +272,14 @@ namespace FrostArk.Unity
                 yield break;
             }
 
-            if (previous.IsValid() && previous.isLoaded &&
-                previous != loaded && previous.path != null)
+            bool keepPreviousScene = previous.IsValid() && previous.isLoaded &&
+                previous != loaded && IsResidentShipScene(previous);
+            if (keepPreviousScene)
+            {
+                SyncResidentShipSceneForShoreDeparture(previous, party, sceneCamera);
+            }
+            else if (previous.IsValid() && previous.isLoaded &&
+                     previous != loaded && previous.path != null)
             {
                 var unload = SceneManager.UnloadSceneAsync(previous);
                 if (unload != null)
@@ -254,21 +300,154 @@ namespace FrostArk.Unity
             TransitionCompleted?.Invoke(checkpoint);
         }
 
+        private bool IsResidentShipScene(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return false;
+            if (_residentShipRoot != null && _residentShipRoot.gameObject.scene == scene)
+                return true;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root != null && root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true) != null)
+                    return true;
+            }
+            if (destinations != null && !string.IsNullOrEmpty(scene.path))
+            {
+                foreach (var dest in destinations)
+                {
+                    if (dest != null && dest.IsConfigured &&
+                        dest.Theater == PhysicalTheater.Ship &&
+                        dest.ScenePath == scene.path)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private bool TryFindLoadedShipScene(SceneTransitDestination destination, out Scene loaded)
+        {
+            loaded = default;
+            if (destination == null || destination.Theater != PhysicalTheater.Ship)
+                return false;
+            var byPath = SceneManager.GetSceneByPath(destination.ScenePath);
+            if (byPath.IsValid() && byPath.isLoaded)
+            {
+                loaded = byPath;
+                return true;
+            }
+            if (_residentShipRoot != null &&
+                (!_residentShipSceneId.IsValid || _residentShipSceneId == destination.SceneId))
+            {
+                var rootScene = _residentShipRoot.gameObject.scene;
+                if (rootScene.IsValid() && rootScene.isLoaded)
+                {
+                    loaded = rootScene;
+                    return true;
+                }
+            }
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var candidate = SceneManager.GetSceneAt(i);
+                if (!candidate.IsValid() || !candidate.isLoaded) continue;
+                foreach (var root in candidate.GetRootGameObjects())
+                {
+                    if (root == null) continue;
+                    var bootstrap = root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true);
+                    if (bootstrap != null && bootstrap.BoundShipSceneId == destination.SceneId)
+                    {
+                        loaded = candidate;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private static void SyncLoadedShoreProxies(Scene shoreScene, EntityId[] activeParty)
+        {
+            var partySet = new HashSet<EntityId>(activeParty);
+            foreach (var root in shoreScene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                foreach (var actor in root.GetComponentsInChildren<TacticalActorProxy>(true))
+                {
+                    if (actor != null)
+                        actor.gameObject.SetActive(partySet.Contains(actor.ActorId));
+                }
+            }
+        }
+
+        private static void SyncResidentShipBootstraps(Scene shipScene)
+        {
+            foreach (var root in shipScene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                foreach (var bootstrap in root.GetComponentsInChildren<ShipTacticalSceneBootstrap>(true))
+                    bootstrap?.SyncCrewPresenceWithSession();
+            }
+        }
+
+        private static void SyncResidentShipSceneForShoreDeparture(Scene shipScene,
+            EntityId[] departingParty, Camera shoreCamera)
+        {
+            var awaySet = new HashSet<EntityId>(departingParty);
+            foreach (var root in shipScene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                foreach (var bootstrap in root.GetComponentsInChildren<ShipTacticalSceneBootstrap>(true))
+                    bootstrap?.SyncCrewPresenceWithSession();
+                foreach (var actor in root.GetComponentsInChildren<TacticalActorProxy>(true))
+                {
+                    if (actor != null && awaySet.Contains(actor.ActorId))
+                        actor.gameObject.SetActive(false);
+                }
+                foreach (var cam in root.GetComponentsInChildren<Camera>(true))
+                {
+                    if (cam != null && cam != shoreCamera)
+                        cam.enabled = false;
+                }
+            }
+        }
+
+        private static void PrepareResidentShipSceneForReturn(Scene shipScene,
+            EntityId[] returningParty)
+        {
+            var returnSet = new HashSet<EntityId>(returningParty);
+            foreach (var root in shipScene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                foreach (var cam in root.GetComponentsInChildren<Camera>(true))
+                {
+                    if (cam != null)
+                        cam.enabled = true;
+                }
+                foreach (var actor in root.GetComponentsInChildren<TacticalActorProxy>(true))
+                {
+                    if (actor != null && returnSet.Contains(actor.ActorId))
+                        actor.gameObject.SetActive(true);
+                }
+            }
+        }
+
         private bool TryResolve(Scene loaded, SceneTransitDestination destination,
-            EntityId[] party, out Transform anchor,
-            out List<TacticalActorProxy> proxies, out Camera camera,
-            out string failure)
+            EntityId[] party, bool reuseLoadedShip, out Transform anchor,
+            out List<TacticalActorProxy> proxies,
+            out List<ShipCrewSelectionProxy> shipProxies,
+            out Camera camera, out string failure)
         {
             anchor = null;
             camera = null;
             proxies = new List<TacticalActorProxy>();
+            shipProxies = new List<ShipCrewSelectionProxy>();
             failure = null;
             var seen = new HashSet<EntityId>();
+            var seenShip = new HashSet<EntityId>();
             var targets = new HashSet<EntityId>(party);
 
             foreach (var root in loaded.GetRootGameObjects())
             {
-                if (root.GetComponentsInChildren<WorldSessionScope>(true).Length > 0)
+                if (!reuseLoadedShip &&
+                    root.GetComponentsInChildren<WorldSessionScope>(true).Length > 0)
                 {
                     failure = "DestinationContainsAnotherSessionScope";
                     return false;
@@ -295,18 +474,36 @@ namespace FrostArk.Unity
                     if (targets.Contains(actor.ActorId))
                         proxies.Add(actor);
                 }
+                if (destination.Theater == PhysicalTheater.Ship)
+                {
+                    foreach (var shipActor in root.GetComponentsInChildren<ShipCrewSelectionProxy>(true))
+                    {
+                        if (!seenShip.Add(shipActor.ActorId))
+                        {
+                            failure = "DuplicatePersistentActorProxyId";
+                            return false;
+                        }
+                        if (targets.Contains(shipActor.ActorId))
+                            shipProxies.Add(shipActor);
+                    }
+                }
                 if (camera == null)
                     camera = root.GetComponentInChildren<Camera>(true);
             }
 
             if (anchor == null)
                 failure = "MissingSceneReentryAnchor";
-            else if (proxies.Count != targets.Count)
+            else if (proxies.Count + shipProxies.Count < targets.Count ||
+                     !targets.All(id => proxies.Any(p => p.ActorId == id) ||
+                                        shipProxies.Any(s => s.ActorId == id)))
                 failure = "MissingPersistentCrewProxy";
             else if (camera == null)
                 failure = "MissingTacticalSceneCamera";
             else
-                proxies.Sort((a,b) => string.CompareOrdinal(a.ActorId.Value, b.ActorId.Value));
+            {
+                proxies.Sort((a, b) => string.CompareOrdinal(a.ActorId.Value, b.ActorId.Value));
+                shipProxies.Sort((a, b) => string.CompareOrdinal(a.ActorId.Value, b.ActorId.Value));
+            }
 
             return failure == null;
         }

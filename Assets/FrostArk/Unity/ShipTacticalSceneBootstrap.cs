@@ -59,8 +59,12 @@ namespace FrostArk.Unity
         private WorldSession _session;
         private ShipSpatialMap _map;
         private uint _layoutFingerprint;
+        private Dictionary<EntityId, Vector3> _origins;
+        private EntityId _boundShipSceneId;
 
         public ShipSpatialMap Map => _map;
+        public Transform ShipRoot => shipRoot;
+        public EntityId BoundShipSceneId => _boundShipSceneId;
 
         /// <summary>
         /// Opt-in scene-local new-run location. WorldSessionScope calls this
@@ -103,7 +107,12 @@ namespace FrostArk.Unity
             if (shipRoot == null || commander == null)
                 throw new InvalidOperationException("Ship root and tactical commander are required.");
             var checkpoint = session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship)
+            if (checkpoint == null)
+                throw new InvalidOperationException("Ship bootstrap requires authoritative ship checkpoint.");
+            var shipSceneId = checkpoint.Theater == PhysicalTheater.Ship
+                ? checkpoint.SceneId
+                : (session.ResidentShipSceneId ?? EntityId.Parse(startingSceneId));
+            if (!shipSceneId.IsValid)
                 throw new InvalidOperationException("Ship bootstrap requires authoritative ship checkpoint.");
 
             var state = session.Capture().State;
@@ -121,6 +130,8 @@ namespace FrostArk.Unity
             if (_session != null)
                 _session.Changed -= OnWorldChanged;
             _session = session;
+            _origins = origins;
+            _boundShipSceneId = shipSceneId;
             _map = BuildMap(state.Layout);
             _layoutFingerprint = state.Layout.Fingerprint();
             foreach (var binding in rooms)
@@ -138,7 +149,8 @@ namespace FrostArk.Unity
                 var id = binding.Actor.ActorId;
                 var member = state.CrewDuty.Get(id);
                 if (!id.IsValid || !state.HasCrew(id) || member == null ||
-                    member.IsAway || member.Wounds >= 1000)
+                    (checkpoint.Theater == PhysicalTheater.Ship && member.IsAway) ||
+                    member.Wounds >= 1000)
                     throw new InvalidOperationException("Spawned crew must be canonical and shipboard.");
                 var roomId = EntityId.Parse(binding.StartingRoomId);
                 if (!origins.ContainsKey(roomId))
@@ -149,8 +161,17 @@ namespace FrostArk.Unity
                 walker.Configure(shipRoot, _map, origins,
                     new ShipGridCell(roomId, binding.StartingCell.x, binding.StartingCell.y),
                     crewMoveSpeed);
-                binding.Actor.BindScene(checkpoint.SceneId);
+                binding.Actor.BindScene(shipSceneId);
                 commander.RegisterShipActor(binding.Actor);
+                if (member.IsAway)
+                {
+                    walker.SuspendForShoreDeparture();
+                    binding.Actor.gameObject.SetActive(false);
+                }
+                else
+                {
+                    binding.Actor.gameObject.SetActive(true);
+                }
             }
             // One scene-local arbitration adapter reuses canonical crew state
             // and the existing RTS commander; no autonomous duplicate clock.
@@ -165,12 +186,87 @@ namespace FrostArk.Unity
             _session.Changed += OnWorldChanged;
         }
 
+        public void SyncCrewPresenceWithSession()
+        {
+            if (_session == null || _map == null || _origins == null) return;
+            var state = _session.Capture().State;
+            var agency = commander != null ? commander.GetComponent<ShipCrewAgencyCoordinator>() : null;
+            var duty = commander != null ? commander.GetComponent<ShipCrewDutyAutonomy>() : null;
+            var traffic = shipRoot != null ? shipRoot.GetComponent<ShipTrafficCoordinator>() : null;
+
+            foreach (var binding in crew)
+            {
+                if (binding == null || binding.Actor == null) continue;
+                var id = binding.Actor.ActorId;
+                var member = state.CrewDuty.Get(id);
+                if (member == null) continue;
+                if (member.IsAway && binding.Actor.gameObject.activeSelf)
+                {
+                    commander?.Selection.Exclude(id);
+                    agency?.ReleaseActorForDeparture(id);
+                    duty?.ReleaseActorForDeparture(id);
+                    binding.Actor.Walker?.SuspendForShoreDeparture();
+                    binding.Actor.gameObject.SetActive(false);
+                }
+            }
+
+            foreach (var binding in crew)
+            {
+                if (binding == null || binding.Actor == null) continue;
+                var id = binding.Actor.ActorId;
+                var member = state.CrewDuty.Get(id);
+                if (member == null || member.IsAway || binding.Actor.gameObject.activeSelf)
+                    continue;
+                var roomId = EntityId.Parse(binding.StartingRoomId);
+                var preferred = new ShipGridCell(roomId, binding.StartingCell.x, binding.StartingCell.y);
+                var reentryCell = ResolveSafeReentryCell(state.Layout, binding.Actor.Walker, traffic, preferred);
+                binding.Actor.gameObject.SetActive(true);
+                binding.Actor.Walker.ResumeFromShoreAt(reentryCell);
+                commander?.RegisterShipActor(binding.Actor);
+            }
+        }
+
+        private ShipGridCell ResolveSafeReentryCell(ShipLayoutState layout,
+            ShipGridWalker walker, ShipTrafficCoordinator traffic, ShipGridCell preferred)
+        {
+            if (_map.Walkable(preferred) && !_map.IsPortalEndpoint(preferred) &&
+                (traffic == null || traffic.CanPark(walker, preferred)))
+                return preferred;
+            var room = layout.GetRoom(preferred.RoomId);
+            if (room != null)
+            {
+                var best = preferred;
+                int bestDist = int.MaxValue;
+                for (int y = 0; y < room.Height; y++)
+                {
+                    for (int x = 0; x < room.Width; x++)
+                    {
+                        var candidate = new ShipGridCell(room.Id, x, y);
+                        if (!_map.Walkable(candidate) || _map.IsPortalEndpoint(candidate))
+                            continue;
+                        if (traffic != null && !traffic.CanPark(walker, candidate))
+                            continue;
+                        int dist = Math.Abs(x - preferred.X) + Math.Abs(y - preferred.Y);
+                        if (dist < bestDist)
+                        {
+                            bestDist = dist;
+                            best = candidate;
+                        }
+                    }
+                }
+                if (bestDist != int.MaxValue)
+                    return best;
+            }
+            return preferred;
+        }
+
         private void OnWorldChanged(WorldSessionChange change)
         {
             if (_session == null) return;
             var layout = _session.Capture().State.Layout;
             if (layout.Fingerprint() != _layoutFingerprint)
                 RebuildNavigation();
+            SyncCrewPresenceWithSession();
         }
 
         private void OnDestroy()

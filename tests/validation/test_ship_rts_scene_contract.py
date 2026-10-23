@@ -324,6 +324,38 @@ class ShipRtsDemoSceneContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "Assets/FrostArk/Core/Save"
                          / "SaveCodecPendingCrewMoves.cs.meta").is_file())
 
+    def test_e12_persistent_ship_and_concurrent_theater_contract(self):
+        """Static G0 guard for E12 (#127-#130); Unity G2/G3 remains a separate gate."""
+        contract = ROOT / "docs/engineering/persistent-ship-world-runtime-contract.md"
+        self.assertTrue(contract.is_file())
+        session = (ROOT / "Assets/FrostArk/Core/Application/WorldSession.cs").read_text(
+            encoding="utf-8"
+        )
+        router = (
+            ROOT / "Assets/FrostArk/Core/Application/CrewTheaterMoveRouter.cs"
+        ).read_text(encoding="utf-8")
+        dispatcher = (
+            ROOT / "Assets/FrostArk/Unity/CrewTheaterMoveDispatcher.cs"
+        ).read_text(encoding="utf-8")
+        bootstrap = (
+            ROOT / "Assets/FrostArk/Unity/ShipTacticalSceneBootstrap.cs"
+        ).read_text(encoding="utf-8")
+        transit = (
+            ROOT / "Assets/FrostArk/Unity/ShoreSceneTransitCoordinator.cs"
+        ).read_text(encoding="utf-8")
+        walker = (ROOT / "Assets/FrostArk/Unity/ShipGridWalker.cs").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("ResidentShipSceneId", session)
+        self.assertIn("IsResidentShipScene", session)
+        self.assertIn("requestedTheater == PhysicalTheater.Shore", router)
+        self.assertIn("MatchesExpectedScene", dispatcher)
+        self.assertIn("SyncCrewPresenceWithSession", bootstrap)
+        self.assertIn("SuspendForShoreDeparture", walker)
+        self.assertIn("ResumeFromShoreAt", walker)
+        self.assertIn("IsResidentShipScene", transit)
+        self.assertIn("TryFindLoadedShipScene", transit)
+
 
 if __name__ == "__main__":
     unittest.main()

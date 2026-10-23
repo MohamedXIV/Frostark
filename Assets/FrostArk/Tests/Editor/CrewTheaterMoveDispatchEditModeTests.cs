@@ -227,5 +227,51 @@ namespace FrostArk.Unity.Tests
                 Assert.That(stale.Calls, Is.Zero);
             }
         }
+
+        [Test]
+        public void ConcurrentShipAndShoreExecutorsDispatchSimultaneouslyWhilePartyIsAshore()
+        {
+            using (var session = Begin())
+            {
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Scout }, true,
+                    EntityId.Parse("transfer:concurrent")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    ShoreScene, Island, Landing, new[] { Scout }));
+
+                var shipExecutor = new FakeExecutor
+                {
+                    ActorId = Engineer, Theater = PhysicalTheater.Ship, SceneId = ShipScene
+                };
+                var shoreExecutor = new FakeExecutor
+                {
+                    ActorId = Scout, Theater = PhysicalTheater.Shore, SceneId = ShoreScene
+                };
+                var executors = new ICrewTheaterMoveExecutor[] { shipExecutor, shoreExecutor };
+
+                var shipCell = new ShipGridCell(Engine, 4, 3);
+                var shipResults = CrewTheaterMoveDispatcher.Dispatch(session,
+                    TacticalOrderIntent.MoveTo(new[] { Engineer, Scout }, 10, 3),
+                    CrewMoveGoal.ShipCellGoal(shipCell), executors);
+                Assert.That(shipResults[0].ActorId, Is.EqualTo(Engineer));
+                Assert.That(shipResults[0].Status, Is.EqualTo(CrewMoveDispatchStatus.Accepted));
+                Assert.That(shipResults[1].ActorId, Is.EqualTo(Scout));
+                Assert.That(shipResults[1].RouteStatus, Is.EqualTo(CrewTheaterRouteStatus.WrongTheater));
+                Assert.That(shipExecutor.Calls, Is.EqualTo(1));
+                Assert.That(shipExecutor.LastDestination.ShipCell, Is.EqualTo(shipCell));
+                Assert.That(shoreExecutor.Calls, Is.Zero);
+
+                var shorePoint = new Vector3(12f, 0f, -4f);
+                var shoreResults = CrewTheaterMoveDispatcher.Dispatch(session,
+                    TacticalOrderIntent.MoveTo(new[] { Engineer, Scout }, 12, -4),
+                    CrewMoveGoal.ShorePoint(shorePoint), executors);
+                Assert.That(shoreResults[0].ActorId, Is.EqualTo(Engineer));
+                Assert.That(shoreResults[0].RouteStatus, Is.EqualTo(CrewTheaterRouteStatus.WrongTheater));
+                Assert.That(shoreResults[1].ActorId, Is.EqualTo(Scout));
+                Assert.That(shoreResults[1].Status, Is.EqualTo(CrewMoveDispatchStatus.Accepted));
+                Assert.That(shoreExecutor.Calls, Is.EqualTo(1));
+                Assert.That(shoreExecutor.LastDestination.ShoreWorld, Is.EqualTo(shorePoint));
+            }
+        }
     }
 }

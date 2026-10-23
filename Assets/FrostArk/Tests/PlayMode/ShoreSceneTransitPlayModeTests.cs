@@ -131,6 +131,45 @@ namespace FrostArk.Unity.Tests
                 Assert.That(UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(
                     FindObjectsSortMode.None).Select(x => x.ActorId).Distinct().Count(),
                     Is.EqualTo(2));
+
+                // Second round-trip from the now-resident Ship scene: the ship
+                // scene and its hierarchy must remain resident across Shore
+                // departure and return without being destroyed or recreated.
+                var shipScene = SceneManager.GetActiveScene();
+                var shipEnvRoot = shipScene.GetRootGameObjects()
+                    .First(go => go.name == "ShipDeckEnvironment");
+                int shipRootInstanceId = shipEnvRoot.GetInstanceID();
+
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:playmode:depart-2")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(shipScene.isLoaded, Is.True,
+                    "Persistent ship scene must remain resident while landing party explores shore.");
+                Assert.That(shipEnvRoot != null && shipEnvRoot.GetInstanceID() == shipRootInstanceId,
+                    Is.True, "Ship root GameObject must not be destroyed on shore departure.");
+
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:playmode:return-2")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(shipEnvRoot != null && shipEnvRoot.GetInstanceID() == shipRootInstanceId,
+                    Is.True, "Returning from shore must reuse the same persistent ship root.");
             }
             finally
             {
