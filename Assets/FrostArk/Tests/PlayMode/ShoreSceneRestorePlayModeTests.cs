@@ -273,5 +273,77 @@ namespace FrostArk.Unity.Tests
                 }
             }
         }
+        [UnityTest]
+        public IEnumerator PlayMode_DiskSaveCoordinator_QuickSaveAndQuickLoad_RestoresPhysicalSessionFromDisk()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True,
+                "Generate fixture scenes in the Unity Editor first.");
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var oldRoot = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            Assert.That(oldRoot, Is.Not.Null);
+            var session = oldRoot.Container.Resolve<WorldSession>();
+            var transit = oldRoot.GetComponent<ShoreSceneTransitCoordinator>();
+            var commander = oldRoot.GetComponentInChildren<TacticalCommandController>();
+            Assert.That(transit, Is.Not.Null);
+            Assert.That(commander, Is.Not.Null);
+
+            // Depart Hero to shore
+            commander.SelectActor(Hero);
+            Assert.That(transit.TryDepartSelected(Landing(),
+                EntityId.Parse("transition:disk-save:depart")), Is.True);
+
+            float time = 8f;
+            while (transit.IsBusy && time > 0)
+            {
+                yield return null;
+                time -= Time.deltaTime;
+            }
+            Assert.That(transit.IsBusy, Is.False);
+            Assert.That(transit.LastError, Is.Null);
+            Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+            // Create temporary test directory for LocalDiskSaveBlobStore to ensure test isolation
+            string testSaveDir = System.IO.Path.Combine(Application.temporaryCachePath, "FrostArkDiskSaveTest_" + Guid.NewGuid().ToString("N"));
+            var store = new LocalDiskSaveBlobStore(testSaveDir, "quicksave_test");
+            var coordinator = oldRoot.gameObject.AddComponent<DiskSaveCoordinator>();
+            coordinator.Initialize(session, store);
+
+            try
+            {
+                // QuickSave to disk via coordinator
+                Assert.That(coordinator.QuickSave(), Is.True, "QuickSave to disk must succeed.");
+                Assert.That(System.IO.File.Exists(store.PrimaryPath), Is.True, "Save file must exist on disk.");
+                long savedRevision = session.Revision;
+
+                // Load from disk via coordinator
+                var loadResult = coordinator.QuickLoad();
+                Assert.That(loadResult, Is.Not.Null);
+                Assert.That(loadResult.Success, Is.True, "QuickLoad from disk must succeed: " + loadResult.Error);
+                Assert.That(loadResult.Value.Revision, Is.EqualTo(savedRevision));
+                Assert.That(loadResult.Value.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(loadResult.Value.SceneCheckpoint.PartyIds, Is.EqualTo(new[] { Hero }));
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(testSaveDir))
+                {
+                    try { System.IO.Directory.Delete(testSaveDir, true); } catch { }
+                }
+                if (oldRoot != null)
+                    UnityEngine.Object.Destroy(oldRoot.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
     }
 }

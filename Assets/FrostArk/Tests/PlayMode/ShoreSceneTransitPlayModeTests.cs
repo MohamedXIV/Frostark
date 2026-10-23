@@ -530,6 +530,216 @@ namespace FrostArk.Unity.Tests
                 }
             }
         }
+
+        [UnityTest]
+        public IEnumerator PlayMode_GangwayInteractable_ClickToCommandEmbarkAndDisembarkRoundTrip()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True,
+                "Generate the explicit ship/shore fixture scenes in Unity first.");
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            Assert.That(root, Is.Not.Null);
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = UnityEngine.Object.FindFirstObjectByType<TacticalCommandController>();
+            var transit = UnityEngine.Object.FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+            Assert.That(commander, Is.Not.Null);
+            Assert.That(transit, Is.Not.Null);
+
+            try
+            {
+                // Create or find ship gangway interactable
+                var shipGangway = UnityEngine.Object.FindFirstObjectByType<ShoreGangwayInteractable>();
+                if (shipGangway == null)
+                {
+                    var gangwayObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    gangwayObj.name = "ShipGangwayInteractable";
+                    gangwayObj.transform.position = new Vector3(0, 0.5f, -3f);
+                    shipGangway = gangwayObj.AddComponent<ShoreGangwayInteractable>();
+                    shipGangway.SetInteractionRange(3.5f);
+                }
+                shipGangway.Configure(transit, ShoreDestination(), GangwayTransitMode.DisembarkToShore);
+
+                // Select Hero and issue interact order to the gangway
+                commander.SelectActor(Hero);
+                Assert.That(commander.Selection.Count, Is.EqualTo(1));
+                Assert.That(commander.IssueInteractOrder(shipGangway), Is.True,
+                    "Click-to-command interact order on ship gangway must be accepted.");
+
+                // Await transit to shore
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False, "Transit to shore timed out.");
+                Assert.That(transit.LastError, Is.Null, "Transit error: " + transit.LastError);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+
+                // Now ashore: create or find shore return gangway interactable
+                var shoreGangwayObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                shoreGangwayObj.name = "ShoreReturnGangwayInteractable";
+                shoreGangwayObj.transform.position = new Vector3(0, 0.5f, -3f);
+                var shoreGangway = shoreGangwayObj.AddComponent<ShoreGangwayInteractable>();
+                shoreGangway.SetInteractionRange(3.5f);
+                shoreGangway.Configure(transit, ShipDestination(), GangwayTransitMode.ReturnToShip);
+
+                // Select Hero and issue return order to shore gangway
+                commander.SelectActor(Hero);
+                Assert.That(commander.IssueInteractOrder(shoreGangway), Is.True,
+                    "Click-to-command interact order on shore return gangway must be accepted.");
+
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False, "Return transit to ship timed out.");
+                Assert.That(transit.LastError, Is.Null, "Return error: " + transit.LastError);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator PlayMode_OnboardRepair_ProgressesLegitimatelyWhileExpeditionIsAshore_WithoutPhantomProductivity()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = UnityEngine.Object.FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+
+            try
+            {
+                // Establish resident ship scene
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:repair-regression:depart-init")), Is.True);
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:repair-regression:return-init")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+
+                var hullJobId = EntityId.Parse("repair:hull");
+                var repairBefore = session.Capture().State.CrewDuty.GetRepair(hullJobId);
+                Assert.That(repairBefore, Is.Not.Null, "Fixture state must provide repair:hull job.");
+                long initialRemaining = repairBefore.RemainingWork;
+                Assert.That(initialRemaining, Is.EqualTo(500));
+
+                // Hero departs alone; Companion remains onboard to work
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:repair-regression:depart")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+                // Verify partition: Hero is away ashore, Companion is onboard
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+                Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+
+                // Advance simulation minute: onboard repairer produces legitimate work
+                long revBefore = session.Revision;
+                var advance = session.Advance(1);
+                Assert.That(advance.AdvancedMinutes, Is.EqualTo(1));
+                Assert.That(session.Revision, Is.EqualTo(revBefore),
+                    "Advancing time must not manufacture unearned world commands.");
+
+                // Legitimate repair progress occurred for onboard worker
+                var repairAfter = session.Capture().State.CrewDuty.GetRepair(hullJobId);
+                Assert.That(repairAfter, Is.Not.Null);
+                Assert.That(repairAfter.RemainingWork, Is.LessThan(initialRemaining),
+                    "Onboard repairer must make legitimate progress while expedition is ashore.");
+                // Skill 850 / 100 = 8 work/minute
+                Assert.That(repairAfter.RemainingWork, Is.EqualTo(initialRemaining - 8));
+
+                // Assert absence of phantom productivity / duplicate resources for party ashore:
+                var heroAshore = session.Capture().State.CrewDuty.Get(Hero);
+                Assert.That(heroAshore.IsAway, Is.True);
+                Assert.That(session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.Pack, EntityId.Parse("item:scrap_metal")), Is.Zero,
+                    "Party ashore must not generate phantom resources.");
+
+                // Yield real frames for physics and rendering
+                for (int frame = 0; frame < 20; frame++)
+                    yield return null;
+
+                // Return Hero to ship
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:repair-regression:return")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+
+                // Verify onboard progress is retained upon return
+                var repairOnReturn = session.Capture().State.CrewDuty.GetRepair(hullJobId);
+                Assert.That(repairOnReturn.RemainingWork, Is.EqualTo(initialRemaining - 8));
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
+                Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
     }
 [SetUpFixture]
     public class PlayModeDeterministicFrameSetup
