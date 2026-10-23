@@ -73,15 +73,22 @@ namespace FrostArk.Core.Save
             }
             _overrides = list.OrderBy(o => o.Id.Value, StringComparer.Ordinal).ToArray();
             var moves = (crewMoves ?? Array.Empty<PendingCrewMove>()).ToArray();
-            if (moves.Length > 0 && (sceneCheckpoint == null ||
-                sceneCheckpoint.Theater != PhysicalTheater.Ship))
+            if (moves.Length > 0 && sceneCheckpoint == null)
                 throw new ArgumentException("Pending ship Moves require a saved ship checkpoint.",
                     nameof(crewMoves));
             var seenCrew = new HashSet<string>(StringComparer.Ordinal);
+            var expectedShipScene = moves.Length > 0
+                ? (sceneCheckpoint.Theater == PhysicalTheater.Ship
+                    ? sceneCheckpoint.SceneId
+                    : moves[0]?.SceneId ?? default)
+                : default;
             foreach (var move in moves)
             {
                 if (move == null || !seenCrew.Add(move.CrewId.Value) ||
-                    move.SceneId != sceneCheckpoint.SceneId ||
+                    !expectedShipScene.IsValid ||
+                    move.SceneId != expectedShipScene ||
+                    (sceneCheckpoint.Theater == PhysicalTheater.Shore &&
+                     move.SceneId == sceneCheckpoint.SceneId) ||
                     !state.HasCrew(move.CrewId) ||
                     state.CrewDuty.Get(move.CrewId) == null ||
                     state.CrewDuty.Get(move.CrewId).IsAway ||

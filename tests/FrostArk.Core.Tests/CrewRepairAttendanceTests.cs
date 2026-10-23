@@ -237,5 +237,31 @@ namespace FrostArk.Core.Tests
                     "A truly unloaded/changed physical scene reverts to offscreen.");
             }
         }
+
+        [Test]
+        public void OnboardRepairObservationContinuesWhileLandingPartyExploresShore()
+        {
+            using (var session = Session())
+            {
+                session.BeginShipWorkObservation(Scene);
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Other }, true,
+                    EntityId.Parse("transition:repair:shore")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    EntityId.Parse("scene:repair:shore"),
+                    EntityId.Parse("island:repair:coast"),
+                    EntityId.Parse("anchor:repair:beach"),
+                    new[] { Other }));
+
+                // Travelling onboard worker still produces 0 while ship observation remains active.
+                session.Advance(1);
+                Assert.That(Remaining(session), Is.EqualTo(500),
+                    "Ship observation must remain active during a shore expedition.");
+
+                // Stationed onboard worker produces canonical repair and renews lease while party is ashore.
+                Assert.That(session.ReportShipWorkPresence(Worker, Work), Is.True);
+                session.Advance(1);
+                Assert.That(Remaining(session), Is.EqualTo(492));
+            }
+        }
     }
 }

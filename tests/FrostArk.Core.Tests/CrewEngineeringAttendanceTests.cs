@@ -317,5 +317,67 @@ namespace FrostArk.Core.Tests
                 Assert.That(s.Capture().State.GetSupply(Fuel), Is.EqualTo(19));
             }
         }
+
+        [Test]
+        public void OnboardEngineerMaintainsBoilerAndLeaseRenewalWhileShorePartyIsAway()
+        {
+            var crew = new[]
+            {
+                new CrewMember(Engineer, DutyRole.Engineering, 1000, 0, 0, 1440),
+                new CrewMember(Watch, DutyRole.Watch, 850, 100, 0, 1440)
+            };
+            var duty = CrewState.Create(crew,
+                interactions: CrewInteractionState.Create(new[]
+                {
+                    new CrewInteractionSlot(Work, Station, CrewInteractionVerb.Work, -1, 0, 0)
+                }));
+            var layout = ShipLayoutState.Create(
+                new[] { new ShipCompartmentSlot(Room, 7, 7) },
+                new[] { new ShipModuleBlueprint(Blueprint, ShipModuleKind.Auxiliary, 1, 1,
+                    EntityId.Parse("item:thermal:part"), 1, 1) },
+                new[] { new ShipModule(Station, Blueprint, Room, 4, 4) });
+            var thermal = ShipThermalState.Create(new[]
+            {
+                new ThermalCompartment(Room, 1000, 20_000_000, 0, 1000, 1000)
+            }, Array.Empty<ThermalConnection>(),
+                new BoilerConfiguration(Room, 1, 10_000));
+            using (var s = new WorldSession(WorldState.Create(WorldMinute.Zero,
+                new[] { new SupplyStock(Fuel, 20) },
+                new[] { Engineer, Watch }, thermal: thermal,
+                crewDuty: duty, layout: layout),
+                ambientMilliC: _ => 20_000))
+            {
+                s.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(Scene,
+                    EntityId.Parse("anchor:thermal:spawn")));
+                Assert.That(s.Submit(new AssignCrewCommand(
+                    EntityId.Parse("cmd:thermal:assign-shore"), Engineer, Station,
+                    s.Revision)).Success, Is.True);
+                Assert.That(s.Submit(new ClaimCrewInteractionCommand(
+                    EntityId.Parse("cmd:thermal:claim-shore"), Engineer, Work,
+                    15, s.Revision)).Success, Is.True);
+                s.BeginShipWorkObservation(Scene);
+
+                Assert.That(ShoreCrewTransfer.Transfer(s, new[] { Watch }, true,
+                    EntityId.Parse("transition:thermal:shore")).Success, Is.True);
+                s.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    EntityId.Parse("scene:thermal:shore"),
+                    EntityId.Parse("island:thermal:floe"),
+                    EntityId.Parse("anchor:thermal:beach"),
+                    new[] { Watch }));
+
+                var before = Energy(s);
+                for (int minute = 1; minute <= 12; minute++)
+                {
+                    Assert.That(s.ReportShipWorkPresence(Engineer, Work), Is.True);
+                    s.Advance(1);
+                }
+                Assert.That(Energy(s), Is.GreaterThan(before));
+                Assert.That(s.Capture().State.GetSupply(Fuel), Is.EqualTo(8));
+                var claim = s.Capture().State.CrewDuty.Interactions.GetClaim(Work);
+                Assert.That(claim, Is.Not.Null);
+                Assert.That(claim.ExpiresAt.Value, Is.EqualTo(25),
+                    "Observed onboard duty lease renews at t10 even while shore party is away.");
+            }
+        }
     }
 }
