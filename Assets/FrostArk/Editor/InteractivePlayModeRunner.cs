@@ -23,11 +23,13 @@ namespace FrostArk.Unity.Editor
 
             public void RunStarted(ITestAdaptor testsToRun)
             {
+                Time.captureFramerate = 60;
                 Debug.Log($"[InteractivePlayModeRunner] PlayMode test run started: {testsToRun.Name} ({testsToRun.TestCaseCount} tests)");
             }
 
             public void RunFinished(ITestResultAdaptor result)
             {
+                Time.captureFramerate = 0;
                 Debug.Log($"[InteractivePlayModeRunner] RunFinished. Total: {result.PassCount + result.FailCount + result.SkipCount}, Passed: {result.PassCount}, Failed: {result.FailCount}, Skipped: {result.SkipCount}");
                 try
                 {
@@ -64,6 +66,7 @@ namespace FrostArk.Unity.Editor
             {
                 if (!test.IsSuite)
                 {
+                    Time.captureFramerate = 60;
                     Debug.Log($"[InteractivePlayModeRunner] TestStarted: {test.FullName}");
                 }
             }

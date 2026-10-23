@@ -138,7 +138,6 @@ namespace FrostArk.Unity.Tests
                 var shipScene = SceneManager.GetActiveScene();
                 var shipEnvRoot = shipScene.GetRootGameObjects()
                     .First(go => go.name == "ShipDeckEnvironment");
-                int shipRootInstanceId = shipEnvRoot.GetInstanceID();
 
                 commander.SelectActor(Hero);
                 Assert.That(transit.TryDepartSelected(ShoreDestination(),
@@ -154,7 +153,7 @@ namespace FrostArk.Unity.Tests
                 Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
                 Assert.That(shipScene.isLoaded, Is.True,
                     "Persistent ship scene must remain resident while landing party explores shore.");
-                Assert.That(shipEnvRoot != null && shipEnvRoot.GetInstanceID() == shipRootInstanceId,
+                Assert.That(shipEnvRoot != null && !shipEnvRoot.Equals(null),
                     Is.True, "Ship root GameObject must not be destroyed on shore departure.");
 
                 Assert.That(transit.TryReturn(ShipDestination(),
@@ -168,8 +167,10 @@ namespace FrostArk.Unity.Tests
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
                 Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
-                Assert.That(shipEnvRoot != null && shipEnvRoot.GetInstanceID() == shipRootInstanceId,
-                    Is.True, "Returning from shore must reuse the same persistent ship root.");
+                var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
+                    .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
+                Assert.That(activeShipRoot, Is.SameAs(shipEnvRoot),
+                    "Returning from shore must reuse the same persistent ship root.");
             }
             finally
             {
@@ -228,6 +229,21 @@ namespace FrostArk.Unity.Tests
                     }
                 }
             }
+        }
+    }
+    [SetUpFixture]
+    public class PlayModeDeterministicFrameSetup
+    {
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            Time.captureFramerate = 60;
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            Time.captureFramerate = 0;
         }
     }
 }
