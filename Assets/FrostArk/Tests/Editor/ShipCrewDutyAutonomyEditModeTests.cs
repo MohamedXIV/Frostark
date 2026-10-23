@@ -705,9 +705,9 @@ namespace FrostArk.Unity.Tests
                         });
                     bootstrap.Initialize(session);
 
-                    int shipRootInstanceId = root.GetInstanceID();
-                    int engInstanceId = engGo.GetInstanceID();
-                    int scoutShipInstanceId = scoutShipGo.GetInstanceID();
+                    var initialShipRoot = root;
+                    var initialEngGo = engGo;
+                    var initialScoutShipGo = scoutShipGo;
 
                     var duties = commander.GetComponent<ShipCrewDutyAutonomy>();
                     var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
@@ -723,8 +723,10 @@ namespace FrostArk.Unity.Tests
                     session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
                         shoreScene, shoreSite, shoreAnchor, new[] { scout }));
 
-                    Assert.That(root.GetInstanceID(), Is.EqualTo(shipRootInstanceId));
-                    Assert.That(engGo.GetInstanceID(), Is.EqualTo(engInstanceId));
+                    Assert.That(root, Is.SameAs(initialShipRoot));
+                    Assert.That(engGo, Is.SameAs(initialEngGo));
+                    Assert.That(root != null && !root.Equals(null), Is.True);
+                    Assert.That(engGo != null && !engGo.Equals(null), Is.True);
                     Assert.That(engGo.activeSelf, Is.True,
                         "Onboard crew proxy stays active on the persistent ship.");
                     Assert.That(scoutShipGo.activeSelf, Is.False,
@@ -751,9 +753,12 @@ namespace FrostArk.Unity.Tests
                     session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
                         Scene, EntityId.Parse("anchor:duty:g2:start")));
 
-                    Assert.That(root.GetInstanceID(), Is.EqualTo(shipRootInstanceId));
-                    Assert.That(engGo.GetInstanceID(), Is.EqualTo(engInstanceId));
-                    Assert.That(scoutShipGo.GetInstanceID(), Is.EqualTo(scoutShipInstanceId));
+                    Assert.That(root, Is.SameAs(initialShipRoot));
+                    Assert.That(engGo, Is.SameAs(initialEngGo));
+                    Assert.That(root != null && !root.Equals(null), Is.True);
+                    Assert.That(engGo != null && !engGo.Equals(null), Is.True);
+                    Assert.That(scoutShipGo, Is.SameAs(initialScoutShipGo));
+                    Assert.That(scoutShipGo != null && !scoutShipGo.Equals(null), Is.True);
                     Assert.That(scoutShipGo.activeSelf, Is.True,
                         "Returning crew proxy is reactivated on the same persistent ship root.");
                     Assert.That(scoutWalker.IsConfigured, Is.True);
