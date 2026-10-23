@@ -1,3 +1,4 @@
+using VContainer;
 using System;
 using System.IO;
 using FrostArk.Core.Application;
@@ -37,7 +38,7 @@ namespace FrostArk.Unity
         {
             if (_session == null)
             {
-                var scope = FindFirstObjectByType<WorldSessionScope>();
+                var scope = FindAnyObjectByType<WorldSessionScope>();
                 if (scope != null && scope.Container != null)
                 {
                     _session = scope.Container.Resolve<WorldSession>();
@@ -72,7 +73,7 @@ namespace FrostArk.Unity
         {
             if (_session == null)
             {
-                var scope = FindFirstObjectByType<WorldSessionScope>();
+                var scope = FindAnyObjectByType<WorldSessionScope>();
                 if (scope != null && scope.Container != null)
                     _session = scope.Container.Resolve<WorldSession>();
             }
@@ -91,7 +92,7 @@ namespace FrostArk.Unity
             {
                 var snapshot = _session.Capture();
                 _repository.Save(snapshot);
-                SetStatus($"Saved: {slotName}.sav (Rev {snapshot.Revision}, Min {snapshot.State.Minute.Value})");
+                SetStatus($"Saved: {slotName}.sav (Rev {snapshot.State.Revision}, Min {snapshot.State.Minute.Value})");
                 return true;
             }
             catch (Exception ex)
@@ -118,9 +119,9 @@ namespace FrostArk.Unity
                     return result;
                 }
 
-                SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
+                SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
 
-                var transit = FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+                var transit = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
                 if (transit != null && _session != null)
                 {
                     transit.TryRestorePhysicalScene();

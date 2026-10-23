@@ -321,7 +321,7 @@ namespace FrostArk.Unity.Tests
                 var loadResult = coordinator.QuickLoad();
                 Assert.That(loadResult, Is.Not.Null);
                 Assert.That(loadResult.Success, Is.True, "QuickLoad from disk must succeed: " + loadResult.Error);
-                Assert.That(loadResult.Value.Revision, Is.EqualTo(savedRevision));
+                Assert.That(loadResult.Value.State.Revision, Is.EqualTo(savedRevision));
                 Assert.That(loadResult.Value.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
                 Assert.That(loadResult.Value.SceneCheckpoint.PartyIds, Is.EqualTo(new[] { Hero }));
             }

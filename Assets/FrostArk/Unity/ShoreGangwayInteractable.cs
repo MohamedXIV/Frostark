@@ -40,15 +40,15 @@ namespace FrostArk.Unity
         private void Start()
         {
             if (transitCoordinator == null)
-                transitCoordinator = FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+                transitCoordinator = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
         }
 
         public override bool CanInteract(TacticalActorProxy actor)
         {
-            if (destination == null || !destination.DestinationScene.IsValid)
+            if (destination == null || !destination.IsConfigured)
                 return false;
             if (transitCoordinator == null)
-                transitCoordinator = FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+                transitCoordinator = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
             if (transitCoordinator == null || transitCoordinator.IsBusy)
                 return false;
             return base.CanInteract(actor);
@@ -62,7 +62,7 @@ namespace FrostArk.Unity
             if (mode == GangwayTransitMode.DisembarkToShore)
             {
                 var opId = EntityId.Parse("transition:gangway:depart:" + Guid.NewGuid().ToString("N"));
-                var commander = FindFirstObjectByType<TacticalCommandController>();
+                var commander = FindAnyObjectByType<TacticalCommandController>();
                 if (commander != null && commander.Selection.Count > 0)
                     return transitCoordinator.TryDepartSelected(destination, opId);
                 if (actor != null)
@@ -82,7 +82,7 @@ namespace FrostArk.Unity
         public bool TryInteractDirect(EntityId[] partyIds)
         {
             if (transitCoordinator == null)
-                transitCoordinator = FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+                transitCoordinator = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
             if (transitCoordinator == null || transitCoordinator.IsBusy)
                 return false;
 
