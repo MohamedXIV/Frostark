@@ -680,6 +680,20 @@ namespace FrostArk.Unity
                     return false;
                 return IssueShipMoveOrder(localCell, first.point);
             }
+
+            var gangway = first.collider.GetComponentInParent<ShoreGangwayInteractable>();
+            if (gangway != null)
+            {
+                var selectedProxies = GetSelectedActorProxies();
+                if (selectedProxies.Count > 0)
+                    return IssueInteractOrder(gangway);
+                return gangway.TryInteractDirect(_selectionController.SelectedActorIds.ToArray());
+            }
+
+            var interactable = first.collider.GetComponentInParent<TacticalInteractableProxy>();
+            if (interactable != null && !interactable.IsDepleted)
+                return IssueInteractOrder(interactable);
+
             if (_session != null && _session.SceneCheckpoint != null &&
                 _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
                 return false;
@@ -687,9 +701,6 @@ namespace FrostArk.Unity
             var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
             if (target != null && target.IsHostile && !target.IsDead)
                 return IssueAttackOrder(target);
-            var interactable = first.collider.GetComponentInParent<TacticalInteractableProxy>();
-            if (interactable != null && !interactable.IsDepleted)
-                return IssueInteractOrder(interactable);
             if (first.collider.GetComponentInParent<TacticalActorProxy>() != null)
                 return false;
             if (Physics.Raycast(ray, out var groundHit, 100f, groundLayer,

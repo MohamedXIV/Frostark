@@ -63,7 +63,7 @@ namespace FrostArk.Unity
             interactionRange = Mathf.Max(0.5f, range);
         }
 
-        public bool CanInteract(TacticalActorProxy actor)
+        public virtual bool CanInteract(TacticalActorProxy actor)
         {
             if (IsDepleted || actor == null)
                 return false;
@@ -72,7 +72,7 @@ namespace FrostArk.Unity
             return dist <= interactionRange + 0.5f;
         }
 
-        public bool Interact(TacticalActorProxy actor)
+        public virtual bool Interact(TacticalActorProxy actor)
         {
             if (!CanInteract(actor))
                 return false;
