@@ -230,8 +230,308 @@ namespace FrostArk.Unity.Tests
                 }
             }
         }
+    
+        [UnityTest]
+        public IEnumerator ShipResidency_ShipToShoreToShip_RetainsExactPhysicalShipAndOnboardCrewInstances()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = UnityEngine.Object.FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+
+            try
+            {
+                // Initial round trip establishing resident ship scene
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:residency:depart-1")), Is.True);
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:residency:return-1")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+
+                // Capture exact resident ship root and crew instances
+                var residentShipScene = SceneManager.GetActiveScene();
+                var residentShipRoot = residentShipScene.GetRootGameObjects()
+                    .First(go => go.name == "ShipDeckEnvironment");
+                var companionActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(
+                    FindObjectsSortMode.None).First(p => p.ActorId == Companion);
+                var companionGo = companionActor.gameObject;
+                var heroActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(
+                    FindObjectsSortMode.None).First(p => p.ActorId == Hero);
+                var heroShipGo = heroActor.gameObject;
+
+                // Hero departs alone; Companion remains onboard
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:residency:depart-2")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+
+                // Verify resident ship and onboard crew remain alive and identical
+                Assert.That(residentShipScene.isLoaded, Is.True,
+                    "Resident ship scene must remain loaded while ashore.");
+                Assert.That(residentShipRoot != null && !residentShipRoot.Equals(null), Is.True,
+                    "Ship root must not be destroyed while ashore.");
+                Assert.That(companionGo != null && !companionGo.Equals(null), Is.True,
+                    "Onboard crew GameObject must not be destroyed while ashore.");
+                Assert.That(companionGo.activeInHierarchy, Is.True,
+                    "Onboard crew must remain active on the persistent ship.");
+
+                // Returning to ship reuses the exact same ship and onboard crew instances
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:residency:return-2")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+
+                var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
+                    .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
+                Assert.That(activeShipRoot, Is.SameAs(residentShipRoot),
+                    "Ship root must be the exact same instance across round-trips.");
+                Assert.That(companionActor.gameObject, Is.SameAs(companionGo),
+                    "Onboard crew GameObject must be the exact same instance.");
+                Assert.That(heroShipGo.activeInHierarchy, Is.True,
+                    "Returning crew GameObject must be reactivated on the persistent ship.");
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ConcurrentSimulation_OnboardCrewSimulatesRealFramesWhileExpeditionIsAshore()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = UnityEngine.Object.FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+
+            try
+            {
+                // Establish resident ship scene
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:concurrent:depart-init")), Is.True);
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:concurrent:return-init")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+
+                // Hero departs alone; Companion remains onboard
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:concurrent:depart")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+                // Verify partition: Hero is away, Companion is onboard
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+                Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+
+                // Run real frames while ashore: simulation advances for onboard crew
+                long revBefore = session.Revision;
+                var advance = session.Advance(1);
+                Assert.That(advance.AdvancedMinutes, Is.EqualTo(1));
+                Assert.That(session.Minute.Value, Is.EqualTo(1));
+                Assert.That(session.Revision, Is.EqualTo(revBefore), "Advancing time does not manufacture unearned world commands.");
+
+                // Yield real frames for physics and NavMesh processing
+                for (int frame = 0; frame < 20; frame++)
+                    yield return null;
+
+                // Hero remains away, Companion remains onboard without duplicate claims or phantom resources
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+                Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+                Assert.That(session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.Pack, EntityId.Parse("item:scrap_metal")), Is.Zero);
+
+                // Return hero to ship
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:concurrent:return")), Is.True);
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
+                Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator FailureRecovery_InvalidReturnOrConcurrentTransitDoesNotCorruptSessionOrCamera()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = UnityEngine.Object.FindFirstObjectByType<ShoreSceneTransitCoordinator>();
+
+            try
+            {
+                // Depart to shore
+                commander.SelectActor(Hero);
+                Assert.That(transit.TryDepartSelected(ShoreDestination(),
+                    EntityId.Parse("transition:failrecov:depart")), Is.True);
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                long stableRevision = session.Revision;
+
+                // 1. Invalid return destination rejected safely
+                var badReturn = new SceneTransitDestination();
+                badReturn.Configure(PhysicalTheater.Ship, "Assets/FrostArk/Scenes/INVALID_SCENE.unity",
+                    EntityId.Parse("scene:bad"), EntityId.Parse("anchor:bad"));
+
+                Assert.That(transit.TryReturn(badReturn, EntityId.Parse("transition:failrecov:bad")), Is.False);
+                Assert.That(transit.LastError, Is.EqualTo("SceneNotInBuildSettings"));
+                Assert.That(session.Revision, Is.EqualTo(stableRevision),
+                    "World revision must not advance on rejected transit.");
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore),
+                    "Checkpoint must remain intact ashore.");
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath),
+                    "Active scene must remain shore.");
+
+                // Verify Camera and shore actors are intact
+                var camera = Camera.main;
+                Assert.That(camera, Is.Not.Null, "Main camera must remain functional after rejection.");
+                var proxies = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(FindObjectsSortMode.None);
+                Assert.That(proxies.Any(p => p.ActorId == Hero), Is.True,
+                    "Shore actor proxy must remain active and functional.");
+
+                // 2. Concurrent transit rejection while transit is busy
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:failrecov:valid-return")), Is.True);
+                Assert.That(transit.IsBusy, Is.True);
+
+                // Attempting a second transition while busy must fail safely
+                Assert.That(transit.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:failrecov:concurrent")), Is.False);
+                Assert.That(transit.LastError, Is.EqualTo("SceneTransitUnavailable"),
+                    "Concurrent transit must be rejected with SceneTransitUnavailable.");
+
+                // Await completion of original valid return
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
     }
-    [SetUpFixture]
+[SetUpFixture]
     public class PlayModeDeterministicFrameSetup
     {
         [OneTimeSetUp]

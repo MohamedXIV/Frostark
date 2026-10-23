@@ -39,6 +39,14 @@ namespace FrostArk.Unity.Tests
                 EntityId.Parse("island:training-floe"));
             return destination;
         }
+        private static SceneTransitDestination ShipDestination()
+        {
+            var destination = new SceneTransitDestination();
+            destination.Configure(PhysicalTheater.Ship, Ship,
+                EntityId.Parse("scene:ship:deck"), EntityId.Parse("anchor:ship:gangway"));
+            return destination;
+        }
+
 
         [UnityTest]
         public IEnumerator SaveWhileAshoreRestoresSceneAndCollectedProxyWithoutResurrectingLoot()
@@ -130,6 +138,124 @@ namespace FrostArk.Unity.Tests
                 Assert.That(restoredCommander.IssueInteractOrder(proxy), Is.False,
                     "The loaded visual must not reoffer already-collected salvage.");
                 Assert.That(restored.Revision, Is.EqualTo(oldRevision));
+            }
+            finally
+            {
+                if (replacementRoot != null)
+                    UnityEngine.Object.Destroy(replacementRoot);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator SaveWhileAshoreWithZeroPendingShipMovesRestoresPhysicalShipAndExpeditionCorrectly()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var oldRoot = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            Assert.That(oldRoot, Is.Not.Null);
+            var session = oldRoot.Container.Resolve<WorldSession>();
+            var transit = oldRoot.GetComponent<ShoreSceneTransitCoordinator>();
+            var commander = oldRoot.GetComponentInChildren<TacticalCommandController>();
+
+            // Hero departs alone; Companion stays aboard
+            commander.SelectActor(Hero);
+            Assert.That(transit.TryDepartSelected(Landing(),
+                EntityId.Parse("transition:restore-zero-moves:depart")), Is.True);
+
+            float time = 8f;
+            while (transit.IsBusy && time > 0)
+            {
+                yield return null;
+                time -= Time.deltaTime;
+            }
+            Assert.That(transit.IsBusy, Is.False);
+            Assert.That(transit.LastError, Is.Null);
+            Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+            // Explicitly assert ZERO pending ship moves
+            Assert.That(session.PendingCrewMoves, Is.Empty,
+                "Must have zero pending ship moves before capturing save ashore.");
+
+            var oldRevision = session.Revision;
+            var saved = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+            Assert.That(saved.Success, Is.True);
+            Assert.That(saved.Value.PendingCrewMoves, Is.Empty,
+                "Saved DTO must have zero pending ship moves.");
+            Assert.That(saved.Value.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+            Assert.That(saved.Value.SceneCheckpoint.PartyIds, Is.EqualTo(new[] { Hero }));
+
+            UnityEngine.Object.Destroy(oldRoot.gameObject);
+            yield return null;
+
+            // Reopen from neutral bootstrap scene
+            yield return SceneManager.LoadSceneAsync(Ship, LoadSceneMode.Single);
+            var replacementRoot = new GameObject("RecoveredRunRoot");
+            replacementRoot.SetActive(false);
+            var scope = replacementRoot.AddComponent<WorldSessionScope>();
+            scope.SetRestoreSnapshot(saved.Value);
+            var adapter = replacementRoot.AddComponent<ShoreSceneTransitCoordinator>();
+            adapter.ConfigureDestinations(Landing(), ShipDestination());
+            var commandRoot = new GameObject("RestoredCommander");
+            commandRoot.transform.SetParent(replacementRoot.transform, false);
+            commandRoot.AddComponent<TacticalCommandController>();
+            replacementRoot.SetActive(true);
+            yield return null;
+
+            try
+            {
+                if (scope.Container == null)
+                    scope.Build();
+                var restored = scope.Container.Resolve<WorldSession>();
+                Assert.That(restored.Revision, Is.EqualTo(oldRevision));
+                Assert.That(restored.PendingCrewMoves, Is.Empty,
+                    "Restored session must maintain zero pending ship moves.");
+                Assert.That(restored.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(adapter.TryRestorePhysicalScene(), Is.True);
+
+                time = 8f;
+                while (adapter.IsBusy && time > 0)
+                {
+                    yield return null;
+                    time -= Time.deltaTime;
+                }
+                Assert.That(adapter.IsBusy, Is.False);
+                Assert.That(adapter.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Shore));
+
+                // Verify actor partition on restore:
+                Assert.That(restored.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+                Assert.That(restored.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+
+                // Both actor identities are present across the restored scenes
+                var proxies = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(FindObjectsSortMode.None);
+                Assert.That(proxies.Select(x => x.ActorId).Distinct().Count(), Is.EqualTo(2));
+
+                // Returning to ship from the restored ashore state must succeed cleanly
+                Assert.That(adapter.TryReturn(ShipDestination(),
+                    EntityId.Parse("transition:restore-zero-moves:return")), Is.True);
+                time = 8f;
+                while (adapter.IsBusy && time > 0)
+                {
+                    yield return null;
+                    time -= Time.deltaTime;
+                }
+                Assert.That(adapter.IsBusy, Is.False);
+                Assert.That(adapter.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Ship));
+                Assert.That(restored.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
+                Assert.That(restored.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
             }
             finally
             {
