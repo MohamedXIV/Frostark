@@ -145,6 +145,7 @@ namespace FrostArk.Unity.Editor
 
                     scopeRoot.AddComponent<ShoreTransitFixtureControls>()
                         .Configure(transit, shoreDestination, shipDestination);
+                    scopeRoot.AddComponent<DiskSaveCoordinator>();
                 }
 
                 var directory = Path.GetDirectoryName(path);
