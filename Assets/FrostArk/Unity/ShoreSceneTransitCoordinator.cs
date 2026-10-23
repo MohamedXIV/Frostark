@@ -159,8 +159,9 @@ namespace FrostArk.Unity
             SceneTransitDestination destination, EntityId[] party, EntityId transitionId,
             bool commitCrew)
         {
+            Scene loaded = default;
             bool reuseLoadedShip = destination.Theater == PhysicalTheater.Ship &&
-                TryFindLoadedShipScene(destination, out var loaded);
+                TryFindLoadedShipScene(destination, out loaded);
             if (!reuseLoadedShip)
             {
                 var operation = SceneManager.LoadSceneAsync(destination.ScenePath, LoadSceneMode.Additive);
@@ -491,11 +492,13 @@ namespace FrostArk.Unity
                     camera = root.GetComponentInChildren<Camera>(true);
             }
 
+            var resolvedProxies = proxies;
+            var resolvedShipProxies = shipProxies;
             if (anchor == null)
                 failure = "MissingSceneReentryAnchor";
-            else if (proxies.Count + shipProxies.Count < targets.Count ||
-                     !targets.All(id => proxies.Any(p => p.ActorId == id) ||
-                                        shipProxies.Any(s => s.ActorId == id)))
+            else if (resolvedProxies.Count + resolvedShipProxies.Count < targets.Count ||
+                     !targets.All(id => resolvedProxies.Any(p => p.ActorId == id) ||
+                                        resolvedShipProxies.Any(s => s.ActorId == id)))
                 failure = "MissingPersistentCrewProxy";
             else if (camera == null)
                 failure = "MissingTacticalSceneCamera";

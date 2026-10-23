@@ -115,7 +115,7 @@ namespace FrostArk.Unity
             if (!shipSceneId.IsValid)
                 throw new InvalidOperationException("Ship bootstrap requires authoritative ship checkpoint.");
 
-            var state = session.Capture().State;
+            var state = session.CurrentState;
             var origins = new Dictionary<EntityId, Vector3>();
             foreach (var binding in rooms)
             {
@@ -189,7 +189,7 @@ namespace FrostArk.Unity
         public void SyncCrewPresenceWithSession()
         {
             if (_session == null || _map == null || _origins == null) return;
-            var state = _session.Capture().State;
+            var state = _session.CurrentState;
             var agency = commander != null ? commander.GetComponent<ShipCrewAgencyCoordinator>() : null;
             var duty = commander != null ? commander.GetComponent<ShipCrewDutyAutonomy>() : null;
             var traffic = shipRoot != null ? shipRoot.GetComponent<ShipTrafficCoordinator>() : null;
@@ -232,7 +232,7 @@ namespace FrostArk.Unity
             if (_map.Walkable(preferred) && !_map.IsPortalEndpoint(preferred) &&
                 (traffic == null || traffic.CanPark(walker, preferred)))
                 return preferred;
-            var room = layout.GetRoom(preferred.RoomId);
+            var room = layout.Rooms.FirstOrDefault(r => r.Id == preferred.RoomId);
             if (room != null)
             {
                 var best = preferred;
@@ -263,7 +263,7 @@ namespace FrostArk.Unity
         private void OnWorldChanged(WorldSessionChange change)
         {
             if (_session == null) return;
-            var layout = _session.Capture().State.Layout;
+            var layout = _session.CurrentState.Layout;
             if (layout.Fingerprint() != _layoutFingerprint)
                 RebuildNavigation();
             SyncCrewPresenceWithSession();
@@ -303,7 +303,7 @@ namespace FrostArk.Unity
         public void RebuildNavigation()
         {
             if (_session == null) throw new InvalidOperationException("Ship scene is not initialized.");
-            var layout = _session.Capture().State.Layout;
+            var layout = _session.CurrentState.Layout;
             _map = BuildMap(layout);
             _layoutFingerprint = layout.Fingerprint();
             commander.SetShipSpatialMap(_map);

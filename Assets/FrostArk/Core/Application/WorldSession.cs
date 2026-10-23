@@ -113,6 +113,7 @@ namespace FrostArk.Core.Application
         public WorldMinute Minute { get { Guard(); return _state.Minute; } }
         public PhysicalSceneCheckpoint SceneCheckpoint { get { Guard(); return _sceneCheckpoint; } }
         public EntityId? ResidentShipSceneId { get { Guard(); return _residentShipScene; } }
+        public WorldState CurrentState { get { Guard(); return _state; } }
 
         private bool IsResidentShipScene(EntityId sceneId)
         {
