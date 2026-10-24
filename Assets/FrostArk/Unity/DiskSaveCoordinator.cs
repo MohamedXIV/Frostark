@@ -135,10 +135,19 @@ namespace FrostArk.Unity
                 SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
 
                 // Restore physical scene alignment and actor positions
-                var transit = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
-                if (transit != null)
+                if (result.Value.SceneCheckpoint != null)
                 {
-                    transit.TryRestorePhysicalScene();
+                    var transit = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
+                    if (transit == null)
+                    {
+                        SetStatus("Load failed: Missing ShoreSceneTransitCoordinator for physical restoration.");
+                        return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
+                    }
+                    if (!transit.TryRestorePhysicalScene())
+                    {
+                        SetStatus($"Load failed: Physical restoration rejected ({transit.LastError}).");
+                        return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
+                    }
                 }
 
                 // Refresh commander registrations and visuals
