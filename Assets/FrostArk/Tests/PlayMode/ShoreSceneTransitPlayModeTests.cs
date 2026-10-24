@@ -11,6 +11,8 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using VContainer;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.LowLevel;
 using EntityId = FrostArk.Core.World.EntityId;
 
 namespace FrostArk.Unity.Tests
@@ -863,6 +865,181 @@ namespace FrostArk.Unity.Tests
             }
         }
 
+        [UnityTest]
+        public IEnumerator PlayMode_PointerClickInputEvent_SelectsActor_EnablesDeparture_AndDisembarksSuccessfully()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True,
+                "ShipShoreTransitLauncher.unity fixture must be loaded directly.");
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            Assert.That(root, Is.Not.Null, "WorldSessionScope must be present in ShipShoreTransitLauncher.");
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = root.GetComponent<ShoreSceneTransitCoordinator>();
+            var fixtureControls = root.GetComponent<ShoreTransitFixtureControls>();
+            Assert.That(commander, Is.Not.Null, "TacticalCommandController must be present.");
+            Assert.That(transit, Is.Not.Null, "ShoreSceneTransitCoordinator must be present.");
+            Assert.That(fixtureControls, Is.Not.Null, "ShoreTransitFixtureControls must be present.");
+
+            var prevBehavior = InputSystem.settings.editorInputBehaviorInPlayMode;
+            var prevBackground = InputSystem.settings.backgroundBehavior;
+            InputSystem.settings.editorInputBehaviorInPlayMode = InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+            InputSystem.settings.backgroundBehavior = InputSettings.BackgroundBehavior.IgnoreFocus;
+
+            Mouse testMouse = null;
+            bool mouseWasEnabled = true;
+
+            try
+            {
+                // Verify initial state: selection is empty
+                commander.ClearSelection();
+                Assert.That(commander.Selection.Count, Is.Zero);
+
+                // Find Hero actor proxy and verify selection ring marker is initially inactive
+                var heroActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(
+                    FindObjectsSortMode.None).First(p => p.ActorId == Hero);
+                var heroRing = heroActor.transform.Find("SelectionRing");
+                Assert.That(heroRing, Is.Not.Null, "Hero proxy must have authored SelectionRing marker.");
+                Assert.That(heroRing.gameObject.activeSelf, Is.False,
+                    "Selection ring must be inactive before selection.");
+
+                // Compute screen position of protagonist from Camera.main
+                var camera = Camera.main;
+                Assert.That(camera, Is.Not.Null, "Camera.main must be active.");
+                Vector2 screenPos = camera.WorldToScreenPoint(heroActor.transform.position);
+
+                // Ensure InputSystem Mouse device exists
+                var mouse = Mouse.current ?? InputSystem.AddDevice<Mouse>();
+                Assert.That(mouse, Is.Not.Null, "Input System Mouse device must be present.");
+                testMouse = mouse;
+                mouseWasEnabled = mouse.enabled;
+                if (!mouse.enabled)
+                    InputSystem.EnableDevice(mouse);
+
+                // Queue pointer position update to actor screen position
+                using (DeltaStateEvent.From(mouse.position, out var posEvent))
+                {
+                    mouse.position.WriteValueIntoEvent(screenPos, posEvent);
+                    InputSystem.QueueEvent(posEvent);
+                }
+
+                // Queue left mouse button press
+                using (DeltaStateEvent.From(mouse.leftButton, out var pressEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(1f, pressEvent);
+                    InputSystem.QueueEvent(pressEvent);
+                }
+
+                yield return null;
+
+                // Queue left mouse button release at the exact same screen position
+                using (DeltaStateEvent.From(mouse.position, out var posEvent2))
+                {
+                    mouse.position.WriteValueIntoEvent(screenPos, posEvent2);
+                    InputSystem.QueueEvent(posEvent2);
+                }
+                using (DeltaStateEvent.From(mouse.leftButton, out var releaseEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(0f, releaseEvent);
+                    InputSystem.QueueEvent(releaseEvent);
+                }
+
+                float deadline = Time.realtimeSinceStartup + 2f;
+                while (!commander.Selection.IsSelected(Hero) && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
+
+                // Verify actor selected through genuine Input System pointer click
+                Assert.That(commander.Selection.Count, Is.EqualTo(1),
+                    "Pointer click via InputSystem must select protagonist.");
+                Assert.That(commander.Selection.IsSelected(Hero), Is.True);
+                Assert.That(heroActor.IsSelected, Is.True);
+                Assert.That(heroRing.gameObject.activeSelf, Is.True,
+                    "Selection ring marker must be visible when actor is selected.");
+
+                // Verify UI pointer blocker: clicking over HUD must NOT deselect actor
+                Vector2 hudScreenPos = new Vector2(fixtureControls.HudRect.x + 20f,
+                    Screen.height - (fixtureControls.HudRect.y + 20f));
+                Assert.That(fixtureControls.IsPointerOverHud(hudScreenPos), Is.True,
+                    "Fixture controls rect must intercept HUD screen position.");
+                Assert.That(commander.IsPointerBlocked(hudScreenPos), Is.True,
+                    "Commander must recognize pointer is blocked over fixture controls.");
+
+                // Queue pointer press and release over the HUD
+                using (DeltaStateEvent.From(mouse.position, out var hudPosEvent))
+                {
+                    mouse.position.WriteValueIntoEvent(hudScreenPos, hudPosEvent);
+                    InputSystem.QueueEvent(hudPosEvent);
+                }
+                using (DeltaStateEvent.From(mouse.leftButton, out var hudPressEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(1f, hudPressEvent);
+                    InputSystem.QueueEvent(hudPressEvent);
+                }
+                yield return null;
+                using (DeltaStateEvent.From(mouse.position, out var hudPosEvent2))
+                {
+                    mouse.position.WriteValueIntoEvent(hudScreenPos, hudPosEvent2);
+                    InputSystem.QueueEvent(hudPosEvent2);
+                }
+                using (DeltaStateEvent.From(mouse.leftButton, out var hudReleaseEvent))
+                {
+                    mouse.leftButton.WriteValueIntoEvent(0f, hudReleaseEvent);
+                    InputSystem.QueueEvent(hudReleaseEvent);
+                }
+                yield return null;
+
+                // Selection must remain intact after clicking UI
+                Assert.That(commander.Selection.Count, Is.EqualTo(1),
+                    "Clicking fixture controls must not deselect crew.");
+                Assert.That(commander.Selection.IsSelected(Hero), Is.True);
+
+                // Now execute departure with the squad selected via pointer input
+                EntityId opId = EntityId.Parse("op:pointer:depart:1");
+                Assert.That(transit.TryDepartSelected(ShoreDestination(), opId), Is.True,
+                    "TryDepartSelected must succeed when squad was selected via mouse pointer.");
+
+                float transitTimeout = 8f;
+                while (transit.IsBusy && transitTimeout > 0f)
+                {
+                    yield return null;
+                    transitTimeout -= Time.deltaTime;
+                }
+
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(session.SceneCheckpoint.PartyIds, Contains.Item(Hero));
+            }
+            finally
+            {
+                InputSystem.settings.editorInputBehaviorInPlayMode = prevBehavior;
+                InputSystem.settings.backgroundBehavior = prevBackground;
+                if (testMouse != null && testMouse.enabled != mouseWasEnabled)
+                {
+                    if (mouseWasEnabled)
+                        InputSystem.EnableDevice(testMouse);
+                    else
+                        InputSystem.DisableDevice(testMouse);
+                }
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
     }
 [SetUpFixture]
     public class PlayModeDeterministicFrameSetup

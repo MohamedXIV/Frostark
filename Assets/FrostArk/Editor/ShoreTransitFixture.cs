@@ -104,8 +104,8 @@ namespace FrostArk.Unity.Editor
                 anchorObj.transform.position = new Vector3(0, 0, -5);
                 anchorObj.AddComponent<SceneReentryAnchor>().Configure(sceneId, anchorId);
 
-                CreateActor(environment.transform, "Protagonist", "actor:protagonist", -2);
-                CreateActor(environment.transform, "Companion", "actor:companion", 2);
+                CreateActor(environment.transform, "Protagonist", "actor:protagonist", -2, new Color(0.25f, 0.65f, 0.95f));
+                CreateActor(environment.transform, "Companion", "actor:companion", 2, new Color(0.95f, 0.7f, 0.25f));
 
                 if (withSalvage)
                 {
@@ -163,7 +163,7 @@ namespace FrostArk.Unity.Editor
                     commander.SetCamera(camera);
 
                     scopeRoot.AddComponent<ShoreTransitFixtureControls>()
-                        .Configure(transit, shoreDestination, shipDestination);
+                        .Configure(transit, shoreDestination, shipDestination, commander);
                     scopeRoot.AddComponent<DiskSaveCoordinator>();
                 }
 
@@ -185,14 +185,52 @@ namespace FrostArk.Unity.Editor
             }
         }
 
-        private static void CreateActor(Transform root, string name, string stableId, float x)
+        private static void CreateActor(Transform root, string name, string stableId, float x, Color actorColor)
         {
             var capsule = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             capsule.name = name;
             capsule.transform.SetParent(root, false);
             capsule.transform.position = new Vector3(x, 1, -3);
-            capsule.AddComponent<NavMeshAgent>();
-            capsule.AddComponent<TacticalActorProxy>().SetActorId(EntityId.Parse(stableId));
+            capsule.transform.localScale = new Vector3(0.8f, 1.0f, 0.8f);
+            Tint(capsule, actorColor);
+
+            var agent = capsule.AddComponent<NavMeshAgent>();
+            agent.speed = 4.0f;
+            agent.acceleration = 12.0f;
+            agent.stoppingDistance = 0.1f;
+            agent.radius = 0.4f;
+            agent.height = 2.0f;
+
+            // Immediately visible selection ring under feet
+            var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            ring.name = "SelectionRing";
+            ring.transform.SetParent(capsule.transform, false);
+            ring.transform.localPosition = new Vector3(0, -0.95f, 0);
+            ring.transform.localScale = new Vector3(1.4f, 0.02f, 1.4f);
+            var ringCollider = ring.GetComponent<Collider>();
+            if (ringCollider != null) UnityEngine.Object.DestroyImmediate(ringCollider);
+            Tint(ring, new Color(0.2f, 0.95f, 1.0f, 0.9f));
+            ring.SetActive(false);
+
+            var proxy = capsule.AddComponent<TacticalActorProxy>();
+            proxy.SetActorId(EntityId.Parse(stableId));
+            proxy.SetSelectionMarker(ring);
+        }
+
+        private static void Tint(GameObject go, Color color)
+        {
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer == null) return;
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ??
+                         Shader.Find("Standard") ??
+                         Shader.Find("Unlit/Color");
+            if (shader == null) return;
+            var material = new Material(shader);
+            if (material.HasProperty("_BaseColor"))
+                material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", color);
+            renderer.sharedMaterial = material;
         }
     }
 }
