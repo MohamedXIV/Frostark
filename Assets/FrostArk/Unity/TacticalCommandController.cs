@@ -63,6 +63,13 @@ namespace FrostArk.Unity
         /// controller to any specific scene/HUD implementation. Screen points
         /// use bottom-left InputSystem coordinates, just like screen rays.
         /// </summary>
+        public void AddPointerOverlayBlocker(Func<Vector2, bool> blocker)
+        {
+            if (blocker == null) return;
+            var prev = _isPointerOverSceneOverlay;
+            _isPointerOverSceneOverlay = prev == null ? blocker : pt => prev(pt) || blocker(pt);
+        }
+
         public void SetPointerOverlayBlocker(Func<Vector2, bool> blocker)
         {
             _isPointerOverSceneOverlay = blocker;
@@ -574,14 +581,18 @@ namespace FrostArk.Unity
             foreach (var hit in hits)
             {
                 var shipActor = hit.collider.GetComponentInParent<ShipCrewSelectionProxy>();
-                if (shipActor != null && _shipActors.Contains(shipActor))
+                if (shipActor != null)
                 {
+                    if (!_shipActors.Contains(shipActor))
+                        RegisterShipActor(shipActor);
                     SelectActor(shipActor.ActorId, isAdditive);
                     return true;
                 }
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
-                if (actor != null && _registeredActors.Contains(actor))
+                if (actor != null)
                 {
+                    if (!_registeredActors.Contains(actor))
+                        RegisterActor(actor);
                     SelectActor(actor.ActorId, isAdditive);
                     return true;
                 }

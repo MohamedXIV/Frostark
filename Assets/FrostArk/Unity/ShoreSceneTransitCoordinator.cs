@@ -33,6 +33,7 @@ namespace FrostArk.Unity
 
         public bool IsBusy { get; private set; }
         public string LastError { get; private set; }
+        public WorldSession Session => _session;
         public Transform ResidentShipRoot => _residentShipRoot;
         public System.Collections.Generic.IReadOnlyList<SceneTransitDestination> Destinations => destinations;
 

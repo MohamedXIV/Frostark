@@ -243,6 +243,21 @@ namespace FrostArk.Unity
             Debug.Log("[DiskSaveCoordinator] " + msg);
         }
 
+        private void OnEnable()
+        {
+            var commander = GetComponentInChildren<TacticalCommandController>() ??
+                            FindAnyObjectByType<TacticalCommandController>();
+            if (commander != null)
+                commander.AddPointerOverlayBlocker(IsPointerOverHud);
+        }
+
+        private bool IsPointerOverHud(Vector2 screenPoint)
+        {
+            if (!showGui) return false;
+            var topLeft = new Vector2(screenPoint.x, Screen.height - screenPoint.y);
+            return new Rect(Screen.width - 220, 10, 210, 95).Contains(topLeft);
+        }
+
         private void OnGUI()
         {
             if (!showGui) return;
