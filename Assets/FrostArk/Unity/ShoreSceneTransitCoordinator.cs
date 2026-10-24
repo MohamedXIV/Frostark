@@ -196,11 +196,13 @@ namespace FrostArk.Unity
                 PrepareResidentShipSceneForReturn(loaded, party);
             }
 
+            bool shouldUnloadOnFailure = !reuseLoadedShip && !sameActiveScene && loaded != previous;
+
             if (!TryResolve(loaded, destination, party, reuseLoadedShip, out var anchor,
                     out var proxies, out var shipProxies, out var sceneCamera, out var failure))
             {
                 Reject(failure);
-                if (!reuseLoadedShip)
+                if (shouldUnloadOnFailure)
                     yield return SceneManager.UnloadSceneAsync(loaded);
                 IsBusy = false;
                 yield break;
@@ -218,7 +220,7 @@ namespace FrostArk.Unity
                     !proxies[i].Agent.Warp(hit.position) || !proxies[i].Agent.isOnNavMesh)
                 {
                     Reject("ActorSpawnNotOnNavMesh");
-                    if (!reuseLoadedShip)
+                    if (shouldUnloadOnFailure)
                         yield return SceneManager.UnloadSceneAsync(loaded);
                     IsBusy = false;
                     yield break;
@@ -229,7 +231,7 @@ namespace FrostArk.Unity
                 if (shipProxies[i].Walker == null || !shipProxies[i].Walker.IsConfigured)
                 {
                     Reject("MissingConfiguredShipWalker");
-                    if (!reuseLoadedShip)
+                    if (shouldUnloadOnFailure)
                         yield return SceneManager.UnloadSceneAsync(loaded);
                     IsBusy = false;
                     yield break;
@@ -264,7 +266,7 @@ namespace FrostArk.Unity
             if (commitFailure != null)
             {
                 Reject(commitFailure);
-                if (!reuseLoadedShip)
+                if (shouldUnloadOnFailure)
                     yield return SceneManager.UnloadSceneAsync(loaded);
                 IsBusy = false;
                 yield break;
@@ -321,7 +323,7 @@ namespace FrostArk.Unity
                 return true;
             foreach (var root in scene.GetRootGameObjects())
             {
-                if (root != null && root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true) != null)
+                if (root != null && (root.name == "ShipDeckEnvironment" || root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true) != null))
                     return true;
             }
             if (destinations != null && !string.IsNullOrEmpty(scene.path))

@@ -745,35 +745,29 @@ namespace FrostArk.Unity.Tests
         [UnityTest]
         public IEnumerator PlayMode_FirstDepartureFromInitialLaunch_RetainsExactShipRootAndOnboardCrew()
         {
-            Assert.That(Application.CanStreamedLevelBeLoaded(ShipPath), Is.True);
-            yield return SceneManager.LoadSceneAsync(ShipPath, LoadSceneMode.Single);
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True,
+                "ShipShoreTransitLauncher.unity fixture must be loaded directly.");
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
             yield return null;
 
-            var rootObj = new GameObject("InitialLaunchRunScope");
-            var scope = rootObj.AddComponent<WorldSessionScope>();
-            rootObj.AddComponent<TacticalSliceBootstrap>();
-            var transit = rootObj.AddComponent<ShoreSceneTransitCoordinator>();
-            transit.ConfigureDestinations(ShoreDestination(), ShipDestination());
-            var commanderObj = new GameObject("InitialCommander");
-            commanderObj.transform.SetParent(rootObj.transform, false);
-            var commander = commanderObj.AddComponent<TacticalCommandController>();
-            commander.SetCamera(Camera.main);
-            rootObj.SetActive(true);
-            if (scope.Container == null)
-                scope.Build();
-            var root = scope;
-            var session = scope.Container.Resolve<WorldSession>();
-            transit.Construct(session);
-            commander.SetSession(session);
-            commander.RefreshSceneRegistrations();
+            var root = UnityEngine.Object.FindFirstObjectByType<WorldSessionScope>();
+            Assert.That(root, Is.Not.Null, "WorldSessionScope must be present in ShipShoreTransitLauncher.");
+            var session = root.Container.Resolve<WorldSession>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            var transit = root.GetComponent<ShoreSceneTransitCoordinator>();
+            Assert.That(commander, Is.Not.Null);
+            Assert.That(transit, Is.Not.Null);
 
             try
             {
                 // Capture the exact initial ship scene, root, and crew upon FIRST launch
                 var launchShipScene = SceneManager.GetActiveScene();
+                Assert.That(launchShipScene.path, Is.EqualTo(Launcher),
+                    "Active scene upon initial launch must be ShipShoreTransitLauncher.unity.");
                 var launchShipRoot = launchShipScene.GetRootGameObjects()
                     .First(go => go.name == "ShipDeckEnvironment");
-                var companionActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>().First(p => p.ActorId == Companion);
+                var companionActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(
+                    FindObjectsSortMode.None).First(p => p.ActorId == Companion);
                 var companionGo = companionActor.gameObject;
 
                 // Find the authored gangway in the fixture
@@ -817,7 +811,10 @@ namespace FrostArk.Unity.Tests
                     returnGangway = gangwayObj.AddComponent<ShoreGangwayInteractable>();
                     returnGangway.SetInteractionRange(3.5f);
                 }
-                returnGangway.Configure(transit, ShipDestination(), GangwayTransitMode.ReturnToShip);
+                var returnToLauncherDest = new SceneTransitDestination();
+                returnToLauncherDest.Configure(PhysicalTheater.Ship, Launcher,
+                    EntityId.Parse("scene:ship:deck"), EntityId.Parse("anchor:ship:gangway"));
+                returnGangway.Configure(transit, returnToLauncherDest, GangwayTransitMode.ReturnToShip);
 
                 commander.SelectActor(Hero);
                 Assert.That(commander.IssueInteractOrder(returnGangway), Is.True);
