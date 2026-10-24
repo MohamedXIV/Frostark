@@ -129,5 +129,46 @@ namespace FrostArk.Unity.Tests
             Assert.That(loaded.Success, Is.True);
             Assert.That(loaded.Value.State.Minute.Value, Is.EqualTo(11));
         }
+
+        [Test]
+        public void BackupWriteSafety_IfWritingFailsBeforeCommit_ExistingPrimaryAndBackupRemainUnchanged()
+        {
+            var store = new LocalDiskSaveBlobStore(_testDir, "save_slot");
+            var repo = new SaveRepository(store);
+
+            var snap1 = CreateSampleSnapshot(minute: 1);
+            repo.Save(snap1);
+
+            var snap2 = CreateSampleSnapshot(minute: 2);
+            repo.Save(snap2);
+
+            var primaryBefore = store.ReadPrimary();
+            var backupBefore = store.ReadBackup();
+
+            // Simulate file write block on the temp backup path
+            string tempBackup = store.BackupPath + ".tmp";
+            Directory.CreateDirectory(tempBackup);
+
+            try
+            {
+                var snap3 = CreateSampleSnapshot(minute: 3);
+                Assert.Throws<UnauthorizedAccessException>(() => repo.Save(snap3));
+
+                // Both existing primary and backup must be identical to before
+                Assert.That(store.ReadPrimary(), Is.EqualTo(primaryBefore));
+                Assert.That(store.ReadBackup(), Is.EqualTo(backupBefore));
+
+                var load = repo.Load();
+                Assert.That(load.Success, Is.True);
+                Assert.That(load.Value.State.Minute.Value, Is.EqualTo(2));
+            }
+            finally
+            {
+                if (Directory.Exists(tempBackup))
+                {
+                    try { Directory.Delete(tempBackup); } catch { }
+                }
+            }
+        }
     }
 }

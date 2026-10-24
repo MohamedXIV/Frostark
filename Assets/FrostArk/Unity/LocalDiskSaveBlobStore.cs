@@ -89,12 +89,31 @@ namespace FrostArk.Unity
                         try { File.Delete(tempBackup); } catch { }
                     }
                     File.WriteAllBytes(tempBackup, previousValidPrimary);
-                    File.Copy(tempBackup, _backupPath, overwrite: true);
-                    try { File.Delete(tempBackup); } catch { }
+                    if (File.Exists(_backupPath))
+                    {
+                        File.Replace(tempBackup, _backupPath, null, ignoreMetadataErrors: true);
+                    }
+                    else
+                    {
+                        File.Move(tempBackup, _backupPath);
+                    }
                 }
                 else if (File.Exists(_primaryPath) && !File.Exists(_backupPath))
                 {
-                    File.Copy(_primaryPath, _backupPath, overwrite: true);
+                    string tempBackup = _backupPath + ".tmp";
+                    if (File.Exists(tempBackup))
+                    {
+                        try { File.Delete(tempBackup); } catch { }
+                    }
+                    File.Copy(_primaryPath, tempBackup, overwrite: true);
+                    if (File.Exists(_backupPath))
+                    {
+                        File.Replace(tempBackup, _backupPath, null, ignoreMetadataErrors: true);
+                    }
+                    else
+                    {
+                        File.Move(tempBackup, _backupPath);
+                    }
                 }
 
                 // 3. Atomically replace primary file:
