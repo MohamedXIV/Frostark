@@ -119,6 +119,25 @@ namespace FrostArk.Unity.Editor
                     target.SetInteractionRange(2.5f);
                 }
 
+                var gangwayObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                gangwayObj.name = shipVisual ? "ShipGangwayInteractable" : "ShoreReturnGangwayInteractable";
+                gangwayObj.transform.SetParent(environment.transform, false);
+                gangwayObj.transform.position = new Vector3(0, 0.5f, -3.5f);
+                gangwayObj.transform.localScale = new Vector3(2.5f, 0.4f, 1.2f);
+                var gangway = gangwayObj.AddComponent<ShoreGangwayInteractable>();
+                gangway.SetInteractionRange(3.5f);
+                var targetDest = new SceneTransitDestination();
+                if (shipVisual)
+                {
+                    targetDest.Configure(PhysicalTheater.Shore, ShorePath, ShoreScene, ShoreAnchor, ShoreSite);
+                    gangway.Configure(null, targetDest, GangwayTransitMode.DisembarkToShore);
+                }
+                else
+                {
+                    targetDest.Configure(PhysicalTheater.Ship, ShipPath, ShipScene, ShipAnchor);
+                    gangway.Configure(null, targetDest, GangwayTransitMode.ReturnToShip);
+                }
+
                 if (withScope)
                 {
                     var scopeRoot = new GameObject("PersistentRunScope");

@@ -90,7 +90,8 @@ namespace FrostArk.Unity.Tests
                 Assert.That(proxies.Select(x => x.ActorId).Distinct().Count(), Is.EqualTo(2),
                     "The scene must not spawn duplicate persistent crew proxies.");
 
-                var pickup = UnityEngine.Object.FindFirstObjectByType<TacticalInteractableProxy>();
+                var pickup = UnityEngine.Object.FindObjectsByType<TacticalInteractableProxy>(
+                    FindObjectsSortMode.None).First(p => p.TargetId == EntityId.Parse("salvage:supply_cache"));
                 Assert.That(pickup, Is.Not.Null);
                 commander.SelectActor(Hero);
                 Assert.That(commander.IssueInteractOrder(pickup), Is.True);
@@ -722,6 +723,119 @@ namespace FrostArk.Unity.Tests
                 Assert.That(repairOnReturn.RemainingWork, Is.EqualTo(initialRemaining - 8));
                 Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
                 Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+
+        [UnityTest]
+        public IEnumerator PlayMode_FirstDepartureFromInitialLaunch_RetainsExactShipRootAndOnboardCrew()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(ShipPath), Is.True);
+            yield return SceneManager.LoadSceneAsync(ShipPath, LoadSceneMode.Single);
+            yield return null;
+
+            var rootObj = new GameObject("InitialLaunchRunScope");
+            var scope = rootObj.AddComponent<WorldSessionScope>();
+            rootObj.AddComponent<TacticalSliceBootstrap>();
+            var transit = rootObj.AddComponent<ShoreSceneTransitCoordinator>();
+            transit.ConfigureDestinations(ShoreDestination(), ShipDestination());
+            var commanderObj = new GameObject("InitialCommander");
+            commanderObj.transform.SetParent(rootObj.transform, false);
+            var commander = commanderObj.AddComponent<TacticalCommandController>();
+            commander.SetCamera(Camera.main);
+            rootObj.SetActive(true);
+            if (scope.Container == null)
+                scope.Build();
+            var root = scope;
+            var session = scope.Container.Resolve<WorldSession>();
+            transit.Construct(session);
+            commander.SetSession(session);
+            commander.RefreshSceneRegistrations();
+
+            try
+            {
+                // Capture the exact initial ship scene, root, and crew upon FIRST launch
+                var launchShipScene = SceneManager.GetActiveScene();
+                var launchShipRoot = launchShipScene.GetRootGameObjects()
+                    .First(go => go.name == "ShipDeckEnvironment");
+                var companionActor = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>().First(p => p.ActorId == Companion);
+                var companionGo = companionActor.gameObject;
+
+                // Find the authored gangway in the fixture
+                var shipGangway = UnityEngine.Object.FindAnyObjectByType<ShoreGangwayInteractable>();
+                Assert.That(shipGangway, Is.Not.Null, "Playable fixture must author in-world gangway interactable.");
+                shipGangway.Configure(transit, ShoreDestination(), GangwayTransitMode.DisembarkToShore);
+
+                // Select Hero alone; Companion remains onboard
+                commander.SelectActor(Hero);
+                Assert.That(commander.IssueInteractOrder(shipGangway), Is.True,
+                    "Click-to-command interact order on ship gangway must be accepted.");
+
+                // Await FIRST transit to shore
+                float timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShorePath));
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+                // Verify original launch ship scene and root remain alive and active on FIRST departure
+                Assert.That(launchShipScene.isLoaded, Is.True,
+                    "Initial launch ship scene must remain loaded across the first shore departure.");
+                Assert.That(launchShipRoot != null && !launchShipRoot.Equals(null), Is.True,
+                    "Initial launch ship root must not be destroyed on first shore departure.");
+                Assert.That(companionGo != null && !companionGo.Equals(null) && companionGo.activeInHierarchy, Is.True,
+                    "Onboard crew GameObject must remain active on the original launch ship.");
+
+                // Spatial crossing return: find authored return gangway in the shore fixture
+                var returnGangway = UnityEngine.Object.FindObjectsByType<ShoreGangwayInteractable>()
+                    .FirstOrDefault(g => g.Mode == GangwayTransitMode.ReturnToShip);
+                if (returnGangway == null)
+                {
+                    var gangwayObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    gangwayObj.name = "ShoreReturnGangwayInteractable";
+                    gangwayObj.transform.position = new Vector3(0, 0.5f, -3.5f);
+                    returnGangway = gangwayObj.AddComponent<ShoreGangwayInteractable>();
+                    returnGangway.SetInteractionRange(3.5f);
+                }
+                returnGangway.Configure(transit, ShipDestination(), GangwayTransitMode.ReturnToShip);
+
+                commander.SelectActor(Hero);
+                Assert.That(commander.IssueInteractOrder(returnGangway), Is.True);
+
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(transit.IsBusy, Is.False);
+                Assert.That(transit.LastError, Is.Null);
+
+                // Returning reuses the EXACT launch ship root
+                var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
+                    .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
+                Assert.That(activeShipRoot, Is.SameAs(launchShipRoot),
+                    "Returning from shore must return to the exact same initial launch ship root.");
             }
             finally
             {
