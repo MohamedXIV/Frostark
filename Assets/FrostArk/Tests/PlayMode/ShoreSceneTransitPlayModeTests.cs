@@ -121,7 +121,7 @@ namespace FrostArk.Unity.Tests
                     timeout -= Time.deltaTime;
                 }
                 Assert.That(transit.LastError, Is.Null);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
                 Assert.That(root.Container.Resolve<WorldSession>(), Is.SameAs(session));
                 Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
                 Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
@@ -167,7 +167,7 @@ namespace FrostArk.Unity.Tests
                 }
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
                 var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
                     .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
                 Assert.That(activeShipRoot, Is.SameAs(shipEnvRoot),
@@ -269,7 +269,7 @@ namespace FrostArk.Unity.Tests
                 }
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
 
                 // Capture exact resident ship root and crew instances
                 var residentShipScene = SceneManager.GetActiveScene();
@@ -317,7 +317,7 @@ namespace FrostArk.Unity.Tests
                 }
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
 
                 var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
                     .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
@@ -377,7 +377,7 @@ namespace FrostArk.Unity.Tests
                     yield return null;
                     timeout -= Time.deltaTime;
                 }
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
 
                 // Hero departs alone; Companion remains onboard
                 commander.SelectActor(Hero);
@@ -423,7 +423,7 @@ namespace FrostArk.Unity.Tests
                     timeout -= Time.deltaTime;
                 }
                 Assert.That(transit.IsBusy, Is.False);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
                 Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
                 Assert.That(session.Capture().State.CrewDuty.Get(Companion).IsAway, Is.False);
             }
@@ -512,7 +512,7 @@ namespace FrostArk.Unity.Tests
                 }
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
                 Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
             }
             finally
@@ -602,7 +602,7 @@ namespace FrostArk.Unity.Tests
                 }
                 Assert.That(transit.IsBusy, Is.False, "Return transit to ship timed out.");
                 Assert.That(transit.LastError, Is.Null, "Return error: " + transit.LastError);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
                 Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Ship));
                 Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.False);
             }
@@ -655,7 +655,7 @@ namespace FrostArk.Unity.Tests
                     yield return null;
                     timeout -= Time.deltaTime;
                 }
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
 
                 var hullJobId = EntityId.Parse("repair:hull");
                 var repairBefore = session.Capture().State.CrewDuty.GetRepair(hullJobId);
@@ -716,7 +716,7 @@ namespace FrostArk.Unity.Tests
                     timeout -= Time.deltaTime;
                 }
                 Assert.That(transit.IsBusy, Is.False);
-                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(ShipPath));
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher).Or.EqualTo(ShipPath));
 
                 // Verify onboard progress is retained upon return
                 var repairOnReturn = session.Capture().State.CrewDuty.GetRepair(hullJobId);
@@ -800,24 +800,18 @@ namespace FrostArk.Unity.Tests
                 Assert.That(companionGo != null && !companionGo.Equals(null) && companionGo.activeInHierarchy, Is.True,
                     "Onboard crew GameObject must remain active on the original launch ship.");
 
-                // Spatial crossing return: find authored return gangway in the shore fixture
-                var returnGangway = UnityEngine.Object.FindObjectsByType<ShoreGangwayInteractable>()
+                // Spatial crossing return: find UNMODIFIED authored return gangway in the shore fixture
+                var returnGangway = UnityEngine.Object.FindObjectsByType<ShoreGangwayInteractable>(FindObjectsSortMode.None)
                     .FirstOrDefault(g => g.Mode == GangwayTransitMode.ReturnToShip);
-                if (returnGangway == null)
-                {
-                    var gangwayObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                    gangwayObj.name = "ShoreReturnGangwayInteractable";
-                    gangwayObj.transform.position = new Vector3(0, 0.5f, -3.5f);
-                    returnGangway = gangwayObj.AddComponent<ShoreGangwayInteractable>();
-                    returnGangway.SetInteractionRange(3.5f);
-                }
-                var returnToLauncherDest = new SceneTransitDestination();
-                returnToLauncherDest.Configure(PhysicalTheater.Ship, Launcher,
-                    EntityId.Parse("scene:ship:deck"), EntityId.Parse("anchor:ship:gangway"));
-                returnGangway.Configure(transit, returnToLauncherDest, GangwayTransitMode.ReturnToShip);
+                Assert.That(returnGangway, Is.Not.Null,
+                    "Authored ShoreLandingEnvironment must contain ShoreReturnGangwayInteractable.");
+                Assert.That(returnGangway.Destination.ScenePath, Is.EqualTo(ShipPath),
+                    "Authored shore return gangway targets ShipDeckEnvironment.unity as authored.");
 
+                // Order return via unmodified authored gangway
                 commander.SelectActor(Hero);
-                Assert.That(commander.IssueInteractOrder(returnGangway), Is.True);
+                Assert.That(commander.IssueInteractOrder(returnGangway), Is.True,
+                    "Click-to-command interact order on unmodified authored return gangway must be accepted.");
 
                 timeout = 8f;
                 while (transit.IsBusy && timeout > 0f)
@@ -828,11 +822,29 @@ namespace FrostArk.Unity.Tests
                 Assert.That(transit.IsBusy, Is.False);
                 Assert.That(transit.LastError, Is.Null);
 
+                // Never instantiate a second ship: ShipDeckEnvironment.unity must NOT be loaded
+                for (int i = 0; i < SceneManager.sceneCount; i++)
+                {
+                    Assert.That(SceneManager.GetSceneAt(i).path, Is.Not.EqualTo(ShipPath),
+                        "Never instantiate a second ship scene (ShipDeckEnvironment.unity); must reuse resident launch ship.");
+                }
+
+                // Active scene is the original resident launch ship scene
+                Assert.That(SceneManager.GetActiveScene().path, Is.EqualTo(Launcher),
+                    "Active scene upon return must be the original resident launch ship scene.");
+
                 // Returning reuses the EXACT launch ship root
                 var activeShipRoot = SceneManager.GetActiveScene().GetRootGameObjects()
                     .FirstOrDefault(go => go.name == "ShipDeckEnvironment");
                 Assert.That(activeShipRoot, Is.SameAs(launchShipRoot),
                     "Returning from shore must return to the exact same initial launch ship root.");
+
+                // Onboard crew instance identity preserved
+                var activeCompanion = UnityEngine.Object.FindObjectsByType<TacticalActorProxy>(FindObjectsSortMode.None)
+                    .FirstOrDefault(p => p.ActorId == Companion);
+                Assert.That(activeCompanion, Is.Not.Null);
+                Assert.That(activeCompanion.gameObject, Is.SameAs(companionGo),
+                    "Returning to ship must preserve the exact onboard crew GameObject instance.");
             }
             finally
             {

@@ -34,6 +34,7 @@ namespace FrostArk.Unity
         public bool IsBusy { get; private set; }
         public string LastError { get; private set; }
         public Transform ResidentShipRoot => _residentShipRoot;
+        public System.Collections.Generic.IReadOnlyList<SceneTransitDestination> Destinations => destinations;
 
         public event Action<PhysicalSceneCheckpoint> TransitionCompleted;
 
@@ -116,13 +117,13 @@ namespace FrostArk.Unity
         /// Call on a restored WorldSession whose v13 SceneCheckpoint is present.
         /// A legacy null checkpoint is UNKNOWN: never guess the ship scene.
         /// </summary>
-        public bool TryRestorePhysicalScene()
+        public bool TryRestorePhysicalScene(PhysicalSceneCheckpoint checkpoint = null)
         {
-            if (_session == null || _session.SceneCheckpoint == null)
+            var saved = checkpoint ?? _session?.SceneCheckpoint;
+            if (saved == null)
                 return Reject("MissingPhysicalCheckpoint");
 
-            var saved = _session.SceneCheckpoint;
-            var destination = destinations.FirstOrDefault(x => x != null && x.Matches(saved));
+            var destination = destinations?.FirstOrDefault(x => x != null && x.Matches(saved));
             if (destination == null)
                 return Reject("UnmappedSavedSceneOrAnchor");
             return TryBegin(destination, saved.PartyIds.ToArray(), default,
@@ -290,6 +291,20 @@ namespace FrostArk.Unity
             if (keepPreviousScene)
             {
                 SyncResidentShipSceneForShoreDeparture(previous, party, sceneCamera);
+                if (_residentShipRoot == null)
+                {
+                    var shipRootObj = previous.GetRootGameObjects()
+                        .FirstOrDefault(go => go != null && (go.name == "ShipDeckEnvironment" ||
+                            go.GetComponentInChildren<ShipTacticalSceneBootstrap>(true) != null));
+                    if (shipRootObj != null)
+                    {
+                        var bootstrap = shipRootObj.GetComponentInChildren<ShipTacticalSceneBootstrap>(true);
+                        EntityId shipSceneId = bootstrap != null && bootstrap.BoundShipSceneId.IsValid
+                            ? bootstrap.BoundShipSceneId
+                            : EntityId.Parse("scene:ship:deck");
+                        BindResidentShipRoot(shipRootObj.transform, shipSceneId);
+                    }
+                }
             }
             else if (previous.IsValid() && previous.isLoaded &&
                      previous != loaded && previous.path != null)
@@ -344,14 +359,10 @@ namespace FrostArk.Unity
             loaded = default;
             if (destination == null || destination.Theater != PhysicalTheater.Ship)
                 return false;
-            var byPath = SceneManager.GetSceneByPath(destination.ScenePath);
-            if (byPath.IsValid() && byPath.isLoaded)
-            {
-                loaded = byPath;
-                return true;
-            }
+
+            // 1. If we have a bound resident ship root in an active loaded scene matching ship identity:
             if (_residentShipRoot != null &&
-                (!_residentShipSceneId.IsValid || _residentShipSceneId == destination.SceneId))
+                (!_residentShipSceneId.IsValid || !destination.SceneId.IsValid || _residentShipSceneId == destination.SceneId))
             {
                 var rootScene = _residentShipRoot.gameObject.scene;
                 if (rootScene.IsValid() && rootScene.isLoaded)
@@ -360,21 +371,43 @@ namespace FrostArk.Unity
                     return true;
                 }
             }
+
+            // 2. Scan loaded scenes for an existing resident ship scene:
             for (int i = 0; i < SceneManager.sceneCount; i++)
             {
                 var candidate = SceneManager.GetSceneAt(i);
                 if (!candidate.IsValid() || !candidate.isLoaded) continue;
-                foreach (var root in candidate.GetRootGameObjects())
+                if (IsResidentShipScene(candidate))
                 {
-                    if (root == null) continue;
-                    var bootstrap = root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true);
-                    if (bootstrap != null && bootstrap.BoundShipSceneId == destination.SceneId)
+                    foreach (var root in candidate.GetRootGameObjects())
                     {
-                        loaded = candidate;
-                        return true;
+                        if (root == null) continue;
+                        var bootstrap = root.GetComponentInChildren<ShipTacticalSceneBootstrap>(true);
+                        if (bootstrap != null && (!destination.SceneId.IsValid || bootstrap.BoundShipSceneId == destination.SceneId))
+                        {
+                            BindResidentShipRoot(root.transform, bootstrap.BoundShipSceneId);
+                            loaded = candidate;
+                            return true;
+                        }
+                        if (root.name == "ShipDeckEnvironment")
+                        {
+                            var sceneId = destination.SceneId.IsValid ? destination.SceneId : EntityId.Parse("scene:ship:deck");
+                            BindResidentShipRoot(root.transform, sceneId);
+                            loaded = candidate;
+                            return true;
+                        }
                     }
                 }
             }
+
+            // 3. Fallback: exact path match if no resident ship is loaded:
+            var byPath = SceneManager.GetSceneByPath(destination.ScenePath);
+            if (byPath.IsValid() && byPath.isLoaded)
+            {
+                loaded = byPath;
+                return true;
+            }
+
             return false;
         }
 
