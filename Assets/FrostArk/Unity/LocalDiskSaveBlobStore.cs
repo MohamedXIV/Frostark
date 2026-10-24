@@ -36,9 +36,16 @@ namespace FrostArk.Unity
         {
             lock (_lock)
             {
-                return File.Exists(_primaryPath)
-                    ? File.ReadAllBytes(_primaryPath)
-                    : Array.Empty<byte>();
+                try
+                {
+                    return File.Exists(_primaryPath)
+                        ? File.ReadAllBytes(_primaryPath)
+                        : Array.Empty<byte>();
+                }
+                catch
+                {
+                    return Array.Empty<byte>();
+                }
             }
         }
 
@@ -46,9 +53,16 @@ namespace FrostArk.Unity
         {
             lock (_lock)
             {
-                return File.Exists(_backupPath)
-                    ? File.ReadAllBytes(_backupPath)
-                    : Array.Empty<byte>();
+                try
+                {
+                    return File.Exists(_backupPath)
+                        ? File.ReadAllBytes(_backupPath)
+                        : Array.Empty<byte>();
+                }
+                catch
+                {
+                    return Array.Empty<byte>();
+                }
             }
         }
 
@@ -57,25 +71,42 @@ namespace FrostArk.Unity
             if (primary == null) throw new ArgumentNullException(nameof(primary));
             lock (_lock)
             {
-                // Write new content to temp file first
+                // Clean up any stale temp file
+                if (File.Exists(_tempPath))
+                {
+                    try { File.Delete(_tempPath); } catch { }
+                }
+
+                // 1. Write new content to temporary file first
                 File.WriteAllBytes(_tempPath, primary);
 
-                // If a previous valid primary exists, preserve it to backup
+                // 2. Preserve previous valid primary to backup without deleting primary
                 if (previousValidPrimary != null && previousValidPrimary.Length > 0)
                 {
-                    File.WriteAllBytes(_backupPath, previousValidPrimary);
+                    string tempBackup = _backupPath + ".tmp";
+                    if (File.Exists(tempBackup))
+                    {
+                        try { File.Delete(tempBackup); } catch { }
+                    }
+                    File.WriteAllBytes(tempBackup, previousValidPrimary);
+                    File.Copy(tempBackup, _backupPath, overwrite: true);
+                    try { File.Delete(tempBackup); } catch { }
                 }
-                else if (File.Exists(_primaryPath))
+                else if (File.Exists(_primaryPath) && !File.Exists(_backupPath))
                 {
                     File.Copy(_primaryPath, _backupPath, overwrite: true);
                 }
 
-                // Atomically replace primary file
+                // 3. Atomically replace primary file:
+                // If primary exists, use File.Replace to atomically swap without a deletion window.
                 if (File.Exists(_primaryPath))
                 {
-                    File.Delete(_primaryPath);
+                    File.Replace(_tempPath, _primaryPath, null, ignoreMetadataErrors: true);
                 }
-                File.Move(_tempPath, _primaryPath);
+                else
+                {
+                    File.Move(_tempPath, _primaryPath);
+                }
             }
         }
     }
