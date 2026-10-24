@@ -1,22 +1,23 @@
-using VContainer;
 using System;
-using System.IO;
+using System.Collections;
+using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Save;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using VContainer;
 
 namespace FrostArk.Unity
 {
     /// <summary>
-    /// Minimal player-accessible disk Save/Load coordinator.
-    /// Provides hotkey (F5/F9) and compact on-screen GUI access to SaveRepository
-    /// using existing persistence systems without requiring a full menu framework.
+    /// Player-accessible disk Save/Load coordinator. Provides F5/F9 hotkeys and
+    /// a lightweight debug UI for saving and restoring the active WorldSession
+    /// and aligning physical scenes via ShoreSceneTransitCoordinator.
     /// </summary>
     public sealed class DiskSaveCoordinator : MonoBehaviour
     {
+        [SerializeField] private string slotName = "quicksave";
         [SerializeField] private bool showGui = true;
-        [SerializeField] private string slotName = "slot_0";
 
         private WorldSession _session;
         private SaveRepository _repository;
@@ -24,8 +25,11 @@ namespace FrostArk.Unity
         private string _lastStatus = "";
         private float _statusTimer = 0f;
 
+        public bool IsBusy { get; private set; }
         public string LastStatus => _lastStatus;
         public ISaveBlobStore Store => _store;
+
+        public event Action<SaveLoadResult> LoadCompleted;
 
         public void Initialize(WorldSession session, ISaveBlobStore customStore = null)
         {
@@ -71,6 +75,11 @@ namespace FrostArk.Unity
 
         public bool QuickSave()
         {
+            if (IsBusy)
+            {
+                SetStatus("Save rejected: Save coordinator is busy.");
+                return false;
+            }
             if (_session == null)
             {
                 var scope = FindAnyObjectByType<WorldSessionScope>();
@@ -104,6 +113,11 @@ namespace FrostArk.Unity
 
         public SaveLoadResult QuickLoad()
         {
+            if (IsBusy)
+            {
+                SetStatus("Load rejected: Save coordinator is busy.");
+                return null;
+            }
             if (_session == null)
             {
                 var scope = FindAnyObjectByType<WorldSessionScope>();
@@ -130,11 +144,7 @@ namespace FrostArk.Unity
                     return result;
                 }
 
-                // Rehydrate the active WorldSession in-place
-                _session.RestoreSnapshot(result.Value);
-                SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
-
-                // Restore physical scene alignment and actor positions
+                // Restore physical scene alignment and actor positions if checkpoint exists
                 if (result.Value.SceneCheckpoint != null)
                 {
                     var transit = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
@@ -143,27 +153,86 @@ namespace FrostArk.Unity
                         SetStatus("Load failed: Missing ShoreSceneTransitCoordinator for physical restoration.");
                         return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
                     }
-                    if (!transit.TryRestorePhysicalScene())
+                    if (transit.IsBusy)
                     {
+                        SetStatus("Load failed: Scene transit is busy.");
+                        return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
+                    }
+
+                    // Pre-flight check that destination is mapped
+                    var destination = transit.Destinations?.FirstOrDefault(x => x != null && x.Matches(result.Value.SceneCheckpoint));
+                    if (destination == null)
+                    {
+                        SetStatus("Load failed: Physical restoration rejected (UnmappedSavedSceneOrAnchor).");
+                        return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
+                    }
+
+                    // Capture rollback state prior to mutating live session
+                    var rollbackSnapshot = _session.Capture();
+
+                    // Rehydrate domain state so scene loader and validation see restored world state
+                    _session.RestoreSnapshot(result.Value);
+
+                    if (!transit.TryRestorePhysicalScene(result.Value.SceneCheckpoint))
+                    {
+                        _session.RestoreSnapshot(rollbackSnapshot);
                         SetStatus($"Load failed: Physical restoration rejected ({transit.LastError}).");
                         return new SaveLoadResult(null, result.UsedBackup, SaveDecodeError.InvalidData);
                     }
-                }
 
-                // Refresh commander registrations and visuals
-                var commander = FindAnyObjectByType<TacticalCommandController>();
-                if (commander != null)
+                    // Asynchronous physical reentry started; do NOT report completed load until verified!
+                    IsBusy = true;
+                    SetStatus($"Loading: {slotName}.sav...");
+                    StartCoroutine(WaitForPhysicalRestoreAndFinalize(result, rollbackSnapshot, transit));
+                    return result;
+                }
+                else
                 {
-                    commander.ClearSelection();
-                    commander.RefreshSceneRegistrations();
+                    // Rehydrate the active WorldSession in-place immediately (no physical scene)
+                    _session.RestoreSnapshot(result.Value);
+                    SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
+                    RefreshCommander();
+                    LoadCompleted?.Invoke(result);
+                    return result;
                 }
-
-                return result;
             }
             catch (Exception ex)
             {
                 SetStatus("Load failed: " + ex.Message);
                 return null;
+            }
+        }
+
+        private IEnumerator WaitForPhysicalRestoreAndFinalize(SaveLoadResult result,
+            SaveGameDto rollbackSnapshot, ShoreSceneTransitCoordinator transit)
+        {
+            while (transit.IsBusy)
+                yield return null;
+
+            if (!string.IsNullOrEmpty(transit.LastError))
+            {
+                // Asynchronous failure during scene loading, navmesh sampling, or proxy resolution:
+                // Roll back gameplay state so WorldSession and physical scene remain consistent!
+                _session.RestoreSnapshot(rollbackSnapshot);
+                SetStatus($"Load failed: Physical restoration rejected ({transit.LastError}).");
+                IsBusy = false;
+                yield break;
+            }
+
+            // Scene reentry actually succeeded: NOW report completed load
+            SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
+            RefreshCommander();
+            IsBusy = false;
+            LoadCompleted?.Invoke(result);
+        }
+
+        private void RefreshCommander()
+        {
+            var commander = FindAnyObjectByType<TacticalCommandController>();
+            if (commander != null)
+            {
+                commander.ClearSelection();
+                commander.RefreshSceneRegistrations();
             }
         }
 
@@ -180,10 +249,12 @@ namespace FrostArk.Unity
             GUILayout.BeginArea(new Rect(Screen.width - 220, 10, 210, 95), GUI.skin.box);
             GUILayout.Label("FrostArk | Persistence");
             GUILayout.BeginHorizontal();
+            GUI.enabled = !IsBusy;
             if (GUILayout.Button("Save (F5)"))
                 QuickSave();
             if (GUILayout.Button("Load (F9)"))
                 QuickLoad();
+            GUI.enabled = true;
             GUILayout.EndHorizontal();
 
             if (!string.IsNullOrEmpty(_lastStatus))

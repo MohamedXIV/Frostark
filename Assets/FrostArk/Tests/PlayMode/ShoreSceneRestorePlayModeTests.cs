@@ -5,6 +5,7 @@ using FrostArk.Core.Application;
 using FrostArk.Core.Commands;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.Save;
+using FrostArk.Core.Time;
 using FrostArk.Core.World;
 using FrostArk.Unity;
 using NUnit.Framework;
@@ -322,6 +323,15 @@ namespace FrostArk.Unity.Tests
                 var loadResult = coordinator.QuickLoad();
                 Assert.That(loadResult, Is.Not.Null);
                 Assert.That(loadResult.Success, Is.True, "QuickLoad from disk must succeed: " + loadResult.Error);
+
+                var timeout = 8f;
+                while ((coordinator.IsBusy || transit.IsBusy) && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(coordinator.IsBusy, Is.False);
+                Assert.That(coordinator.LastStatus, Does.StartWith("Loaded:"));
                 Assert.That(loadResult.Value.State.Revision, Is.EqualTo(savedRevision));
                 Assert.That(loadResult.Value.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
                 Assert.That(loadResult.Value.SceneCheckpoint.PartyIds, Is.EqualTo(new[] { Hero }));
@@ -414,11 +424,13 @@ namespace FrostArk.Unity.Tests
 
                 // Wait for any scene alignment to complete
                 timeout = 8f;
-                while (transit.IsBusy && timeout > 0f)
+                while ((coordinator.IsBusy || transit.IsBusy) && timeout > 0f)
                 {
                     yield return null;
                     timeout -= Time.deltaTime;
                 }
+                Assert.That(coordinator.IsBusy, Is.False);
+                Assert.That(coordinator.LastStatus, Does.StartWith("Loaded:"));
 
                 // 4. Assert exact restored world and scene state
                 Assert.That(session.Revision, Is.EqualTo(initialRevision),
@@ -549,6 +561,109 @@ namespace FrostArk.Unity.Tests
                 Assert.That(loadResult.Error, Is.EqualTo(SaveDecodeError.InvalidData));
                 Assert.That(coordinator.LastStatus, Does.Contain("Physical restoration rejected"),
                     "Status message must report physical restoration failure.");
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(testDir))
+                {
+                    try { System.IO.Directory.Delete(testDir, true); } catch { }
+                }
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator PlayMode_DiskSaveCoordinator_QuickLoad_AsynchronousPhysicalRestoreFailure_RollsBackSessionToConsistentState()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindAnyObjectByType<WorldSessionScope>();
+            Assert.That(root, Is.Not.Null);
+            var session = root.Container.Resolve<WorldSession>();
+            var transit = root.GetComponent<ShoreSceneTransitCoordinator>();
+            Assert.That(transit, Is.Not.Null);
+
+            string testDir = System.IO.Path.Combine(Application.temporaryCachePath, "DiskSaveAsyncFailTest_" + Guid.NewGuid().ToString("N"));
+            var store = new LocalDiskSaveBlobStore(testDir, "save_slot");
+            var coordinator = root.gameObject.AddComponent<DiskSaveCoordinator>();
+            coordinator.Initialize(session, store);
+
+            try
+            {
+                var initialScene = SceneManager.GetActiveScene();
+                Assert.That(initialScene.path, Is.EqualTo(Launcher));
+                long initialRev = session.Revision;
+                var initialMinute = session.Minute;
+                var initialCheckpoint = session.SceneCheckpoint;
+
+                // Configure a destination on transit whose ScenePath cannot be streamed in build settings.
+                // Preflight destination matching succeeds, but asynchronous loading in LoadValidateAndTransfer
+                // will fail with DestinationSceneNotConfiguredInBuildSettings.
+                var badShipDest = new SceneTransitDestination();
+                var badSceneId = EntityId.Parse("scene:ship:bad");
+                var badAnchorId = EntityId.Parse("anchor:ship:bad");
+                badShipDest.Configure(PhysicalTheater.Ship, "Assets/FrostArk/Scenes/MissingBuildScene.unity",
+                    badSceneId, badAnchorId);
+                transit.ConfigureDestinations(badShipDest);
+
+                // Set checkpoint and save valid domain state to disk
+                var badCheckpoint = PhysicalSceneCheckpoint.Ship(badSceneId, badAnchorId);
+                session.SetSceneCheckpoint(badCheckpoint);
+                Assert.That(coordinator.QuickSave(), Is.True, "QuickSave must succeed with valid domain state.");
+
+                // Now mutate live session to a new revision and clear checkpoint
+                session.SetSceneCheckpoint(null);
+                long mutatedRev = session.Revision;
+                Assert.That(session.SceneCheckpoint, Is.Null);
+
+                // QuickLoad begins: pre-flight decode and destination mapping succeed
+                var loadResult = coordinator.QuickLoad();
+                Assert.That(loadResult, Is.Not.Null);
+                Assert.That(loadResult.Success, Is.True, "Pre-flight save decode and mapping must succeed.");
+
+                // While asynchronous restoration is underway:
+                Assert.That(coordinator.IsBusy, Is.True, "Coordinator must be marked busy during physical reentry.");
+                Assert.That(coordinator.LastStatus, Does.StartWith("Loading:"),
+                    "Completed load must NOT be reported before physical reentry succeeds.");
+
+                // Wait for asynchronous physical restoration to fail and finalize
+                float timeout = 8f;
+                while (coordinator.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(coordinator.IsBusy, Is.False, "Coordinator timed out awaiting failure resolution.");
+
+                // Verify asynchronous failure is reported and never reported as Loaded
+                Assert.That(coordinator.LastStatus, Does.Contain("Physical restoration rejected"),
+                    "Coordinator must report physical restoration failure.");
+                Assert.That(coordinator.LastStatus, Does.Not.Contain("Loaded:"),
+                    "Failed load must never report completion.");
+
+                // Verify domain state was rolled back to consistent pre-QuickLoad state (mutatedRev and null checkpoint)
+                Assert.That(session.Revision, Is.EqualTo(mutatedRev),
+                    "WorldSession revision must be rolled back to pre-load state on restore failure.");
+                Assert.That(session.SceneCheckpoint, Is.Null,
+                    "WorldSession checkpoint must be rolled back to pre-load state on restore failure.");
+
+                // Verify physical scene was not corrupted
+                Assert.That(SceneManager.GetActiveScene(), Is.EqualTo(initialScene),
+                    "Active scene must remain the initial valid launch scene.");
+                Assert.That(initialScene.isLoaded, Is.True);
             }
             finally
             {
