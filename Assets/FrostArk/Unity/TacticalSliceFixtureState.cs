@@ -58,7 +58,7 @@ namespace FrostArk.Unity
                 new CrewMember(ProtagonistId, DutyRole.Watch, 900, 200, 0, 1440),
                 new CrewMember(CompanionId, DutyRole.Repair, 850, 150, 0, 1440),
                 new CrewMember(EnemyId, DutyRole.Watch, 500, 100, 0, 1440, wounds: 0)
-            });
+            }, new[] { new RepairJob(EntityId.Parse("repair:hull"), 500) });
 
             var combat = CombatState.Create(new[]
             {

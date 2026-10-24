@@ -23,11 +23,13 @@ namespace FrostArk.Unity.Editor
 
             public void RunStarted(ITestAdaptor testsToRun)
             {
+                Time.captureFramerate = 60;
                 Debug.Log($"[InteractivePlayModeRunner] PlayMode test run started: {testsToRun.Name} ({testsToRun.TestCaseCount} tests)");
             }
 
             public void RunFinished(ITestResultAdaptor result)
             {
+                Time.captureFramerate = 0;
                 Debug.Log($"[InteractivePlayModeRunner] RunFinished. Total: {result.PassCount + result.FailCount + result.SkipCount}, Passed: {result.PassCount}, Failed: {result.FailCount}, Skipped: {result.SkipCount}");
                 try
                 {
@@ -64,6 +66,7 @@ namespace FrostArk.Unity.Editor
             {
                 if (!test.IsSuite)
                 {
+                    Time.captureFramerate = 60;
                     Debug.Log($"[InteractivePlayModeRunner] TestStarted: {test.FullName}");
                 }
             }
@@ -115,6 +118,49 @@ namespace FrostArk.Unity.Editor
 
             var executionSettings = new ExecutionSettings(filter);
             api.Execute(executionSettings);
+        }
+
+        private class InEditorCallbacks : ICallbacks
+        {
+            public void RunStarted(ITestAdaptor testsToRun)
+            {
+                Debug.Log($"[InEditorRunner] RunStarted: {testsToRun.Name}");
+            }
+            public void RunFinished(ITestResultAdaptor result)
+            {
+                Debug.Log($"[InEditorRunner] RunFinished. Total: {result.PassCount + result.FailCount + result.SkipCount}, Passed: {result.PassCount}, Failed: {result.FailCount}");
+            }
+            public void TestStarted(ITestAdaptor test)
+            {
+                Debug.Log($"[InEditorRunner] TestStarted: {test.FullName}");
+            }
+            public void TestFinished(ITestResultAdaptor result)
+            {
+                Debug.Log($"[InEditorRunner] TestFinished: {result.Test.FullName} -> {result.TestStatus}");
+            }
+        }
+
+        public static void RunAllPlayModeTestsInEditor()
+        {
+            var api = ScriptableObject.CreateInstance<TestRunnerApi>();
+            api.RegisterCallbacks(new InEditorCallbacks());
+            var filter = new Filter
+            {
+                testMode = TestMode.PlayMode
+            };
+            api.Execute(new ExecutionSettings(filter));
+        }
+
+        public static void RunPlayModeTestInEditor(string testName)
+        {
+            var api = ScriptableObject.CreateInstance<TestRunnerApi>();
+            api.RegisterCallbacks(new InEditorCallbacks());
+            var filter = new Filter
+            {
+                testMode = TestMode.PlayMode,
+                testNames = new[] { testName }
+            };
+            api.Execute(new ExecutionSettings(filter));
         }
     }
 }

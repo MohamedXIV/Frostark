@@ -616,5 +616,161 @@ namespace FrostArk.Unity.Tests
                     Is.EqualTo(698), "Only existing world-minute rest applies fatigue recovery.");
             }
         }
+
+        [Test]
+        public void PersistentShipAndOnboardCrewRemainAliveAndWorkingAcrossShoreRoundTrip()
+        {
+            var scout = EntityId.Parse("crew:duty:g2:scout");
+            var shoreScene = EntityId.Parse("scene:duty:g2:shore");
+            var shoreSite = EntityId.Parse("island:duty:g2:coast");
+            var shoreAnchor = EntityId.Parse("anchor:duty:g2:beach");
+            var layout = ShipLayoutState.Create(new[]
+            {
+                new ShipCompartmentSlot(Room, 7, 7)
+            }, new[]
+            {
+                new ShipModuleBlueprint(Blueprint, ShipModuleKind.Auxiliary,
+                    1, 1, EntityId.Parse("item:duty:g2:part"), 1, 1)
+            }, new[]
+            {
+                new ShipModule(Station, Blueprint, Room, 4, 4)
+            });
+            var crew = CrewState.Create(new[]
+            {
+                new CrewMember(Engineer, DutyRole.Repair, 950, 0, 0, 1440),
+                new CrewMember(scout, DutyRole.Watch, 800, 100, 0, 1440)
+            }, new[] { new RepairJob(RepairJobId, 100) },
+            interactions: CrewInteractionState.Create(new[]
+            {
+                new CrewInteractionSlot(Work, Station, CrewInteractionVerb.Work, -1, 0, 0)
+            }));
+
+            var root = new GameObject("G2-PersistentShipRoot");
+            var controllerGo = new GameObject("G2-PersistentController");
+            using (var session = new WorldSession(WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), new[] { Engineer, scout },
+                crewDuty: crew, layout: layout)))
+            {
+                try
+                {
+                    session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
+                        Scene, EntityId.Parse("anchor:duty:g2:start")));
+                    Assert.That(session.Submit(new AssignCrewCommand(
+                        EntityId.Parse("cmd:duty:g2:assign-concurrent"), Engineer, Station,
+                        session.Revision)).Success, Is.True);
+
+                    var originGo = new GameObject("RoomOrigin");
+                    originGo.transform.SetParent(root.transform, false);
+                    var floorGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    floorGo.transform.SetParent(root.transform, false);
+                    var surface = floorGo.AddComponent<ShipRoomClickSurface>();
+
+                    var engGo = new GameObject("ShipEngineer");
+                    engGo.transform.SetParent(root.transform, false);
+                    engGo.transform.localPosition = new Vector3(1.5f, 0f, 1.5f);
+                    var engWalker = engGo.AddComponent<ShipGridWalker>();
+                    var engProxy = engGo.AddComponent<ShipCrewSelectionProxy>();
+                    engProxy.SetActorId(Engineer);
+
+                    var scoutShipGo = new GameObject("ShipScout");
+                    scoutShipGo.transform.SetParent(root.transform, false);
+                    scoutShipGo.transform.localPosition = new Vector3(1.5f, 0f, 2.5f);
+                    var scoutWalker = scoutShipGo.AddComponent<ShipGridWalker>();
+                    var scoutShipProxy = scoutShipGo.AddComponent<ShipCrewSelectionProxy>();
+                    scoutShipProxy.SetActorId(scout);
+
+                    var commander = controllerGo.AddComponent<TacticalCommandController>();
+                    var bootstrap = root.AddComponent<ShipTacticalSceneBootstrap>();
+                    bootstrap.Configure(root.transform, commander,
+                        new[]
+                        {
+                            new ShipTacticalSceneBootstrap.RoomBinding
+                            {
+                                RoomId = Room.Value, Origin = originGo.transform, Floor = surface
+                            }
+                        },
+                        Array.Empty<ShipTacticalSceneBootstrap.DoorBinding>(),
+                        new[]
+                        {
+                            new ShipTacticalSceneBootstrap.CrewBinding
+                            {
+                                Actor = engProxy, StartingRoomId = Room.Value,
+                                StartingCell = new Vector2Int(1, 1)
+                            },
+                            new ShipTacticalSceneBootstrap.CrewBinding
+                            {
+                                Actor = scoutShipProxy, StartingRoomId = Room.Value,
+                                StartingCell = new Vector2Int(1, 2)
+                            }
+                        });
+                    bootstrap.Initialize(session);
+
+                    var initialShipRoot = root;
+                    var initialEngGo = engGo;
+                    var initialScoutShipGo = scoutShipGo;
+
+                    var duties = commander.GetComponent<ShipCrewDutyAutonomy>();
+                    var agency = commander.GetComponent<ShipCrewAgencyCoordinator>();
+                    duties.Tick();
+                    for (int i = 0; i < 150 && engWalker.IsMoving; i++)
+                        engWalker.Tick(0.1f);
+                    duties.Tick();
+                    Assert.That(duties.IsStationed(Engineer), Is.True);
+
+                    // Scout departs to Shore while Engineer stays aboard the persistent ship.
+                    Assert.That(ShoreCrewTransfer.Transfer(session, new[] { scout }, true,
+                        EntityId.Parse("transition:duty:g2:depart")).Success, Is.True);
+                    session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                        shoreScene, shoreSite, shoreAnchor, new[] { scout }));
+
+                    Assert.That(root, Is.SameAs(initialShipRoot));
+                    Assert.That(engGo, Is.SameAs(initialEngGo));
+                    Assert.That(root != null && !root.Equals(null), Is.True);
+                    Assert.That(engGo != null && !engGo.Equals(null), Is.True);
+                    Assert.That(engGo.activeSelf, Is.True,
+                        "Onboard crew proxy stays active on the persistent ship.");
+                    Assert.That(scoutShipGo.activeSelf, Is.False,
+                        "Departing shore crew proxy is suspended on the ship while away.");
+
+                    // Onboard Engineer continues physical work while party is ashore.
+                    agency.Tick();
+                    duties.Tick();
+                    Assert.That(duties.IsStationed(Engineer), Is.True);
+                    session.Advance(1);
+                    Assert.That(session.Capture().State.CrewDuty.GetRepair(RepairJobId).RemainingWork,
+                        Is.EqualTo(91),
+                        "Onboard Engineer continues repairing while expedition party is ashore.");
+
+                    // Onboard Engineer can also accept a ship move order while party is ashore.
+                    commander.SelectActor(Engineer);
+                    Assert.That(commander.IssueShipMoveOrder(C(2, 1), new Vector3(2.5f, 0f, 1.5f)),
+                        Is.True);
+                    Assert.That(engWalker.IsMoving, Is.True);
+
+                    // Scout returns from Shore to the SAME persistent ship without recreating hierarchy.
+                    Assert.That(ShoreCrewTransfer.Transfer(session, new[] { scout }, false,
+                        EntityId.Parse("transition:duty:g2:return")).Success, Is.True);
+                    session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
+                        Scene, EntityId.Parse("anchor:duty:g2:start")));
+
+                    Assert.That(root, Is.SameAs(initialShipRoot));
+                    Assert.That(engGo, Is.SameAs(initialEngGo));
+                    Assert.That(root != null && !root.Equals(null), Is.True);
+                    Assert.That(engGo != null && !engGo.Equals(null), Is.True);
+                    Assert.That(scoutShipGo, Is.SameAs(initialScoutShipGo));
+                    Assert.That(scoutShipGo != null && !scoutShipGo.Equals(null), Is.True);
+                    Assert.That(scoutShipGo.activeSelf, Is.True,
+                        "Returning crew proxy is reactivated on the same persistent ship root.");
+                    Assert.That(scoutWalker.IsConfigured, Is.True);
+                    Assert.That(engWalker.IsMoving, Is.True,
+                        "Returning shore party does not reset or interrupt onboard crew movement.");
+                }
+                finally
+                {
+                    UnityEngine.Object.DestroyImmediate(controllerGo);
+                    UnityEngine.Object.DestroyImmediate(root);
+                }
+            }
+        }
     }
 }

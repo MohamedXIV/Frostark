@@ -22,7 +22,7 @@ namespace FrostArk.Core.Save
         public bool Success => Value != null;
         public SaveDecodeError Error { get; }
 
-        internal SaveLoadResult(SaveGameDto value, bool usedBackup, SaveDecodeError error)
+        public SaveLoadResult(SaveGameDto value, bool usedBackup, SaveDecodeError error)
         {
             Value = value;
             UsedBackup = usedBackup;

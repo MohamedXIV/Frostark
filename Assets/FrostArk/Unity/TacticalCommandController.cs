@@ -63,6 +63,13 @@ namespace FrostArk.Unity
         /// controller to any specific scene/HUD implementation. Screen points
         /// use bottom-left InputSystem coordinates, just like screen rays.
         /// </summary>
+        public void AddPointerOverlayBlocker(Func<Vector2, bool> blocker)
+        {
+            if (blocker == null) return;
+            var prev = _isPointerOverSceneOverlay;
+            _isPointerOverSceneOverlay = prev == null ? blocker : pt => prev(pt) || blocker(pt);
+        }
+
         public void SetPointerOverlayBlocker(Func<Vector2, bool> blocker)
         {
             _isPointerOverSceneOverlay = blocker;
@@ -373,20 +380,20 @@ namespace FrostArk.Unity
             foreach (var id in _selectionController.SelectedActorIds)
                 _lastMoveDispatch[id] = false;
             if (_session == null || _session.SceneCheckpoint == null ||
-                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship ||
                 _shipSpatialMap == null || !_shipSpatialMap.Walkable(cell) ||
                 _selectionController.Count == 0)
                 return false;
 
-            var scene = _session.SceneCheckpoint.SceneId;
-            var executors = _shipActors
+            var activeShipActors = _shipActors
                 .Where(actor => actor != null && actor.isActiveAndEnabled &&
                                 actor.gameObject.activeInHierarchy && actor.Walker != null)
+                .ToArray();
+            var executors = activeShipActors
                 .Select(actor => (ICrewTheaterMoveExecutor)new ShipGridCrewExecutor(
                     actor.ActorId, actor.SceneId, actor.Walker)).ToArray();
 
             var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
-                _shipSpatialMap, _selectionController.SelectedActorIds, _shipActors, cell);
+                _shipSpatialMap, _selectionController.SelectedActorIds, activeShipActors, cell);
             var outcomes = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
                 _session, _selectionController, clickedWorldPoint, PhysicalTheater.Ship,
                 goals, executors);
@@ -574,14 +581,18 @@ namespace FrostArk.Unity
             foreach (var hit in hits)
             {
                 var shipActor = hit.collider.GetComponentInParent<ShipCrewSelectionProxy>();
-                if (shipActor != null && _shipActors.Contains(shipActor))
+                if (shipActor != null)
                 {
+                    if (!_shipActors.Contains(shipActor))
+                        RegisterShipActor(shipActor);
                     SelectActor(shipActor.ActorId, isAdditive);
                     return true;
                 }
                 var actor = hit.collider.GetComponentInParent<TacticalActorProxy>();
-                if (actor != null && _registeredActors.Contains(actor))
+                if (actor != null)
                 {
+                    if (!_registeredActors.Contains(actor))
+                        RegisterActor(actor);
                     SelectActor(actor.ActorId, isAdditive);
                     return true;
                 }
@@ -672,22 +683,35 @@ namespace FrostArk.Unity
             // concealed behind a wall is not magically actionable by click.
             if (hits.Length == 0) return false;
             var first = hits[0];
-            if (_session != null && _session.SceneCheckpoint != null &&
-                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+            var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
+            if (surface != null && _session != null && _session.SceneCheckpoint != null)
             {
-                var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
-                if (surface == null || _shipSpatialMap == null ||
+                if (_shipSpatialMap == null ||
                     !surface.TryResolve(first.point, _shipSpatialMap, out var localCell))
                     return false;
                 return IssueShipMoveOrder(localCell, first.point);
             }
 
-            var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
-            if (target != null && target.IsHostile && !target.IsDead)
-                return IssueAttackOrder(target);
+            var gangway = first.collider.GetComponentInParent<ShoreGangwayInteractable>();
+            if (gangway != null)
+            {
+                var selectedProxies = GetSelectedActorProxies();
+                if (selectedProxies.Count > 0)
+                    return IssueInteractOrder(gangway);
+                return gangway.TryInteractDirect(_selectionController.SelectedActorIds.ToArray());
+            }
+
             var interactable = first.collider.GetComponentInParent<TacticalInteractableProxy>();
             if (interactable != null && !interactable.IsDepleted)
                 return IssueInteractOrder(interactable);
+
+            if (_session != null && _session.SceneCheckpoint != null &&
+                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+                return false;
+
+            var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
+            if (target != null && target.IsHostile && !target.IsDead)
+                return IssueAttackOrder(target);
             if (first.collider.GetComponentInParent<TacticalActorProxy>() != null)
                 return false;
             if (Physics.Raycast(ray, out var groundHit, 100f, groundLayer,
@@ -701,7 +725,15 @@ namespace FrostArk.Unity
             var result = new List<TacticalActorProxy>();
             foreach (var id in _selectionController.SelectedActorIds)
             {
-                var actor = _registeredActors.FirstOrDefault(a => a.ActorId == id);
+                if (_session != null && _session.SceneCheckpoint != null &&
+                    _session.SceneCheckpoint.Theater == PhysicalTheater.Shore)
+                {
+                    var member = _session.Capture().State.CrewDuty?.Get(id);
+                    if (member != null && !member.IsAway)
+                        continue;
+                }
+                var actor = _registeredActors.FirstOrDefault(
+                    a => a != null && a.ActorId == id && a.gameObject.activeInHierarchy);
                 if (actor != null)
                     result.Add(actor);
             }

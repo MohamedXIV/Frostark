@@ -74,11 +74,14 @@ namespace FrostArk.Unity
         private void RevalidatePendingPlayerMoves()
         {
             if (_session == null || _commander == null || _map == null ||
-                _session.SceneCheckpoint == null ||
-                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship) return;
+                _session.SceneCheckpoint == null) return;
+            var expectedShipScene = _session.SceneCheckpoint.Theater == PhysicalTheater.Ship
+                ? _session.SceneCheckpoint.SceneId
+                : (_session.ResidentShipSceneId ?? default);
+            if (!expectedShipScene.IsValid) return;
             foreach (var saved in _session.PendingCrewMoves)
             {
-                if (saved.SceneId != _session.SceneCheckpoint.SceneId)
+                if (saved.SceneId != expectedShipScene)
                     continue;
                 var actor = _commander.ShipActors.FirstOrDefault(a =>
                     a != null && a.ActorId == saved.CrewId && a.Walker != null &&
@@ -219,6 +222,16 @@ namespace FrostArk.Unity
 
         private void Update() => Tick();
 
+        public void ReleaseActorForDeparture(EntityId id)
+        {
+            if (!id.IsValid || _session == null) return;
+            _playerMoveGoals.Remove(id);
+            _session.CompleteCrewMove(id);
+            if (_provisions.TryGetValue(id, out var pending))
+                EndProvision(id, pending);
+            _decisions[id] = CrewAgencyDecisionKind.Unavailable;
+        }
+
         /// <summary>
         /// Deterministic synchronous evaluation for EditMode tests. Unity owns
         /// presentation frames; Needs still advance only with WorldSession.
@@ -226,15 +239,25 @@ namespace FrostArk.Unity
         public void Tick()
         {
             if (_session == null || _commander == null || _map == null ||
-                _session.SceneCheckpoint == null ||
-                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship)
+                _session.SceneCheckpoint == null)
                 return;
 
+            var initialState = _session.Capture().State;
+            foreach (var awayMember in initialState.CrewDuty.Members)
+            {
+                if (awayMember != null && awayMember.IsAway)
+                    ReleaseActorForDeparture(awayMember.Id);
+            }
+
             foreach (var actor in _commander.ShipActors.Where(a =>
-                a != null && a.Walker != null && a.Walker.IsConfigured)
+                a != null && a.gameObject.activeInHierarchy &&
+                a.Walker != null && a.Walker.IsConfigured)
                 .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
             {
                 var id = actor.ActorId;
+                var currentMember = _session.Capture().State.CrewDuty.Get(id);
+                if (currentMember == null || currentMember.IsAway)
+                    continue;
                 var walker = actor.Walker;
                 var selected = _commander.Selection.IsSelected(id);
                 if (_provisions.TryGetValue(id, out var pending))

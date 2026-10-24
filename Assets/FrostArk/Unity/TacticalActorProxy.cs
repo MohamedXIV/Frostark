@@ -123,6 +123,12 @@ namespace FrostArk.Unity
                 _baseSpeed = _agent.speed;
             var _ = ActorId;
             var __ = WeaponId;
+            if (selectionMarker == null)
+            {
+                var ring = transform.Find("SelectionRing");
+                if (ring != null)
+                    selectionMarker = ring.gameObject;
+            }
             SetSelected(false);
         }
 
@@ -158,6 +164,12 @@ namespace FrostArk.Unity
         public void SetSelected(bool selected)
         {
             IsSelected = selected;
+            if (selectionMarker == null)
+            {
+                var ring = transform.Find("SelectionRing");
+                if (ring != null)
+                    selectionMarker = ring.gameObject;
+            }
             if (selectionMarker != null)
                 selectionMarker.SetActive(selected);
         }

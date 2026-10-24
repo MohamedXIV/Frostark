@@ -50,6 +50,7 @@ namespace FrostArk.Unity
         public WorldSession Session => _session;
         public TacticalCommandController Commander => _commander;
         public ShipTacticalSceneBootstrap Bootstrap => _bootstrap;
+        public Transform ShipRoot => _shipRoot;
 
         private void Start()
         {
@@ -69,6 +70,8 @@ namespace FrostArk.Unity
             _environment.transform.SetParent(transform, false);
             _shipRoot = new GameObject("ShipRoot | animated ship-local frame").transform;
             _shipRoot.SetParent(_environment.transform, false);
+            _shipRoot.gameObject.AddComponent<SceneReentryAnchor>().Configure(
+                EntityId.Parse(DemoSceneId), EntityId.Parse("anchor:demo:bridge-start"));
 
             var bridge = EntityId.Parse(BridgeRoomId);
             var engine = EntityId.Parse(EngineRoomId);
