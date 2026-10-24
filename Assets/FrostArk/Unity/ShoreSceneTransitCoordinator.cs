@@ -97,6 +97,8 @@ namespace FrostArk.Unity
         public bool TryDepart(SceneTransitDestination shore,
             IEnumerable<EntityId> selectedCrew, EntityId transitionId)
         {
+            if (IsBusy)
+                return Reject("SceneTransitUnavailable");
             if (selectedCrew == null)
                 return Reject("NoCrewSelection");
             var party = selectedCrew.ToArray();
@@ -106,6 +108,8 @@ namespace FrostArk.Unity
 
         public bool TryReturn(SceneTransitDestination ship, EntityId transitionId)
         {
+            if (IsBusy)
+                return Reject("SceneTransitUnavailable");
             if (_session == null || _session.SceneCheckpoint == null ||
                 _session.SceneCheckpoint.Theater != PhysicalTheater.Shore)
                 return Reject("NoActiveShoreCheckpoint");
@@ -119,6 +123,8 @@ namespace FrostArk.Unity
         /// </summary>
         public bool TryRestorePhysicalScene(PhysicalSceneCheckpoint checkpoint = null)
         {
+            if (IsBusy)
+                return Reject("SceneTransitUnavailable");
             var saved = checkpoint ?? _session?.SceneCheckpoint;
             if (saved == null)
                 return Reject("MissingPhysicalCheckpoint");
@@ -164,6 +170,7 @@ namespace FrostArk.Unity
             SceneTransitDestination destination, EntityId[] party, EntityId transitionId,
             bool commitCrew)
         {
+            yield return null;
             Scene loaded = default;
             bool sameActiveScene = !commitCrew && previous.IsValid() && previous.isLoaded &&
                 previous.path == destination.ScenePath;
@@ -278,7 +285,7 @@ namespace FrostArk.Unity
             else
                 SyncResidentShipBootstraps(loaded);
 
-            if (!SceneManager.SetActiveScene(loaded))
+            if (SceneManager.GetActiveScene() != loaded && !SceneManager.SetActiveScene(loaded))
             {
                 // Commit has happened; never pretend domain state rolled back.
                 Reject("SceneActivationFailedAfterDomainCommit");

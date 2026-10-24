@@ -609,18 +609,17 @@ namespace FrostArk.Unity.Tests
                 var initialMinute = session.Minute;
                 var initialCheckpoint = session.SceneCheckpoint;
 
-                // Configure a destination on transit whose ScenePath cannot be streamed in build settings.
-                // Preflight destination matching succeeds, but asynchronous loading in LoadValidateAndTransfer
-                // will fail with DestinationSceneNotConfiguredInBuildSettings.
+                // Configure a destination pointing to a valid build scene but with an unauthored anchor.
+                // Preflight destination matching and scene loading succeed, but asynchronous resolution in LoadValidateAndTransfer
+                // will fail with MissingSceneReentryAnchor.
                 var badShipDest = new SceneTransitDestination();
-                var badSceneId = EntityId.Parse("scene:ship:bad");
-                var badAnchorId = EntityId.Parse("anchor:ship:bad");
-                badShipDest.Configure(PhysicalTheater.Ship, "Assets/FrostArk/Scenes/MissingBuildScene.unity",
-                    badSceneId, badAnchorId);
+                var shipSceneId = EntityId.Parse("scene:ship:deck");
+                var badAnchorId = EntityId.Parse("anchor:ship:nonexistent_reentry_anchor");
+                badShipDest.Configure(PhysicalTheater.Ship, Ship, shipSceneId, badAnchorId);
                 transit.ConfigureDestinations(badShipDest);
 
                 // Set checkpoint and save valid domain state to disk
-                var badCheckpoint = PhysicalSceneCheckpoint.Ship(badSceneId, badAnchorId);
+                var badCheckpoint = PhysicalSceneCheckpoint.Ship(shipSceneId, badAnchorId);
                 session.SetSceneCheckpoint(badCheckpoint);
                 Assert.That(coordinator.QuickSave(), Is.True, "QuickSave must succeed with valid domain state.");
 
