@@ -65,7 +65,10 @@ namespace FrostArk.Unity
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
             _commander = GetComponentInChildren<TacticalCommandController>();
+            if (_commander != null && _session != null)
+                _commander.SetSession(_session);
         }
+
 
         /// <summary>
         /// Explicit fixture/authoring hook. Set before scene-resume requests.
@@ -144,8 +147,9 @@ namespace FrostArk.Unity
                 return Reject("SceneNotInBuildSettings");
 
             var previous = SceneManager.GetActiveScene();
-            if (!previous.IsValid() || !previous.isLoaded ||
-                previous.path == destination.ScenePath)
+            if (!previous.IsValid() || !previous.isLoaded)
+                return Reject("InvalidActiveScene");
+            if (commitCrew && previous.path == destination.ScenePath)
                 return Reject("InvalidOrAlreadyActiveScene");
 
             LastError = null;
@@ -160,9 +164,15 @@ namespace FrostArk.Unity
             bool commitCrew)
         {
             Scene loaded = default;
-            bool reuseLoadedShip = destination.Theater == PhysicalTheater.Ship &&
+            bool sameActiveScene = !commitCrew && previous.IsValid() && previous.isLoaded &&
+                previous.path == destination.ScenePath;
+            bool reuseLoadedShip = !sameActiveScene && destination.Theater == PhysicalTheater.Ship &&
                 TryFindLoadedShipScene(destination, out loaded);
-            if (!reuseLoadedShip)
+            if (sameActiveScene)
+            {
+                loaded = previous;
+            }
+            else if (!reuseLoadedShip)
             {
                 var operation = SceneManager.LoadSceneAsync(destination.ScenePath, LoadSceneMode.Additive);
                 if (operation == null)
@@ -291,6 +301,8 @@ namespace FrostArk.Unity
                 _commander = GetComponentInChildren<TacticalCommandController>();
             if (_commander != null)
             {
+                if (_session != null)
+                    _commander.SetSession(_session);
                 _commander.ClearSelection();
                 _commander.SetCamera(sceneCamera);
                 _commander.RefreshSceneRegistrations();

@@ -345,5 +345,110 @@ namespace FrostArk.Unity.Tests
                 }
             }
         }
+[UnityTest]
+        public IEnumerator PlayMode_DiskSaveCoordinator_SaveThenMutateThenQuickLoad_RestoresExactWorldAndSceneState()
+        {
+            Assert.That(Application.CanStreamedLevelBeLoaded(Launcher), Is.True);
+            yield return SceneManager.LoadSceneAsync(Launcher, LoadSceneMode.Single);
+            yield return null;
+
+            var root = UnityEngine.Object.FindAnyObjectByType<WorldSessionScope>();
+            Assert.That(root, Is.Not.Null);
+            var session = root.Container.Resolve<WorldSession>();
+            var transit = root.GetComponent<ShoreSceneTransitCoordinator>();
+            var commander = root.GetComponentInChildren<TacticalCommandController>();
+            Assert.That(transit, Is.Not.Null);
+            Assert.That(commander, Is.Not.Null);
+
+            // Depart Hero to shore
+            commander.SelectActor(Hero);
+            Assert.That(transit.TryDepartSelected(Landing(),
+                EntityId.Parse("transition:save-mutate-load:depart")), Is.True);
+
+            float time = 8f;
+            while (transit.IsBusy && time > 0)
+            {
+                yield return null;
+                time -= Time.deltaTime;
+            }
+            Assert.That(transit.IsBusy, Is.False);
+            Assert.That(transit.LastError, Is.Null);
+            Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+
+            // Set up coordinator with test store
+            string testDir = System.IO.Path.Combine(Application.temporaryCachePath, "DiskSaveMutateTest_" + Guid.NewGuid().ToString("N"));
+            var store = new LocalDiskSaveBlobStore(testDir, "save_slot");
+            var coordinator = root.gameObject.AddComponent<DiskSaveCoordinator>();
+            coordinator.Initialize(session, store);
+
+            try
+            {
+                long initialRevision = session.Revision;
+                var initialFuel = session.Capture().State.GetSupply(EntityId.Parse("supply:fuel"));
+                var pickup = UnityEngine.Object.FindObjectsByType<TacticalInteractableProxy>(
+                    FindObjectsSortMode.None).First(p => p.TargetId == EntityId.Parse("salvage:supply_cache"));
+                Assert.That(pickup, Is.Not.Null);
+                Assert.That(pickup.IsDepleted, Is.False);
+
+                // 1. QuickSave initial ashore state
+                Assert.That(coordinator.QuickSave(), Is.True, "QuickSave must succeed.");
+
+                // 2. Mutate game state: loot salvage cache
+                commander.SelectActor(Hero);
+                Assert.That(commander.IssueInteractOrder(pickup), Is.True);
+                float timeout = 9f;
+                while (!pickup.IsDepleted && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+                Assert.That(pickup.IsDepleted, Is.True, "Salvage should now be collected.");
+                Assert.That(session.Capture().State.Inventory.IsCollected(pickup.TargetId), Is.True);
+                Assert.That(session.Revision, Is.GreaterThan(initialRevision), "Revision must have advanced upon loot.");
+
+                // 3. QuickLoad from disk
+                var loadResult = coordinator.QuickLoad();
+                Assert.That(loadResult, Is.Not.Null);
+                Assert.That(loadResult.Success, Is.True, "QuickLoad must succeed: " + loadResult.Error);
+
+                // Wait for any scene alignment to complete
+                timeout = 8f;
+                while (transit.IsBusy && timeout > 0f)
+                {
+                    yield return null;
+                    timeout -= Time.deltaTime;
+                }
+
+                // 4. Assert exact restored world and scene state
+                Assert.That(session.Revision, Is.EqualTo(initialRevision),
+                    "WorldSession revision must be restored to saved revision.");
+                Assert.That(session.Capture().State.GetSupply(EntityId.Parse("supply:fuel")), Is.EqualTo(initialFuel));
+                Assert.That(session.Capture().State.Inventory.IsCollected(pickup.TargetId), Is.False,
+                    "Salvage collection state in WorldSession must be reverted.");
+                Assert.That(pickup.IsDepleted, Is.False,
+                    "Scene interactable visual must be restored to uncollected state.");
+                Assert.That(session.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(session.Capture().State.CrewDuty.Get(Hero).IsAway, Is.True);
+            }
+            finally
+            {
+                if (System.IO.Directory.Exists(testDir))
+                {
+                    try { System.IO.Directory.Delete(testDir, true); } catch { }
+                }
+                if (root != null)
+                    UnityEngine.Object.Destroy(root.gameObject);
+                var activeScene = SceneManager.GetActiveScene();
+                if (activeScene.IsValid())
+                {
+                    foreach (var go in activeScene.GetRootGameObjects())
+                    {
+                        if (go.name == "Code-based tests runner" || go.name.Contains("tests runner"))
+                            continue;
+                        UnityEngine.Object.Destroy(go);
+                    }
+                }
+            }
+        }
     }
 }

@@ -104,6 +104,17 @@ namespace FrostArk.Unity
 
         public SaveLoadResult QuickLoad()
         {
+            if (_session == null)
+            {
+                var scope = FindAnyObjectByType<WorldSessionScope>();
+                if (scope != null && scope.Container != null)
+                    _session = scope.Container.Resolve<WorldSession>();
+            }
+            if (_session == null)
+            {
+                SetStatus("Load failed: No active WorldSession.");
+                return null;
+            }
             if (_repository == null)
             {
                 _store = new LocalDiskSaveBlobStore(slotName: slotName);
@@ -119,13 +130,25 @@ namespace FrostArk.Unity
                     return result;
                 }
 
+                // Rehydrate the active WorldSession in-place
+                _session.RestoreSnapshot(result.Value);
                 SetStatus($"Loaded: {slotName}.sav (Rev {result.Value.State.Revision})" + (result.UsedBackup ? " [Backup]" : ""));
 
+                // Restore physical scene alignment and actor positions
                 var transit = FindAnyObjectByType<ShoreSceneTransitCoordinator>();
-                if (transit != null && _session != null)
+                if (transit != null)
                 {
                     transit.TryRestorePhysicalScene();
                 }
+
+                // Refresh commander registrations and visuals
+                var commander = FindAnyObjectByType<TacticalCommandController>();
+                if (commander != null)
+                {
+                    commander.ClearSelection();
+                    commander.RefreshSceneRegistrations();
+                }
+
                 return result;
             }
             catch (Exception ex)
