@@ -36,6 +36,7 @@ namespace FrostArk.Unity
         private readonly List<TacticalInteractableProxy> _registeredInteractables = new List<TacticalInteractableProxy>();
         private readonly List<TacticalCombatTargetProxy> _registeredTargets = new List<TacticalCombatTargetProxy>();
         private TacticalSelectionController _selectionController = new TacticalSelectionController();
+        private PersistentWorldRuntime _persistentWorld;
         private bool _selectionEventsBound;
         private WorldSession _session;
         private readonly Dictionary<EntityId, bool> _lastMoveDispatch =
@@ -181,6 +182,11 @@ namespace FrostArk.Unity
         public void SetCamera(Camera cam)
         {
             tacticalCamera = cam;
+        }
+
+        public void SetPersistentWorld(PersistentWorldRuntime world)
+        {
+            _persistentWorld = world;
         }
 
         public void RefreshSceneRegistrations()
@@ -678,18 +684,30 @@ namespace FrostArk.Unity
                 if (_shipSpatialMap == null ||
                     !surface.TryResolve(first.point, _shipSpatialMap, out var localCell))
                     return false;
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Shore &&
+                    _persistentWorld != null)
+                    return _persistentWorld.TryTravelSelectedToShip(
+                        _selectionController.SelectedActorIds, localCell, first.point);
                 return IssueShipMoveOrder(localCell, first.point);
             }
             var persistentGangway = first.collider.GetComponentInParent<PersistentGangway>();
             if (persistentGangway != null)
                 return persistentGangway.TryUse(_selectionController.SelectedActorIds);
 
+            if (first.collider.GetComponentInParent<ShoreWalkableSurface>() != null &&
+                _session != null && _session.SceneCheckpoint != null)
+            {
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Shore)
+                    return IssueMoveOrder(first.point);
+                if (_session.SceneCheckpoint.Theater == PhysicalTheater.Ship &&
+                    _persistentWorld != null)
+                    return _persistentWorld.TryTravelSelectedToShore(
+                        _selectionController.SelectedActorIds, first.point);
+            }
+
             if (_session != null && _session.SceneCheckpoint != null &&
                 _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
                 return false;
-
-            if (first.collider.GetComponentInParent<ShoreWalkableSurface>() != null)
-                return IssueMoveOrder(first.point);
 
             var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
             if (target != null && target.IsHostile && !target.IsDead)

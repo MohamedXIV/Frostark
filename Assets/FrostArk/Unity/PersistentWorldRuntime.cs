@@ -73,13 +73,20 @@ namespace FrostArk.Unity
         private bool _ready;
         private bool _shoreReady;
         private bool _crossing;
+        private bool _queueRunning;
+        private bool _stepSucceeded;
+        private bool _restoring;
+        private float _lastReconcileTime;
         private string _initializationError;
         private string _shoreError;
         private string _lastTransitStatus;
+        private string _lastRestoreError;
 
         public bool IsReady => _ready;
         public bool IsShoreReady => _shoreReady;
         public bool IsCrossing => _crossing;
+        public bool IsRestoring => _restoring;
+        public string LastRestoreError => _lastRestoreError;
         public WorldSession Session => _session;
         public Transform ShipRoot => _shipRoot;
         public ShipTacticalSceneBootstrap Bootstrap => _bootstrap;
@@ -161,6 +168,7 @@ namespace FrostArk.Unity
             var commanderObject = new GameObject("TacticalCommandController");
             commanderObject.transform.SetParent(transform, false);
             _commander = commanderObject.AddComponent<TacticalCommandController>();
+            _commander.SetPersistentWorld(this);
 
             var cameraObject = new GameObject("GameplayCamera");
             cameraObject.transform.SetParent(transform, false);
@@ -222,7 +230,92 @@ namespace FrostArk.Unity
             Physics.SyncTransforms();
             _ready = true;
             if (Application.isPlaying)
+            {
+                var save = GetComponent<PersistentWorldSaveCoordinator>();
+                if (save == null)
+                    save = gameObject.AddComponent<PersistentWorldSaveCoordinator>();
+                save.Bind(this);
                 StartCoroutine(LoadShoreEnvironment());
+            }
+        }
+
+        /// <summary>
+        /// In-place F9 restore: rebuild the generated ship/actor/camera graph
+        /// from the restored session while preserving the one run root/session.
+        /// </summary>
+        public bool RestoreFromSnapshot(SaveGameDto snapshot)
+        {
+            if (snapshot == null || _restoring || _session == null)
+                return false;
+            _restoring = true;
+            _lastRestoreError = null;
+            StartCoroutine(RestoreRoutine(snapshot));
+            return true;
+        }
+
+        private IEnumerator RestoreRoutine(SaveGameDto snapshot)
+        {
+            string error = null;
+            try
+            {
+                _session.RestoreSnapshot(snapshot);
+                _ready = false;
+                _shoreReady = false;
+                _crossing = false;
+                _queueRunning = false;
+                _stepSucceeded = false;
+                _lastReconcileTime = 0f;
+                _initializationError = null;
+                _lastTransitStatus = null;
+                _crewActors.Clear();
+                _shipRoot = null;
+                _bootstrap = null;
+                _commander = null;
+                _camera = null;
+                foreach (Transform child in transform)
+                    if (child != null)
+                        Destroy(child.gameObject);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Debug.LogException(ex, this);
+            }
+
+            if (error != null)
+            {
+                _lastRestoreError = error;
+                _restoring = false;
+                yield break;
+            }
+
+            yield return null;
+            try
+            {
+                BuildWorld(_session);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Debug.LogException(ex, this);
+            }
+            if (error != null)
+            {
+                _lastRestoreError = error;
+                _restoring = false;
+                yield break;
+            }
+
+            float wait = 8f;
+            while ((!_ready || !_shoreReady) && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            if (!_ready || !_shoreReady)
+                _lastRestoreError = "WorldRebuildIncomplete: " +
+                    (_shoreError ?? "not ready");
+            _restoring = false;
         }
 
         private void CreateGangway()
@@ -323,31 +416,119 @@ namespace FrostArk.Unity
         {
             if (_session == null || _commander == null)
                 return;
-            var checkpoint = _session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore)
+            UpdateAwayCheckpoint();
+            ReconcileCrewPresence();
+        }
+
+        private EntityId[] GetAwayIds()
+        {
+            if (_session == null)
+                return Array.Empty<EntityId>();
+            return _session.Capture().State.CrewDuty.Members
+                .Where(m => m.IsAway)
+                .Select(m => m.Id)
+                .OrderBy(id => id.Value, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        /// <summary>
+        /// Publish the shoreline party as the union of every away crew member.
+        /// Selecting a second actor for the gangway must never overwrite the
+        /// first actor's party membership.
+        /// </summary>
+        private void UpdateAwayCheckpoint()
+        {
+            if (_session == null)
+                return;
+            SetCheckpointForAway(GetAwayIds());
+        }
+
+        private void SetCheckpointForAway(IReadOnlyList<EntityId> away)
+        {
+            if (away == null || away.Count == 0)
+            {
+                _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
+                    EntityId.Parse(ShipSceneId), EntityId.Parse(ShipAnchorId)));
+                return;
+            }
+
+            var current = _session.SceneCheckpoint;
+            var sceneId = current != null && current.Theater == PhysicalTheater.Shore
+                ? current.SceneId : EntityId.Parse(ShoreSceneId);
+            var siteId = current != null && current.Theater == PhysicalTheater.Shore &&
+                         current.SiteId.IsValid
+                ? current.SiteId : EntityId.Parse(ShoreSiteId);
+            var anchorId = current != null && current.Theater == PhysicalTheater.Shore &&
+                           current.SpawnAnchorId.IsValid
+                ? current.SpawnAnchorId : EntityId.Parse(ShoreAnchorId);
+            _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                sceneId, siteId, anchorId, away));
+        }
+
+        private void ReleaseShipPresence(EntityId id)
+        {
+            if (_commander == null)
+                return;
+            _commander.GetComponent<ShipCrewAgencyCoordinator>()?
+                .ReleaseActorForDeparture(id);
+            _commander.GetComponent<ShipCrewDutyAutonomy>()?
+                .ReleaseActorForDeparture(id);
+        }
+
+        /// <summary>
+        /// Repair only inconsistent physical modes and missing party membership.
+        /// Normal moving actors on the correct side are never teleported.
+        /// </summary>
+        public void ReconcileCrewPresence()
+        {
+            if (_session == null || _commander == null || !_ready ||
+                _restoring || _crossing || _queueRunning)
+                return;
+            if (!_shoreReady && GetAwayIds().Length > 0)
                 return;
 
+            UpdateAwayCheckpoint();
             var state = _session.Capture().State;
-            var agency = _commander.GetComponent<ShipCrewAgencyCoordinator>();
-            var duty = _commander.GetComponent<ShipCrewDutyAutonomy>();
             int awayIndex = 0;
             foreach (var actor in _crewActors)
             {
                 var member = state.CrewDuty.Get(actor.ActorId);
-                if (member == null || !member.IsAway)
+                if (member == null)
                     continue;
-
-                agency?.ReleaseActorForDeparture(actor.ActorId);
-                duty?.ReleaseActorForDeparture(actor.ActorId);
-                actor.ShipMotor.SuspendForShoreDeparture();
-                var offset = new Vector3((awayIndex % 3) * 1f, 0f, (awayIndex / 3) * 1f);
-                if (!actor.SetShoreMode(ShoreEntryPoint + offset))
+                if (member.IsAway)
                 {
-                    _shoreError = "ShoreEntryNotOnNavMesh";
-                    return;
+                    int index = awayIndex++;
+                    if (!actor.IsOnShip && actor.ShoreAgent.enabled &&
+                        actor.ShoreAgent.isOnNavMesh)
+                        continue;
+                    ReleaseShipPresence(actor.ActorId);
+                    actor.ShipMotor.SuspendForShoreDeparture();
+                    var offset = new Vector3((index % 3) * 1f, 0f, (index / 3) * 1f);
+                    if (!actor.SetShoreMode(ShoreEntryPoint + offset))
+                        _lastTransitStatus = "ReconcileShoreFailed:" +
+                            actor.ActorId.Value;
                 }
-                awayIndex++;
+                else if (!actor.IsOnShip || !actor.ShipMotor.enabled)
+                {
+                    actor.ShipMotor.ResumeFromShoreAt(GangwayCell);
+                    actor.SetShipPosition(actor.ShipMotor.transform.position);
+                    actor.SetShipMode();
+                }
             }
+            Physics.SyncTransforms();
+        }
+
+        public void ReconcilePresenceNow() => ReconcileCrewPresence();
+
+        private void Update()
+        {
+            if (!_ready || _restoring || _crossing || _queueRunning ||
+                _session == null)
+                return;
+            if (Time.unscaledTime - _lastReconcileTime < 0.5f)
+                return;
+            _lastReconcileTime = Time.unscaledTime;
+            ReconcileCrewPresence();
         }
 
         public bool TryCrossActor(EntityId actorId, EntityId transitionId = default)
@@ -360,21 +541,162 @@ namespace FrostArk.Unity
             return TryCrossSelected(new[] { actorId }, transitionId);
         }
 
+        /// <summary>
+        /// Queue every selected crew member through the one gangway. Each
+        /// actor crosses physically before the next one starts.
+        /// </summary>
         public bool TryCrossSelected(IReadOnlyList<EntityId> selected,
             EntityId transitionId = default)
         {
-            if (selected == null || selected.Count != 1)
+            if (_queueRunning || _crossing)
             {
-                _lastTransitStatus = "SelectExactlyOneCrewMember";
+                _lastTransitStatus = "TransitBusy";
                 return false;
             }
-            var actor = _crewActors.FirstOrDefault(a => a.ActorId == selected[0]);
-            if (actor == null)
+            if (selected == null || selected.Count == 0)
+            {
+                _lastTransitStatus = "NoCrewSelection";
+                return false;
+            }
+
+            ReconcileCrewPresence();
+            var ids = selected.Distinct()
+                .Where(id => _crewActors.Any(a => a.ActorId == id))
+                .ToList();
+            if (ids.Count == 0)
             {
                 _lastTransitStatus = "UnknownCrew";
                 return false;
             }
-            return TryCross(actor, transitionId);
+            return StartTransit(ids, transitionId,
+                false, default, false, default, default);
+        }
+
+        /// <summary>
+        /// Direct ship-to-shore order: the selected onboard crew walk to the
+        /// gangway, cross in sequence, then receive the shore move at the click.
+        /// Crew already ashore receive the move directly.
+        /// </summary>
+        public bool TryTravelSelectedToShore(IReadOnlyList<EntityId> selected,
+            Vector3 shorePoint, EntityId transitionId = default)
+        {
+            if (_queueRunning || _crossing)
+            {
+                _lastTransitStatus = "TransitBusy";
+                return false;
+            }
+            if (selected == null || selected.Count == 0)
+            {
+                _lastTransitStatus = "NoCrewSelection";
+                return false;
+            }
+            ReconcileCrewPresence();
+            var state = _session.Capture().State;
+            var ids = selected.Distinct().Where(id =>
+            {
+                var member = state.CrewDuty.Get(id);
+                return member != null && !member.IsAway;
+            }).ToList();
+            if (ids.Count == 0)
+            {
+                if (_commander != null &&
+                    selected.Any(id => state.CrewDuty.Get(id) != null))
+                    return _commander.IssueMoveOrder(shorePoint);
+                _lastTransitStatus = "NoEligibleCrew";
+                return false;
+            }
+            return StartTransit(ids, transitionId,
+                true, shorePoint, false, default, default);
+        }
+
+        /// <summary>
+        /// Direct shore-to-ship order: the selected away crew return through
+        /// the gangway in sequence, then receive the ship move at the click.
+        /// </summary>
+        public bool TryTravelSelectedToShip(IReadOnlyList<EntityId> selected,
+            ShipGridCell shipCell, Vector3 shipWorldPoint,
+            EntityId transitionId = default)
+        {
+            if (_queueRunning || _crossing)
+            {
+                _lastTransitStatus = "TransitBusy";
+                return false;
+            }
+            if (selected == null || selected.Count == 0)
+            {
+                _lastTransitStatus = "NoCrewSelection";
+                return false;
+            }
+            ReconcileCrewPresence();
+            var state = _session.Capture().State;
+            var ids = selected.Distinct().Where(id =>
+            {
+                var member = state.CrewDuty.Get(id);
+                return member != null && member.IsAway;
+            }).ToList();
+            if (ids.Count == 0)
+            {
+                if (_commander != null &&
+                    selected.Any(id => state.CrewDuty.Get(id) != null))
+                    return _commander.IssueShipMoveOrder(shipCell, shipWorldPoint);
+                _lastTransitStatus = "NoEligibleCrew";
+                return false;
+            }
+            return StartTransit(ids, transitionId,
+                false, default, true, shipCell, shipWorldPoint);
+        }
+
+        private bool StartTransit(IReadOnlyList<EntityId> ids,
+            EntityId transitionId, bool hasShoreDestination, Vector3 shorePoint,
+            bool hasShipDestination, ShipGridCell shipCell, Vector3 shipWorldPoint)
+        {
+            if (_queueRunning || _crossing)
+            {
+                _lastTransitStatus = "TransitBusy";
+                return false;
+            }
+            _queueRunning = true;
+            _lastTransitStatus = "TransitQueued";
+            StartCoroutine(ProcessTransitQueue(ids.ToList(),
+                ResolveTransitionId(transitionId), hasShoreDestination, shorePoint,
+                hasShipDestination, shipCell, shipWorldPoint));
+            return true;
+        }
+
+        private IEnumerator ProcessTransitQueue(List<EntityId> ids,
+            EntityId transitionId, bool hasShoreDestination, Vector3 shorePoint,
+            bool hasShipDestination, ShipGridCell shipCell, Vector3 shipWorldPoint)
+        {
+            int success = 0;
+            foreach (var id in ids)
+            {
+                var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
+                if (actor == null)
+                    continue;
+                while (_crossing)
+                    yield return null;
+                _stepSucceeded = false;
+                if (!TryCross(actor, transitionId))
+                {
+                    _lastTransitStatus = "TransitSkipped:" + id.Value + ":" +
+                        _lastTransitStatus;
+                    continue;
+                }
+                while (_crossing)
+                    yield return null;
+                if (_stepSucceeded)
+                    success++;
+                UpdateAwayCheckpoint();
+            }
+
+            _queueRunning = false;
+            UpdateAwayCheckpoint();
+            ReconcileCrewPresence();
+            if (success > 0 && hasShoreDestination && _commander != null)
+                _commander.IssueMoveOrder(shorePoint);
+            else if (success > 0 && hasShipDestination && _commander != null)
+                _commander.IssueShipMoveOrder(shipCell, shipWorldPoint);
+            _lastTransitStatus = "TransitComplete " + success + "/" + ids.Count;
         }
 
         private bool TryCross(PersistentCrewActor actor, EntityId transitionId)
@@ -384,12 +706,14 @@ namespace FrostArk.Unity
                 _lastTransitStatus = "WorldNotReady";
                 return false;
             }
-            if (_crossing)
+            var member = _session.Capture().State.CrewDuty.Get(actor.ActorId);
+            if (member == null)
             {
-                _lastTransitStatus = "TransitBusy";
+                _lastTransitStatus = "UnknownCrew";
                 return false;
             }
-            if (actor.IsOnShip)
+
+            if (!member.IsAway)
             {
                 if (!_shoreReady)
                 {
@@ -397,27 +721,26 @@ namespace FrostArk.Unity
                         ? "ShoreNotReady" : "ShoreError:" + _shoreError;
                     return false;
                 }
-                if (actor.ShipMotor == null || !actor.ShipMotor.IsConfigured ||
+                if (!actor.IsOnShip || actor.ShipMotor == null ||
+                    !actor.ShipMotor.enabled || !actor.ShipMotor.IsConfigured ||
                     actor.ShipMotor.IsMoving || actor.ShipMotor.IsRecovering)
                 {
                     _lastTransitStatus = "ShipActorMustBeStationary";
                     return false;
                 }
                 _crossing = true;
-                StartCoroutine(CrossToShore(actor, ResolveTransitionId(transitionId)));
+                StartCoroutine(CrossToShore(actor, transitionId));
                 return true;
             }
 
-            var checkpoint = _session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore ||
-                checkpoint.PartyIds.Count != 1 ||
-                !checkpoint.PartyIds.Contains(actor.ActorId))
+            if (actor.IsOnShip || actor.ShoreAgent == null ||
+                !actor.ShoreAgent.enabled || !actor.ShoreAgent.isOnNavMesh)
             {
-                _lastTransitStatus = "ShorePartyMismatch";
+                _lastTransitStatus = "ShoreActorModeUnavailable";
                 return false;
             }
             _crossing = true;
-            StartCoroutine(CrossToShip(actor, ResolveTransitionId(transitionId)));
+            StartCoroutine(CrossToShip(actor, transitionId));
             return true;
         }
 
@@ -496,20 +819,17 @@ namespace FrostArk.Unity
 
             try
             {
-                _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
-                    EntityId.Parse(ShoreSceneId), EntityId.Parse(ShoreSiteId),
-                    EntityId.Parse(ShoreAnchorId), new[] { actor.ActorId }));
+                UpdateAwayCheckpoint();
             }
             catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
             {
                 _lastTransitStatus = "ShoreCheckpointRejected:" + ex.Message;
-                ShoreCrewTransfer.Transfer(_session, new[] { actor.ActorId }, false,
-                    ResolveTransitionId(default));
-                RestoreActorToShip(actor, targetCell);
+                _stepSucceeded = false;
                 _crossing = false;
                 yield break;
             }
 
+            _stepSucceeded = true;
             _lastTransitStatus = "Ashore";
             _crossing = false;
             Physics.SyncTransforms();
@@ -524,9 +844,8 @@ namespace FrostArk.Unity
 
         private IEnumerator CrossToShip(PersistentCrewActor actor, EntityId transitionId)
         {
-            var checkpoint = _session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore ||
-                !checkpoint.PartyIds.Contains(actor.ActorId))
+            var member = _session.Capture().State.CrewDuty.Get(actor.ActorId);
+            if (member == null || !member.IsAway)
             {
                 _lastTransitStatus = "ShorePartyMismatch";
                 _crossing = false;
@@ -588,21 +907,28 @@ namespace FrostArk.Unity
             actor.ShipMotor.ResumeFromShoreAt(GangwayCell);
             actor.SetShipMode();
 
-            // The Ship checkpoint does not require an away flag to be cleared,
-            // so publish it before the per-actor availability command. The old
-            // Shore checkpoint would otherwise reject the intermediate state
-            // when a session-change listener captures the world.
-            var previousCheckpoint = _session.SceneCheckpoint;
-            _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
-                EntityId.Parse(ShipSceneId), EntityId.Parse(ShipAnchorId)));
+            // Exclude the returning actor from the shore party before its
+            // availability command, while retaining every other away actor.
+            var remaining = GetAwayIds().Where(id => id != actor.ActorId).ToArray();
+            try
+            {
+                SetCheckpointForAway(remaining);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                _lastTransitStatus = "ShipCheckpointRejected:" + ex.Message;
+                actor.ShipMotor.SuspendForShoreDeparture();
+                actor.SetShoreMode(ShoreEntryPoint);
+                _crossing = false;
+                yield break;
+            }
 
             var transfer = ShoreCrewTransfer.Transfer(
                 _session, new[] { actor.ActorId }, false, transitionId);
             if (!transfer.Success)
             {
                 _lastTransitStatus = "ShipTransferRejected:" + transfer.Failure;
-                if (previousCheckpoint != null)
-                    _session.SetSceneCheckpoint(previousCheckpoint);
+                UpdateAwayCheckpoint();
                 actor.ShipMotor.SuspendForShoreDeparture();
                 if (!actor.SetShoreMode(ShoreEntryPoint))
                     _lastTransitStatus = "ShoreReturnRollbackFailed";
@@ -610,6 +936,8 @@ namespace FrostArk.Unity
                 yield break;
             }
 
+            _stepSucceeded = true;
+            UpdateAwayCheckpoint();
             _lastTransitStatus = "Aboard";
             _crossing = false;
             Physics.SyncTransforms();

@@ -323,6 +323,84 @@ namespace FrostArk.Unity.Tests
             yield return null;
         }
 
+        [UnityTest]
+        public IEnumerator InPlaceRestore_RebuildsOneShipAndAwayCrew()
+        {
+            var load = SceneManager.LoadSceneAsync("E12PersistentWorld", LoadSceneMode.Single);
+            Assert.That(load, Is.Not.Null);
+            yield return load;
+            yield return null;
+            yield return null;
+
+            var runtime = Object.FindAnyObjectByType<PersistentWorldRuntime>();
+            Assert.That(runtime, Is.Not.Null);
+            float wait = 5f;
+            while (!runtime.IsReady || !runtime.IsShoreReady)
+            {
+                if (wait <= 0f)
+                    Assert.Fail("World did not initialize: " +
+                        runtime.InitializationError + " / " + runtime.ShoreError);
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+
+            var session = runtime.Session;
+            var captain = runtime.CrewActors.First(a => a.ActorId ==
+                EntityId.Parse(PersistentWorldRuntime.CaptainId));
+            runtime.Commander.SelectActor(captain.ActorId);
+            Assert.That(runtime.TryCrossActor(captain.ActorId,
+                EntityId.Parse("transition:inplace:depart")), Is.True);
+            wait = 20f;
+            while ((runtime.IsCrossing || captain.IsOnShip) && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            Assert.That(captain.IsOnShip, Is.False, runtime.LastTransitStatus);
+            var saved = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+            Assert.That(saved.Success, Is.True);
+
+            Assert.That(runtime.RestoreFromSnapshot(saved.Value), Is.True);
+            wait = 10f;
+            while (runtime.IsRestoring && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            yield return null;
+
+            Assert.That(runtime.IsRestoring, Is.False);
+            Assert.That(runtime.IsReady, Is.True);
+            Assert.That(runtime.IsShoreReady, Is.True, runtime.ShoreError);
+            Assert.That(runtime.Session, Is.SameAs(session),
+                "The one scoped WorldSession must survive an in-place load.");
+            Assert.That(session.SceneCheckpoint.Theater,
+                Is.EqualTo(PhysicalTheater.Shore));
+            Assert.That(session.Capture().State.CrewDuty
+                .Get(captain.ActorId).IsAway, Is.True);
+            Assert.That(runtime.CrewActors.Count, Is.EqualTo(4));
+            Assert.That(runtime.transform
+                .GetComponentsInChildren<PersistentCrewActor>(true).Length,
+                Is.EqualTo(4));
+            Assert.That(runtime.transform
+                .GetComponentsInChildren<ShipTacticalSceneBootstrap>(true).Length,
+                Is.EqualTo(1));
+            Assert.That(runtime.transform
+                .GetComponentsInChildren<Camera>(true).Length, Is.EqualTo(1));
+            Assert.That(runtime.transform
+                .GetComponentsInChildren<Light>(true).Length, Is.EqualTo(1));
+            Assert.That(runtime.transform
+                .GetComponentsInChildren<PersistentWorldSaveCoordinator>(true).Length,
+                Is.EqualTo(1));
+            var restoredCaptain = runtime.CrewActors.First(a =>
+                a.ActorId == captain.ActorId);
+            Assert.That(restoredCaptain.IsOnShip, Is.False);
+            Assert.That(restoredCaptain.ShoreAgent.enabled, Is.True);
+
+            Object.Destroy(runtime.transform.root.gameObject);
+            yield return null;
+        }
+
         private static void QueuePosition(Mouse mouse, Vector2 screenPosition)
         {
             using (DeltaStateEvent.From(mouse.position, out var positionEvent))

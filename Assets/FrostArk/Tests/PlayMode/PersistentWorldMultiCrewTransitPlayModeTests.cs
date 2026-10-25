@@ -1,0 +1,241 @@
+using System.Collections;
+using System.Linq;
+using FrostArk.Core.Application;
+using FrostArk.Core.Save;
+using FrostArk.Unity;
+using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
+using EntityId = FrostArk.Core.World.EntityId;
+
+namespace FrostArk.Unity.Tests
+{
+    /// <summary>
+    /// Regression coverage for the observed playtest failures: direct shore
+    /// orders, multi-crew gangway queueing, and recovery from partial transit.
+    /// </summary>
+    public sealed class PersistentWorldMultiCrewTransitPlayModeTests
+    {
+        private static readonly EntityId Captain =
+            EntityId.Parse(PersistentWorldRuntime.CaptainId);
+        private static readonly EntityId Scout =
+            EntityId.Parse(PersistentWorldRuntime.ScoutId);
+
+        [UnityTest]
+        public IEnumerator MultiSelectGangway_CrossesAndReturnsAllSelectedCrew()
+        {
+            PersistentWorldRuntime runtime = null;
+            try
+            {
+                yield return LoadWorld(r => runtime = r);
+                var captain = runtime.CrewActors.First(a => a.ActorId == Captain);
+                var scout = runtime.CrewActors.First(a => a.ActorId == Scout);
+                var captainObject = captain.gameObject;
+                var scoutObject = scout.gameObject;
+                var commander = runtime.Commander;
+                var gangway = runtime.GetComponentInChildren<PersistentGangway>(true);
+                Assert.That(gangway, Is.Not.Null);
+                SelectBoth(commander);
+                Physics.SyncTransforms();
+
+                var gangwayScreen = runtime.GameplayCamera.WorldToScreenPoint(
+                    gangway.transform.position);
+                Assert.That(commander.ProcessContextClick(gangwayScreen), Is.True,
+                    "Multi-select must be accepted at the gangway.");
+
+                yield return WaitUntil(() => !runtime.IsCrossing &&
+                    !captain.IsOnShip && !scout.IsOnShip, 35f,
+                    "Both selected crew must cross the gangway.");
+                Assert.That(captain.gameObject, Is.SameAs(captainObject));
+                Assert.That(scout.gameObject, Is.SameAs(scoutObject));
+                Assert.That(runtime.Session.SceneCheckpoint.Theater,
+                    Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
+                    Is.EquivalentTo(new[] { Captain, Scout }),
+                    "The shore party must be the union of every away actor.");
+
+                SelectBoth(commander);
+                Physics.SyncTransforms();
+                var shipFloor = runtime.GameplayCamera.WorldToScreenPoint(
+                    new Vector3(8.5f, 0f, 2.5f));
+                Assert.That(commander.ProcessContextClick(shipFloor), Is.True,
+                    "Direct shore-to-ship order must be accepted.");
+
+                yield return WaitUntil(() => !runtime.IsCrossing &&
+                    captain.IsOnShip && scout.IsOnShip, 35f,
+                    "Both selected crew must return through the gangway.");
+                Assert.That(captain.gameObject, Is.SameAs(captainObject));
+                Assert.That(scout.gameObject, Is.SameAs(scoutObject));
+                Assert.That(runtime.Session.SceneCheckpoint.Theater,
+                    Is.EqualTo(PhysicalTheater.Ship));
+                Assert.That(runtime.Session.SceneCheckpoint.PartyIds, Is.Empty);
+                Assert.That(runtime.transform
+                    .GetComponentsInChildren<ShipTacticalSceneBootstrap>(true).Length,
+                    Is.EqualTo(1));
+                Assert.That(runtime.CrewActors.Count, Is.EqualTo(4));
+            }
+            finally
+            {
+                Cleanup(runtime);
+            }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator DirectShoreClick_CrossesAndMovesAllSelectedCrew()
+        {
+            PersistentWorldRuntime runtime = null;
+            try
+            {
+                yield return LoadWorld(r => runtime = r);
+                var captain = runtime.CrewActors.First(a => a.ActorId == Captain);
+                var scout = runtime.CrewActors.First(a => a.ActorId == Scout);
+                var commander = runtime.Commander;
+                SelectBoth(commander);
+                Physics.SyncTransforms();
+
+                var shorePoint = new Vector3(25f, 0f, 6f);
+                var shoreScreen = runtime.GameplayCamera.WorldToScreenPoint(shorePoint);
+                Assert.That(commander.ProcessContextClick(shoreScreen), Is.True,
+                    "A shore click from the ship must command a crossing.");
+
+                yield return WaitUntil(() => !runtime.IsCrossing &&
+                    !captain.IsOnShip && !scout.IsOnShip, 35f,
+                    "Both selected crew must cross before the shore move.");
+                Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
+                    Is.EquivalentTo(new[] { Captain, Scout }));
+
+                var captainStart = captain.transform.position;
+                var scoutStart = scout.transform.position;
+                yield return WaitUntil(() =>
+                    Vector3.Distance(captainStart, captain.transform.position) > 0.2f &&
+                    Vector3.Distance(scoutStart, scout.transform.position) > 0.2f,
+                    8f, "Both crew must move to the clicked shore point.");
+            }
+            finally
+            {
+                Cleanup(runtime);
+            }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator Reconcile_RepairsPartialAwayActorAndParty()
+        {
+            PersistentWorldRuntime runtime = null;
+            try
+            {
+                yield return LoadWorld(r => runtime = r);
+                var captain = runtime.CrewActors.First(a => a.ActorId == Captain);
+                var scout = runtime.CrewActors.First(a => a.ActorId == Scout);
+                var commander = runtime.Commander;
+
+                commander.SelectActor(Captain);
+                Assert.That(runtime.TryCrossActor(Captain,
+                    EntityId.Parse("transition:reconcile:captain")), Is.True);
+                yield return WaitUntil(() => !runtime.IsCrossing && !captain.IsOnShip,
+                    20f, "Captain must reach shore.");
+
+                var transfer = ShoreCrewTransfer.Transfer(runtime.Session,
+                    new[] { Scout }, true,
+                    EntityId.Parse("transition:reconcile:scout"));
+                Assert.That(transfer.Success, Is.True);
+                var checkpoint = runtime.Session.SceneCheckpoint;
+                Assert.That(checkpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                Assert.That(checkpoint.PartyIds, Is.EquivalentTo(new[] { Captain }),
+                    "Simulate the old overwrite/partial state.");
+
+                scout.ShipMotor.SuspendForShoreDeparture();
+                scout.ShipMotor.enabled = true;
+                scout.ShoreAgent.enabled = false;
+                Assert.That(scout.IsOnShip, Is.True);
+
+                runtime.ReconcilePresenceNow();
+
+                Assert.That(scout.IsOnShip, Is.False,
+                    "Away actor must not retain the ship motor mode.");
+                Assert.That(scout.ShipMotor.enabled, Is.False);
+                Assert.That(scout.ShoreAgent.enabled, Is.True);
+                Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
+                    Is.EquivalentTo(new[] { Captain, Scout }),
+                    "Reconcile must repair the shore party union.");
+            }
+            finally
+            {
+                Cleanup(runtime);
+            }
+            yield return null;
+        }
+
+        private static void SelectBoth(TacticalCommandController commander)
+        {
+            commander.ClearSelection();
+            commander.SelectActor(Captain);
+            commander.SelectActor(Scout, addToSelection: true);
+            Assert.That(commander.Selection.Count, Is.EqualTo(2));
+        }
+
+        private static IEnumerator LoadWorld(
+            System.Action<PersistentWorldRuntime> assign)
+        {
+            var load = SceneManager.LoadSceneAsync("E12PersistentWorld",
+                LoadSceneMode.Single);
+            Assert.That(load, Is.Not.Null);
+            yield return load;
+            yield return null;
+            yield return null;
+            var runtime = Object.FindAnyObjectByType<PersistentWorldRuntime>();
+            Assert.That(runtime, Is.Not.Null);
+            float wait = 8f;
+            while ((!runtime.IsReady || !runtime.IsShoreReady) && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            Assert.That(runtime.IsReady, Is.True, runtime.InitializationError);
+            Assert.That(runtime.IsShoreReady, Is.True, runtime.ShoreError);
+            assign(runtime);
+        }
+
+        private static IEnumerator WaitUntil(System.Func<bool> condition,
+            float timeoutSeconds, string message)
+        {
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+            while (!condition() && Time.realtimeSinceStartup < deadline)
+                yield return null;
+            Assert.That(condition(), Is.True, message);
+        }
+
+        private static void Cleanup(PersistentWorldRuntime runtime)
+        {
+            if (runtime != null)
+                Object.Destroy(runtime.transform.root.gameObject);
+        }
+
+        [UnityTearDown]
+        public IEnumerator CleanupMultiCrewTransit()
+        {
+            var runtimes = Object.FindObjectsByType<PersistentWorldRuntime>(
+                FindObjectsInactive.Include);
+            foreach (var runtime in runtimes)
+                if (runtime != null)
+                    Object.Destroy(runtime.transform.root.gameObject);
+            yield return null;
+
+            var shore = SceneManager.GetSceneByName(
+                PersistentWorldRuntime.ShoreSceneName);
+            if (shore.IsValid() && shore.isLoaded)
+            {
+                var unload = SceneManager.UnloadSceneAsync(shore);
+                if (unload != null)
+                    yield return unload;
+            }
+
+            var reset = SceneManager.LoadSceneAsync("SampleScene",
+                LoadSceneMode.Single);
+            if (reset != null)
+                yield return reset;
+        }
+    }
+}

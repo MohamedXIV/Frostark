@@ -20,9 +20,9 @@ namespace FrostArk.Core.Application
     public sealed class WorldSession : IDisposable
     {
         private WorldState _state;
-        private readonly SimulationScheduler _scheduler;
+        private SimulationScheduler _scheduler;
         private readonly WorldCommandBus _commands = new WorldCommandBus();
-        private readonly IReadOnlyList<ProceduralOverride> _overrides;
+        private IReadOnlyList<ProceduralOverride> _overrides;
         private PhysicalSceneCheckpoint _sceneCheckpoint;
         // Accepted Move goals survive Save/Restore. Unity selection and
         // interpolated frame positions are deliberately never persisted.
@@ -479,6 +479,37 @@ namespace FrostArk.Core.Application
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new WorldSession(snapshot, systems, ambientMilliC);
+        }
+
+        /// <summary>
+        /// Replace the active run state in place so DI, the presenter and the
+        /// persistent Unity root keep addressing the one authoritative session.
+        /// </summary>
+        public void RestoreSnapshot(SaveGameDto snapshot,
+            IEnumerable<IWorldMinuteSystem> systems = null,
+            Func<WorldMinute, long> ambientMilliC = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            Guard();
+            StopShipWorkObservationInternal();
+            _workPresence.Clear();
+            _crewMoves.Clear();
+            _state = snapshot.State;
+            _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
+            _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
+            _sceneCheckpoint = snapshot.SceneCheckpoint;
+            if (_sceneCheckpoint != null &&
+                _sceneCheckpoint.Theater == PhysicalTheater.Ship)
+                _residentShipScene = _sceneCheckpoint.SceneId;
+            else if (snapshot.PendingCrewMoves.Count > 0)
+                _residentShipScene = snapshot.PendingCrewMoves[0].SceneId;
+            else
+                _residentShipScene = null;
+            foreach (var move in snapshot.PendingCrewMoves)
+                _crewMoves.Add(move.CrewId, move);
+            Notify(new WorldSessionChange(WorldSessionChangeKind.Time,
+                new WorldSessionView(_state), Array.Empty<FrostArk.Core.Events.WorldEvent>()));
         }
 
         private WorldAdvanceResult CommitAdvance(WorldAdvanceResult result)
