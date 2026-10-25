@@ -373,20 +373,20 @@ namespace FrostArk.Unity
             foreach (var id in _selectionController.SelectedActorIds)
                 _lastMoveDispatch[id] = false;
             if (_session == null || _session.SceneCheckpoint == null ||
-                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship ||
                 _shipSpatialMap == null || !_shipSpatialMap.Walkable(cell) ||
                 _selectionController.Count == 0)
                 return false;
 
-            var scene = _session.SceneCheckpoint.SceneId;
-            var executors = _shipActors
+            var activeShipActors = _shipActors
                 .Where(actor => actor != null && actor.isActiveAndEnabled &&
                                 actor.gameObject.activeInHierarchy && actor.Walker != null)
+                .ToArray();
+            var executors = activeShipActors
                 .Select(actor => (ICrewTheaterMoveExecutor)new ShipGridCrewExecutor(
                     actor.ActorId, actor.SceneId, actor.Walker)).ToArray();
 
             var goals = TacticalGroupDestinationAdapters.PlanShipGoals(
-                _shipSpatialMap, _selectionController.SelectedActorIds, _shipActors, cell);
+                _shipSpatialMap, _selectionController.SelectedActorIds, activeShipActors, cell);
             var outcomes = TacticalTheaterSelectionCommands.MoveSelectedAssigned(
                 _session, _selectionController, clickedWorldPoint, PhysicalTheater.Ship,
                 goals, executors);
@@ -672,15 +672,24 @@ namespace FrostArk.Unity
             // concealed behind a wall is not magically actionable by click.
             if (hits.Length == 0) return false;
             var first = hits[0];
-            if (_session != null && _session.SceneCheckpoint != null &&
-                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+            var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
+            if (surface != null && _session != null && _session.SceneCheckpoint != null)
             {
-                var surface = first.collider.GetComponentInParent<ShipRoomClickSurface>();
-                if (surface == null || _shipSpatialMap == null ||
+                if (_shipSpatialMap == null ||
                     !surface.TryResolve(first.point, _shipSpatialMap, out var localCell))
                     return false;
                 return IssueShipMoveOrder(localCell, first.point);
             }
+            var persistentGangway = first.collider.GetComponentInParent<PersistentGangway>();
+            if (persistentGangway != null)
+                return persistentGangway.TryUse(_selectionController.SelectedActorIds);
+
+            if (_session != null && _session.SceneCheckpoint != null &&
+                _session.SceneCheckpoint.Theater == PhysicalTheater.Ship)
+                return false;
+
+            if (first.collider.GetComponentInParent<ShoreWalkableSurface>() != null)
+                return IssueMoveOrder(first.point);
 
             var target = first.collider.GetComponentInParent<TacticalCombatTargetProxy>();
             if (target != null && target.IsHostile && !target.IsDead)
@@ -701,7 +710,15 @@ namespace FrostArk.Unity
             var result = new List<TacticalActorProxy>();
             foreach (var id in _selectionController.SelectedActorIds)
             {
-                var actor = _registeredActors.FirstOrDefault(a => a.ActorId == id);
+                if (_session != null && _session.SceneCheckpoint != null &&
+                    _session.SceneCheckpoint.Theater == PhysicalTheater.Shore)
+                {
+                    var member = _session.Capture().State.CrewDuty?.Get(id);
+                    if (member != null && !member.IsAway)
+                        continue;
+                }
+                var actor = _registeredActors.FirstOrDefault(
+                    a => a != null && a.ActorId == id && a.gameObject.activeInHierarchy);
                 if (actor != null)
                     result.Add(actor);
             }

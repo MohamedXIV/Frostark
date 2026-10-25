@@ -5,6 +5,7 @@ using FrostArk.Core.World;
 using FrostArk.Unity;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -72,6 +73,29 @@ namespace FrostArk.Unity.Tests
                 session.Dispose();
             }
             yield return null;
+        }
+
+        [UnityTearDown]
+        public IEnumerator CleanupPersistentWorld()
+        {
+            var runtimes = Object.FindObjectsByType<PersistentWorldRuntime>(
+                FindObjectsInactive.Include);
+            foreach (var runtime in runtimes)
+                if (runtime != null)
+                    Object.Destroy(runtime.transform.root.gameObject);
+            yield return null;
+
+            var shore = SceneManager.GetSceneByName(PersistentWorldRuntime.ShoreSceneName);
+            if (shore.IsValid() && shore.isLoaded)
+            {
+                var unload = SceneManager.UnloadSceneAsync(shore);
+                if (unload != null)
+                    yield return unload;
+            }
+
+            var reset = SceneManager.LoadSceneAsync("SampleScene", LoadSceneMode.Single);
+            if (reset != null)
+                yield return reset;
         }
     }
 }

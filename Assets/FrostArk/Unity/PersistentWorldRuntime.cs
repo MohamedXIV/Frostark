@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
@@ -7,6 +9,7 @@ using FrostArk.Core.Ship;
 using FrostArk.Core.World;
 using UnityEngine;
 using UnityEngine.AI;
+using UnityEngine.SceneManagement;
 using VContainer;
 using EntityId = FrostArk.Core.World.EntityId;
 
@@ -29,6 +32,11 @@ namespace FrostArk.Unity
         public const string EngineerId = "crew:ship:engineer";
         public const string ScoutId = "crew:ship:scout";
         public const string MedicId = "crew:ship:medic";
+        public const string ShoreSceneName = "E12ShoreEnvironment";
+        public const string ShoreSceneId = "scene:shore:training-floe";
+        public const string ShoreSiteId = "island:training-floe";
+        public const string ShoreAnchorId = "anchor:shore:gangway";
+        public static readonly Vector3 ShoreEntryPoint = new Vector3(21f, 0f, 3f);
 
         private static readonly EntityId[] CrewIds =
         {
@@ -63,19 +71,27 @@ namespace FrostArk.Unity
         private TacticalCommandController _commander;
         private Camera _camera;
         private bool _ready;
+        private bool _shoreReady;
+        private bool _crossing;
         private string _initializationError;
+        private string _shoreError;
+        private string _lastTransitStatus;
 
         public bool IsReady => _ready;
+        public bool IsShoreReady => _shoreReady;
+        public bool IsCrossing => _crossing;
         public WorldSession Session => _session;
         public Transform ShipRoot => _shipRoot;
         public ShipTacticalSceneBootstrap Bootstrap => _bootstrap;
         public TacticalCommandController Commander => _commander;
         public Camera GameplayCamera => _camera;
         public string InitializationError => _initializationError;
+        public string ShoreError => _shoreError;
+        public string LastTransitStatus => _lastTransitStatus;
         public IReadOnlyList<PersistentCrewActor> CrewActors => _crewActors;
 
         public static ShipGridCell GangwayCell =>
-            new ShipGridCell(EntityId.Parse(EngineRoomId), 5, 3);
+            new ShipGridCell(EntityId.Parse(EngineRoomId), 5, 2);
 
         public WorldState ProvideInitialState() => CreateDefaultState();
 
@@ -131,9 +147,10 @@ namespace FrostArk.Unity
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
                     EntityId.Parse(ShipSceneId), EntityId.Parse(ShipAnchorId)));
             }
-            if (session.SceneCheckpoint.Theater != PhysicalTheater.Ship)
+            if (session.SceneCheckpoint.Theater != PhysicalTheater.Ship &&
+                session.SceneCheckpoint.Theater != PhysicalTheater.Shore)
                 throw new InvalidOperationException(
-                    "Ship-only world build requires a ship physical checkpoint.");
+                    "Persistent world requires a ship or shore physical checkpoint.");
 
             var shipObject = new GameObject("ShipWorld | persistent");
             shipObject.transform.SetParent(transform, false);
@@ -147,12 +164,12 @@ namespace FrostArk.Unity
 
             var cameraObject = new GameObject("GameplayCamera");
             cameraObject.transform.SetParent(transform, false);
-            cameraObject.transform.position = new Vector3(6f, 21f, -5.5f);
-            cameraObject.transform.LookAt(new Vector3(6f, 0f, 3f));
+            cameraObject.transform.position = new Vector3(16f, 30f, -16f);
+            cameraObject.transform.LookAt(new Vector3(16f, 0f, 3f));
             cameraObject.tag = "MainCamera";
             _camera = cameraObject.AddComponent<Camera>();
             _camera.orthographic = true;
-            _camera.orthographicSize = 9f;
+            _camera.orthographicSize = 16f;
             _camera.nearClipPlane = 0.1f;
             _camera.farClipPlane = 150f;
             _camera.clearFlags = CameraClearFlags.SolidColor;
@@ -196,12 +213,406 @@ namespace FrostArk.Unity
             var bootstrapObject = new GameObject("ShipTacticalSceneBootstrap");
             bootstrapObject.transform.SetParent(transform, false);
             _bootstrap = bootstrapObject.AddComponent<ShipTacticalSceneBootstrap>();
+            _bootstrap.ConfigureShipSceneId(EntityId.Parse(ShipSceneId));
             _bootstrap.Configure(_shipRoot, _commander,
                 geometry.Rooms, geometry.Doors, bindings.ToArray());
             _bootstrap.Initialize(session);
             _commander.RefreshSceneRegistrations();
+            CreateGangway();
             Physics.SyncTransforms();
             _ready = true;
+            if (Application.isPlaying)
+                StartCoroutine(LoadShoreEnvironment());
+        }
+
+        private void CreateGangway()
+        {
+            var gangway = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            gangway.name = "PersistentGangway | ship to shore";
+            gangway.transform.SetParent(transform, false);
+            gangway.transform.position = new Vector3(16.25f, -0.06f, 3f);
+            gangway.transform.localScale = new Vector3(8.5f, 0.12f, 1.8f);
+            Tint(gangway, new Color(0.55f, 0.42f, 0.28f));
+            var dock = gangway.AddComponent<PersistentGangway>();
+            dock.Configure(this);
+        }
+
+        private IEnumerator LoadShoreEnvironment()
+        {
+            _shoreReady = false;
+            _shoreError = null;
+
+            if (!Application.CanStreamedLevelBeLoaded(ShoreSceneName))
+            {
+                _shoreError = "ShoreSceneNotInBuildSettings";
+                yield break;
+            }
+
+            var existing = SceneManager.GetSceneByName(ShoreSceneName);
+            if (!existing.IsValid() || !existing.isLoaded)
+            {
+                var operation = SceneManager.LoadSceneAsync(
+                    ShoreSceneName, LoadSceneMode.Additive);
+                if (operation == null)
+                {
+                    _shoreError = "ShoreSceneLoadFailed";
+                    yield break;
+                }
+                yield return operation;
+            }
+
+            var scene = SceneManager.GetSceneByName(ShoreSceneName);
+            if (!scene.IsValid() || !scene.isLoaded)
+            {
+                _shoreError = "ShoreSceneLoadIncomplete";
+                yield break;
+            }
+
+            ShoreEnvironmentRuntime environment = null;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                if (root.GetComponentInChildren<WorldSessionScope>(true) != null)
+                {
+                    _shoreError = "ShoreSceneContainsWorldSession";
+                    yield break;
+                }
+                if (root.GetComponentInChildren<Camera>(true) != null)
+                {
+                    _shoreError = "ShoreSceneContainsCamera";
+                    yield break;
+                }
+                if (root.GetComponentInChildren<Light>(true) != null)
+                {
+                    _shoreError = "ShoreSceneContainsLight";
+                    yield break;
+                }
+                if (root.GetComponentInChildren<PersistentCrewActor>(true) != null ||
+                    root.GetComponentInChildren<TacticalActorProxy>(true) != null)
+                {
+                    _shoreError = "ShoreSceneContainsActor";
+                    yield break;
+                }
+                if (environment == null)
+                    environment = root.GetComponentInChildren<ShoreEnvironmentRuntime>(true);
+            }
+
+            if (environment == null)
+            {
+                _shoreError = "ShoreEnvironmentBuilderMissing";
+                yield break;
+            }
+
+            float wait = 5f;
+            while (!environment.IsReady && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            if (!environment.IsReady)
+            {
+                _shoreError = "ShoreEnvironmentNotReady:" + environment.Error;
+                yield break;
+            }
+
+            _shoreReady = true;
+            ApplyRestoredLocations();
+        }
+
+        private void ApplyRestoredLocations()
+        {
+            if (_session == null || _commander == null)
+                return;
+            var checkpoint = _session.SceneCheckpoint;
+            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore)
+                return;
+
+            var state = _session.Capture().State;
+            var agency = _commander.GetComponent<ShipCrewAgencyCoordinator>();
+            var duty = _commander.GetComponent<ShipCrewDutyAutonomy>();
+            int awayIndex = 0;
+            foreach (var actor in _crewActors)
+            {
+                var member = state.CrewDuty.Get(actor.ActorId);
+                if (member == null || !member.IsAway)
+                    continue;
+
+                agency?.ReleaseActorForDeparture(actor.ActorId);
+                duty?.ReleaseActorForDeparture(actor.ActorId);
+                actor.ShipMotor.SuspendForShoreDeparture();
+                var offset = new Vector3((awayIndex % 3) * 1f, 0f, (awayIndex / 3) * 1f);
+                if (!actor.SetShoreMode(ShoreEntryPoint + offset))
+                {
+                    _shoreError = "ShoreEntryNotOnNavMesh";
+                    return;
+                }
+                awayIndex++;
+            }
+        }
+
+        public bool TryCrossActor(EntityId actorId, EntityId transitionId = default)
+        {
+            if (!actorId.IsValid)
+            {
+                _lastTransitStatus = "InvalidActor";
+                return false;
+            }
+            return TryCrossSelected(new[] { actorId }, transitionId);
+        }
+
+        public bool TryCrossSelected(IReadOnlyList<EntityId> selected,
+            EntityId transitionId = default)
+        {
+            if (selected == null || selected.Count != 1)
+            {
+                _lastTransitStatus = "SelectExactlyOneCrewMember";
+                return false;
+            }
+            var actor = _crewActors.FirstOrDefault(a => a.ActorId == selected[0]);
+            if (actor == null)
+            {
+                _lastTransitStatus = "UnknownCrew";
+                return false;
+            }
+            return TryCross(actor, transitionId);
+        }
+
+        private bool TryCross(PersistentCrewActor actor, EntityId transitionId)
+        {
+            if (_session == null || actor == null)
+            {
+                _lastTransitStatus = "WorldNotReady";
+                return false;
+            }
+            if (_crossing)
+            {
+                _lastTransitStatus = "TransitBusy";
+                return false;
+            }
+            if (actor.IsOnShip)
+            {
+                if (!_shoreReady)
+                {
+                    _lastTransitStatus = string.IsNullOrEmpty(_shoreError)
+                        ? "ShoreNotReady" : "ShoreError:" + _shoreError;
+                    return false;
+                }
+                if (actor.ShipMotor == null || !actor.ShipMotor.IsConfigured ||
+                    actor.ShipMotor.IsMoving || actor.ShipMotor.IsRecovering)
+                {
+                    _lastTransitStatus = "ShipActorMustBeStationary";
+                    return false;
+                }
+                _crossing = true;
+                StartCoroutine(CrossToShore(actor, ResolveTransitionId(transitionId)));
+                return true;
+            }
+
+            var checkpoint = _session.SceneCheckpoint;
+            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore ||
+                checkpoint.PartyIds.Count != 1 ||
+                !checkpoint.PartyIds.Contains(actor.ActorId))
+            {
+                _lastTransitStatus = "ShorePartyMismatch";
+                return false;
+            }
+            _crossing = true;
+            StartCoroutine(CrossToShip(actor, ResolveTransitionId(transitionId)));
+            return true;
+        }
+
+        private static EntityId ResolveTransitionId(EntityId transitionId) =>
+            transitionId.IsValid
+                ? transitionId
+                : EntityId.Parse("transition:e12:cross:" + Guid.NewGuid().ToString("N"));
+
+        private IEnumerator CrossToShore(PersistentCrewActor actor, EntityId transitionId)
+        {
+            var motor = actor.ShipMotor;
+            var targetCell = GangwayCell;
+            _lastTransitStatus = "WalkingToGangway";
+
+            if (motor.LastReachedCell != targetCell)
+            {
+                if (!motor.TryMoveTo(targetCell))
+                {
+                    _lastTransitStatus = "GangwayPathRejected:" + motor.LastError;
+                    _crossing = false;
+                    yield break;
+                }
+            }
+
+            float timeout = 8f;
+            while (motor.LastReachedCell != targetCell && timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+            if (motor.LastReachedCell != targetCell)
+            {
+                _lastTransitStatus = "GangwayPathTimeout";
+                _crossing = false;
+                yield break;
+            }
+
+            var agency = _commander.GetComponent<ShipCrewAgencyCoordinator>();
+            var duty = _commander.GetComponent<ShipCrewDutyAutonomy>();
+            agency?.ReleaseActorForDeparture(actor.ActorId);
+            duty?.ReleaseActorForDeparture(actor.ActorId);
+            motor.SuspendForShoreDeparture();
+            motor.enabled = false;
+            actor.ShoreAgent.enabled = false;
+
+            _lastTransitStatus = "CrossingToShore";
+            while (Vector3.Distance(actor.transform.position, ShoreEntryPoint) > 0.01f)
+            {
+                actor.transform.position = Vector3.MoveTowards(
+                    actor.transform.position, ShoreEntryPoint, 3.5f * Time.deltaTime);
+                var direction = ShoreEntryPoint - actor.transform.position;
+                if (direction.sqrMagnitude > 0.001f)
+                    actor.transform.rotation = Quaternion.LookRotation(
+                        new Vector3(direction.x, 0f, direction.z));
+                yield return null;
+            }
+            actor.transform.position = ShoreEntryPoint;
+
+            if (!actor.SetShoreMode(ShoreEntryPoint))
+            {
+                _lastTransitStatus = "ShoreEntryNotOnNavMesh";
+                RestoreActorToShip(actor, targetCell);
+                _crossing = false;
+                yield break;
+            }
+
+            var transfer = ShoreCrewTransfer.Transfer(
+                _session, new[] { actor.ActorId }, true, transitionId);
+            if (!transfer.Success)
+            {
+                _lastTransitStatus = "ShoreTransferRejected:" + transfer.Failure;
+                RestoreActorToShip(actor, targetCell);
+                _crossing = false;
+                yield break;
+            }
+
+            try
+            {
+                _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    EntityId.Parse(ShoreSceneId), EntityId.Parse(ShoreSiteId),
+                    EntityId.Parse(ShoreAnchorId), new[] { actor.ActorId }));
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is InvalidOperationException)
+            {
+                _lastTransitStatus = "ShoreCheckpointRejected:" + ex.Message;
+                ShoreCrewTransfer.Transfer(_session, new[] { actor.ActorId }, false,
+                    ResolveTransitionId(default));
+                RestoreActorToShip(actor, targetCell);
+                _crossing = false;
+                yield break;
+            }
+
+            _lastTransitStatus = "Ashore";
+            _crossing = false;
+            Physics.SyncTransforms();
+        }
+
+        private void RestoreActorToShip(PersistentCrewActor actor, ShipGridCell cell)
+        {
+            actor.ShipMotor.ResumeFromShoreAt(cell);
+            actor.SetShipPosition(actor.ShipMotor.transform.position);
+            actor.SetShipMode();
+        }
+
+        private IEnumerator CrossToShip(PersistentCrewActor actor, EntityId transitionId)
+        {
+            var checkpoint = _session.SceneCheckpoint;
+            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Shore ||
+                !checkpoint.PartyIds.Contains(actor.ActorId))
+            {
+                _lastTransitStatus = "ShorePartyMismatch";
+                _crossing = false;
+                yield break;
+            }
+
+            var agent = actor.ShoreAgent;
+            if (agent == null || !agent.enabled || !agent.isOnNavMesh)
+            {
+                _lastTransitStatus = "ShoreAgentUnavailable";
+                _crossing = false;
+                yield break;
+            }
+
+            _lastTransitStatus = "WalkingToShoreGangway";
+            agent.isStopped = false;
+            agent.stoppingDistance = 0.1f;
+            if (!agent.SetDestination(ShoreEntryPoint))
+            {
+                _lastTransitStatus = "ShoreGangwayPathRejected";
+                _crossing = false;
+                yield break;
+            }
+
+            float timeout = 8f;
+            while ((agent.pathPending ||
+                    agent.remainingDistance > agent.stoppingDistance + 0.2f) &&
+                   timeout > 0f)
+            {
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+            if (agent.pathPending ||
+                agent.remainingDistance > agent.stoppingDistance + 0.2f)
+            {
+                _lastTransitStatus = "ShoreGangwayPathTimeout";
+                _crossing = false;
+                yield break;
+            }
+
+            agent.isStopped = true;
+            agent.ResetPath();
+            agent.enabled = false;
+
+            var shipCellWorld = _shipRoot.TransformPoint(
+                new Vector3(11.5f, 0f, 2.5f));
+            _lastTransitStatus = "CrossingToShip";
+            while (Vector3.Distance(actor.transform.position, shipCellWorld) > 0.01f)
+            {
+                actor.transform.position = Vector3.MoveTowards(
+                    actor.transform.position, shipCellWorld, 3.5f * Time.deltaTime);
+                var direction = shipCellWorld - actor.transform.position;
+                if (direction.sqrMagnitude > 0.001f)
+                    actor.transform.rotation = Quaternion.LookRotation(
+                        new Vector3(direction.x, 0f, direction.z));
+                yield return null;
+            }
+            actor.transform.position = shipCellWorld;
+            actor.ShipMotor.ResumeFromShoreAt(GangwayCell);
+            actor.SetShipMode();
+
+            // The Ship checkpoint does not require an away flag to be cleared,
+            // so publish it before the per-actor availability command. The old
+            // Shore checkpoint would otherwise reject the intermediate state
+            // when a session-change listener captures the world.
+            var previousCheckpoint = _session.SceneCheckpoint;
+            _session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(
+                EntityId.Parse(ShipSceneId), EntityId.Parse(ShipAnchorId)));
+
+            var transfer = ShoreCrewTransfer.Transfer(
+                _session, new[] { actor.ActorId }, false, transitionId);
+            if (!transfer.Success)
+            {
+                _lastTransitStatus = "ShipTransferRejected:" + transfer.Failure;
+                if (previousCheckpoint != null)
+                    _session.SetSceneCheckpoint(previousCheckpoint);
+                actor.ShipMotor.SuspendForShoreDeparture();
+                if (!actor.SetShoreMode(ShoreEntryPoint))
+                    _lastTransitStatus = "ShoreReturnRollbackFailed";
+                _crossing = false;
+                yield break;
+            }
+
+            _lastTransitStatus = "Aboard";
+            _crossing = false;
+            Physics.SyncTransforms();
         }
 
         private PersistentCrewActor CreateCrewActor(Transform parent, EntityId id,

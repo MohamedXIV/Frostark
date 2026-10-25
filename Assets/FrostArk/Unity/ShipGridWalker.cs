@@ -410,5 +410,55 @@ namespace FrostArk.Unity
         {
             if (_traffic != null) _traffic.Unregister(this);
         }
+
+        /// <summary>
+        /// Release transient shipboard corridor/cell occupancy when a crew
+        /// member departs for shore so away actors never block onboard crew.
+        /// </summary>
+        public void SuspendForShoreDeparture()
+        {
+            _route = null;
+            _nextIndex = 0;
+            _currentSpeed = 0f;
+            _nextCellReserved = false;
+            _recovering = false;
+            _stopAtNextSafeCell = false;
+            _trafficWaitSeconds = 0f;
+            LastError = null;
+            if (_traffic != null)
+                _traffic.Unregister(this);
+        }
+
+        /// <summary>
+        /// Re-bind an existing shipboard walker when an away crew member
+        /// returns from shore to the persistent ship without recreating the
+        /// ship hierarchy or disturbing crew who remained aboard.
+        /// </summary>
+        public void ResumeFromShoreAt(ShipGridCell reentryCell)
+        {
+            if (_shipRoot == null || _map == null || _roomOrigins == null)
+                throw new InvalidOperationException("Walker must be configured before shore return.");
+            if (!_map.Walkable(reentryCell) || !TryCenter(reentryCell, out var center))
+                throw new ArgumentException("Reentry cell must be walkable and in an authored room.", nameof(reentryCell));
+            _route = null;
+            _nextIndex = 0;
+            _currentSpeed = 0f;
+            _nextCellReserved = false;
+            _recovering = false;
+            _stopAtNextSafeCell = false;
+            _trafficWaitSeconds = 0f;
+            _lastReachedCell = reentryCell;
+            _orderedCell = reentryCell;
+            _localPosition = center;
+            transform.position = _shipRoot.TransformPoint(_localPosition);
+            if (_traffic == null)
+            {
+                _traffic = _shipRoot.GetComponent<ShipTrafficCoordinator>();
+                if (_traffic == null)
+                    _traffic = _shipRoot.gameObject.AddComponent<ShipTrafficCoordinator>();
+            }
+            _traffic.Register(this);
+            LastError = null;
+        }
     }
 }

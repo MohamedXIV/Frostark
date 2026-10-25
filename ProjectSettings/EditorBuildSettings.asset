@@ -26,6 +26,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/FrostArk/Scenes/E12PersistentWorld.unity
     guid: 227adf0dbc787044ea90d87dcc6b9ac1
+  - enabled: 1
+    path: Assets/FrostArk/Scenes/E12ShoreEnvironment.unity
+    guid: e6b12a2a15dc7dc4d9d876fdba3eb62e
   m_configObjects:
     com.unity.addressableassets: {fileID: 11400000, guid: a258568c7e9ae9547a77ac49a7f26e57, type: 2}
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
