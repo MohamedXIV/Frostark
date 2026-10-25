@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Security.Cryptography;
+using FrostArk.Core.Application;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
@@ -119,6 +120,21 @@ namespace FrostArk.Core.Tests
                 {
                     PhysicalActorLocation.Ashore(Engineer, 20f, 3f)
                 }));
+        }
+
+        [Test]
+        public void RestoredSessionReportsItselfAsRestored()
+        {
+            var state = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), Array.Empty<EntityId>());
+            var scheduler = new SimulationScheduler(new WorldClock(WorldMinute.Zero),
+                Array.Empty<IWorldMinuteSystem>(), seed: 5);
+            var snapshot = SaveGameDto.Capture(state, scheduler);
+
+            using (var fresh = new WorldSession(state))
+                Assert.That(fresh.WasRestored, Is.False);
+            using (var restored = WorldSession.Restore(snapshot))
+                Assert.That(restored.WasRestored, Is.True);
         }
 
         private static byte[] DowngradeMoveOnlyToV18(byte[] encoded)

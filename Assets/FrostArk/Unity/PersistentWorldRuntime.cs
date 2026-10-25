@@ -1379,6 +1379,10 @@ namespace FrostArk.Unity
 
         private static void EnsureDefaultDutyAssignment(WorldSession session)
         {
+            // A loaded save owns its persisted assignments, including a
+            // deliberate unassignment; only a fresh run gets the scene default.
+            if (session.WasRestored)
+                return;
             var state = session.Capture().State;
             var engineer = EntityId.Parse(EngineerId);
             if (state.GetCrewStation(engineer).IsValid)

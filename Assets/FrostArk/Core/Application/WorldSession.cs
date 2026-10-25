@@ -48,6 +48,7 @@ namespace FrostArk.Core.Application
         }
 
         private bool _disposed;
+        private bool _restored;
         private PhysicalActorLocation[] _physicalLocations =
             Array.Empty<PhysicalActorLocation>();
 
@@ -72,6 +73,7 @@ namespace FrostArk.Core.Application
             IEnumerable<IWorldMinuteSystem> systems,
             Func<WorldMinute, long> ambientMilliC)
         {
+            _restored = true;
             _state = snapshot.State;
             _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
             _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
@@ -116,6 +118,9 @@ namespace FrostArk.Core.Application
         public WorldMinute Minute { get { Guard(); return _state.Minute; } }
         public PhysicalSceneCheckpoint SceneCheckpoint { get { Guard(); return _sceneCheckpoint; } }
         public EntityId? ResidentShipSceneId { get { Guard(); return _residentShipScene; } }
+        /// <summary>True once this session adopted any saved snapshot; scene
+        /// defaults must not overwrite persisted player choices on load.</summary>
+        public bool WasRestored { get { Guard(); return _restored; } }
         /// <summary>
         /// Frozen physical positions from the last restored snapshot. They are
         /// never mutated by ordinary simulation or used as canonical truth.
@@ -507,6 +512,7 @@ namespace FrostArk.Core.Application
             StopShipWorkObservationInternal();
             _workPresence.Clear();
             _crewMoves.Clear();
+            _restored = true;
             _state = snapshot.State;
             _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
             _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
