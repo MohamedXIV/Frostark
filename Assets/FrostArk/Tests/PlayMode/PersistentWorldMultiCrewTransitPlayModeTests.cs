@@ -60,6 +60,9 @@ namespace FrostArk.Unity.Tests
                 Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
                     Is.EquivalentTo(new[] { Captain, Scout }),
                     "The shore party must be the union of every away actor.");
+                Assert.That(Vector3.Distance(captain.transform.position,
+                        scout.transform.position), Is.GreaterThan(0.5f),
+                    "Actors must land on distinct shore exits instead of stacking.");
 
                 SelectBoth(commander);
                 Physics.SyncTransforms();
@@ -117,13 +120,14 @@ namespace FrostArk.Unity.Tests
                     "Both selected crew must cross before the shore move.");
                 Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
                     Is.EquivalentTo(new[] { Captain, Scout }));
+                Assert.That(Vector3.Distance(captain.transform.position,
+                        scout.transform.position), Is.GreaterThan(0.5f),
+                    "Direct shore travel must not stack actors at the gangway mouth.");
 
-                var captainStart = captain.transform.position;
-                var scoutStart = scout.transform.position;
                 yield return WaitUntil(() =>
-                    Vector3.Distance(captainStart, captain.transform.position) > 0.2f &&
-                    Vector3.Distance(scoutStart, scout.transform.position) > 0.2f,
-                    8f, "Both crew must move to the clicked shore point.");
+                    Vector3.Distance(captain.transform.position, shorePoint) < 4.5f &&
+                    Vector3.Distance(scout.transform.position, shorePoint) < 4.5f,
+                    10f, "Both crew must move away from the gangway mouth toward the clicked shore point.");
             }
             finally
             {

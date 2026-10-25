@@ -51,7 +51,7 @@ namespace FrostArk.Unity
         [SerializeField] private RoomBinding[] rooms = Array.Empty<RoomBinding>();
         [SerializeField] private DoorBinding[] doors = Array.Empty<DoorBinding>();
         [SerializeField] private CrewBinding[] crew = Array.Empty<CrewBinding>();
-        [SerializeField, Min(0.1f)] private float crewMoveSpeed = 2.5f;
+        [SerializeField, Min(0.1f)] private float crewMoveSpeed = 4.5f;
         [Header("Explicit new-run ship spawn (never applied to restored saves)")]
         [SerializeField] private bool establishShipCheckpointForFreshRun;
         [SerializeField] private string startingSceneId = "scene:ship-interior";

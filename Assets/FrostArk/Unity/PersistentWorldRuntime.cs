@@ -679,8 +679,10 @@ namespace FrostArk.Unity
             StageTransitActors(ids);
             _lastTransitStatus = "CrewMovingToGangway";
             int success = 0;
+            int transitIndex = 0;
             foreach (var id in ids)
             {
+                int index = transitIndex++;
                 var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
                 if (actor == null)
                     continue;
@@ -700,7 +702,8 @@ namespace FrostArk.Unity
                 while (_crossing)
                     yield return null;
                 _stepSucceeded = false;
-                if (!TryCross(actor, transitionId))
+                if (!TryCross(actor, transitionId, index,
+                        hasShoreDestination, shorePoint))
                 {
                     _lastTransitStatus = "TransitSkipped:" + id.Value + ":" +
                         _lastTransitStatus;
@@ -774,7 +777,20 @@ namespace FrostArk.Unity
             }
         }
 
-        private bool TryCross(PersistentCrewActor actor, EntityId transitionId)
+        private static Vector3 ShoreDestinationOffset(int index)
+        {
+            switch (index)
+            {
+                case 0: return Vector3.zero;
+                case 1: return new Vector3(1.2f, 0f, 0f);
+                case 2: return new Vector3(-1.2f, 0f, 0f);
+                case 3: return new Vector3(0f, 0f, 1.2f);
+                default: return new Vector3(0f, 0f, -1.2f);
+            }
+        }
+
+        private bool TryCross(PersistentCrewActor actor, EntityId transitionId,
+            int transitIndex, bool hasShoreDestination, Vector3 shorePoint)
         {
             if (_session == null || actor == null)
             {
@@ -804,7 +820,8 @@ namespace FrostArk.Unity
                     return false;
                 }
                 _crossing = true;
-                StartCoroutine(CrossToShore(actor, transitionId));
+                StartCoroutine(CrossToShore(actor, transitionId, transitIndex,
+                    hasShoreDestination, shorePoint));
                 return true;
             }
 
@@ -824,10 +841,13 @@ namespace FrostArk.Unity
                 ? transitionId
                 : EntityId.Parse("transition:e12:cross:" + Guid.NewGuid().ToString("N"));
 
-        private IEnumerator CrossToShore(PersistentCrewActor actor, EntityId transitionId)
+        private IEnumerator CrossToShore(PersistentCrewActor actor,
+            EntityId transitionId, int transitIndex, bool hasShoreDestination,
+            Vector3 shorePoint)
         {
             var motor = actor.ShipMotor;
             var targetCell = GangwayCell;
+            var shoreExit = ShoreQueuePoint(transitIndex);
             _lastTransitStatus = "WalkingToGangway";
 
             if (motor.LastReachedCell != targetCell)
@@ -862,19 +882,19 @@ namespace FrostArk.Unity
             actor.ShoreAgent.enabled = false;
 
             _lastTransitStatus = "CrossingToShore";
-            while (Vector3.Distance(actor.transform.position, ShoreEntryPoint) > 0.01f)
+            while (Vector3.Distance(actor.transform.position, shoreExit) > 0.01f)
             {
                 actor.transform.position = Vector3.MoveTowards(
-                    actor.transform.position, ShoreEntryPoint, 3.5f * Time.deltaTime);
-                var direction = ShoreEntryPoint - actor.transform.position;
+                    actor.transform.position, shoreExit, 5f * Time.deltaTime);
+                var direction = shoreExit - actor.transform.position;
                 if (direction.sqrMagnitude > 0.001f)
                     actor.transform.rotation = Quaternion.LookRotation(
                         new Vector3(direction.x, 0f, direction.z));
                 yield return null;
             }
-            actor.transform.position = ShoreEntryPoint;
+            actor.transform.position = shoreExit;
 
-            if (!actor.SetShoreMode(ShoreEntryPoint))
+            if (!actor.SetShoreMode(shoreExit))
             {
                 _lastTransitStatus = "ShoreEntryNotOnNavMesh";
                 RestoreActorToShip(actor, targetCell);
@@ -902,6 +922,22 @@ namespace FrostArk.Unity
                 _stepSucceeded = false;
                 _crossing = false;
                 yield break;
+            }
+
+            // Let each actor leave the gangway mouth for its own destination
+            // as soon as it lands, instead of accumulating in one stack until
+            // every selected actor has finished crossing.
+            if (hasShoreDestination && actor.ShoreAgent.enabled &&
+                actor.ShoreAgent.isOnNavMesh)
+            {
+                var desired = shorePoint + ShoreDestinationOffset(transitIndex);
+                if (NavMesh.SamplePosition(desired, out var destination,
+                       2f, NavMesh.AllAreas))
+                {
+                    actor.ShoreAgent.isStopped = false;
+                    actor.ShoreAgent.stoppingDistance = 0.1f;
+                    actor.ShoreAgent.SetDestination(destination.position);
+                }
             }
 
             _stepSucceeded = true;
@@ -971,7 +1007,7 @@ namespace FrostArk.Unity
             while (Vector3.Distance(actor.transform.position, shipCellWorld) > 0.01f)
             {
                 actor.transform.position = Vector3.MoveTowards(
-                    actor.transform.position, shipCellWorld, 3.5f * Time.deltaTime);
+                    actor.transform.position, shipCellWorld, 5f * Time.deltaTime);
                 var direction = shipCellWorld - actor.transform.position;
                 if (direction.sqrMagnitude > 0.001f)
                     actor.transform.rotation = Quaternion.LookRotation(
@@ -1061,7 +1097,7 @@ namespace FrostArk.Unity
             shipSelection.SetActorId(id);
 
             var agent = root.AddComponent<NavMeshAgent>();
-            agent.speed = 4f;
+            agent.speed = 5f;
             agent.acceleration = 12f;
             agent.stoppingDistance = 0.1f;
             agent.radius = 0.4f;
