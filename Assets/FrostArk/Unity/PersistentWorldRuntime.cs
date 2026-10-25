@@ -37,6 +37,15 @@ namespace FrostArk.Unity
         public const string ShoreSiteId = "island:training-floe";
         public const string ShoreAnchorId = "anchor:shore:gangway";
         public static readonly Vector3 ShoreEntryPoint = new Vector3(21f, 0f, 3f);
+        private static readonly Vector2Int[] ShipGangwayQueue =
+        {
+            new Vector2Int(4, 2),
+            new Vector2Int(3, 2),
+            new Vector2Int(4, 1),
+            new Vector2Int(4, 3),
+            new Vector2Int(3, 1),
+            new Vector2Int(3, 3)
+        };
 
         private static readonly EntityId[] CrewIds =
         {
@@ -667,12 +676,27 @@ namespace FrostArk.Unity
             EntityId transitionId, bool hasShoreDestination, Vector3 shorePoint,
             bool hasShipDestination, ShipGridCell shipCell, Vector3 shipWorldPoint)
         {
+            StageTransitActors(ids);
+            _lastTransitStatus = "CrewMovingToGangway";
             int success = 0;
             foreach (var id in ids)
             {
                 var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
                 if (actor == null)
                     continue;
+                var member = _session.Capture().State.CrewDuty.Get(id);
+                if (member != null && !member.IsAway)
+                {
+                    float stageTimeout = 12f;
+                    while ((actor.ShipMotor.IsMoving || actor.ShipMotor.IsRecovering) &&
+                           stageTimeout > 0f)
+                    {
+                        stageTimeout -= Time.deltaTime;
+                        yield return null;
+                    }
+                    if (actor.ShipMotor.IsMoving || actor.ShipMotor.IsRecovering)
+                        _lastTransitStatus = "CrewStageTimeout:" + id.Value;
+                }
                 while (_crossing)
                     yield return null;
                 _stepSucceeded = false;
@@ -697,6 +721,57 @@ namespace FrostArk.Unity
             else if (success > 0 && hasShipDestination && _commander != null)
                 _commander.IssueShipMoveOrder(shipCell, shipWorldPoint);
             _lastTransitStatus = "TransitComplete " + success + "/" + ids.Count;
+        }
+
+        private void StageTransitActors(IReadOnlyList<EntityId> ids)
+        {
+            var state = _session.Capture().State;
+            int shipIndex = 0;
+            int shoreIndex = 0;
+            foreach (var id in ids)
+            {
+                var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
+                var member = state.CrewDuty.Get(id);
+                if (actor == null || member == null)
+                    continue;
+                if (!member.IsAway)
+                {
+                    var offset = ShipGangwayQueue[
+                        Mathf.Min(shipIndex, ShipGangwayQueue.Length - 1)];
+                    shipIndex++;
+                    var cell = new ShipGridCell(
+                        EntityId.Parse(EngineRoomId), offset.x, offset.y);
+                    if (actor.ShipMotor == null || !actor.ShipMotor.IsConfigured ||
+                        actor.ShipMotor.IsMoving || actor.ShipMotor.IsRecovering ||
+                        actor.ShipMotor.LastReachedCell == cell)
+                        continue;
+                    actor.ShipMotor.TryMoveTo(cell);
+                }
+                else
+                {
+                    int index = shoreIndex++;
+                    var point = ShoreQueuePoint(index);
+                    var agent = actor.ShoreAgent;
+                    if (agent == null || !agent.enabled || !agent.isOnNavMesh)
+                        continue;
+                    agent.isStopped = false;
+                    agent.stoppingDistance = 0.15f;
+                    agent.SetDestination(point);
+                }
+            }
+        }
+
+        private static Vector3 ShoreQueuePoint(int index)
+        {
+            switch (index)
+            {
+                case 0: return ShoreEntryPoint;
+                case 1: return ShoreEntryPoint + new Vector3(0f, 0f, 1.2f);
+                case 2: return ShoreEntryPoint + new Vector3(0f, 0f, -1.2f);
+                case 3: return ShoreEntryPoint + new Vector3(1.5f, 0f, 0f);
+                case 4: return ShoreEntryPoint + new Vector3(1.5f, 0f, 1.2f);
+                default: return ShoreEntryPoint + new Vector3(1.5f, 0f, -1.2f);
+            }
         }
 
         private bool TryCross(PersistentCrewActor actor, EntityId transitionId)

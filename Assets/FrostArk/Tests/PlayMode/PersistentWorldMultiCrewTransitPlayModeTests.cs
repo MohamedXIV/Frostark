@@ -44,6 +44,12 @@ namespace FrostArk.Unity.Tests
                 Assert.That(commander.ProcessContextClick(gangwayScreen), Is.True,
                     "Multi-select must be accepted at the gangway.");
 
+                yield return null;
+                Assert.That(captain.ShipMotor.IsMoving, Is.True,
+                    "The first selected actor must start moving immediately.");
+                Assert.That(scout.ShipMotor.IsMoving, Is.True,
+                    "The next selected actor must start moving immediately to the gangway queue.");
+
                 yield return WaitUntil(() => !runtime.IsCrossing &&
                     !captain.IsOnShip && !scout.IsOnShip, 35f,
                     "Both selected crew must cross the gangway.");
@@ -99,6 +105,12 @@ namespace FrostArk.Unity.Tests
                 var shoreScreen = runtime.GameplayCamera.WorldToScreenPoint(shorePoint);
                 Assert.That(commander.ProcessContextClick(shoreScreen), Is.True,
                     "A shore click from the ship must command a crossing.");
+
+                yield return null;
+                Assert.That(captain.ShipMotor.IsMoving, Is.True,
+                    "The first selected actor must start the crossing route immediately.");
+                Assert.That(scout.ShipMotor.IsMoving, Is.True,
+                    "The next selected actor must start staging immediately.");
 
                 yield return WaitUntil(() => !runtime.IsCrossing &&
                     !captain.IsOnShip && !scout.IsOnShip, 35f,
