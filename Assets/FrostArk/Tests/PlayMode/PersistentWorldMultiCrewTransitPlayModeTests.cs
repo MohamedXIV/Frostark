@@ -23,6 +23,8 @@ namespace FrostArk.Unity.Tests
         private static readonly EntityId Scout =
             EntityId.Parse(PersistentWorldRuntime.ScoutId);
 
+        private WorldSession _session;
+
         [UnityTest]
         public IEnumerator MultiSelectGangway_CrossesAndReturnsAllSelectedCrew()
         {
@@ -198,17 +200,16 @@ namespace FrostArk.Unity.Tests
             Assert.That(commander.Selection.Count, Is.EqualTo(2));
         }
 
-        private static IEnumerator LoadWorld(
+        private IEnumerator LoadWorld(
             System.Action<PersistentWorldRuntime> assign)
         {
-            var load = SceneManager.LoadSceneAsync("E12PersistentWorld",
-                LoadSceneMode.Single);
-            Assert.That(load, Is.Not.Null);
-            yield return load;
+            var root = new GameObject("E12-Multi-Crew-Transit");
+            _session = new WorldSession(
+                PersistentWorldRuntime.CreateDefaultState(withActivities: false));
+            var runtime = root.AddComponent<PersistentWorldRuntime>();
+            runtime.BuildWorld(_session);
             yield return null;
             yield return null;
-            var runtime = Object.FindAnyObjectByType<PersistentWorldRuntime>();
-            Assert.That(runtime, Is.Not.Null);
             float wait = 8f;
             while ((!runtime.IsReady || !runtime.IsShoreReady) && wait > 0f)
             {
@@ -244,6 +245,8 @@ namespace FrostArk.Unity.Tests
                 if (runtime != null)
                     Object.Destroy(runtime.transform.root.gameObject);
             yield return null;
+            _session?.Dispose();
+            _session = null;
 
             var shore = SceneManager.GetSceneByName(
                 PersistentWorldRuntime.ShoreSceneName);

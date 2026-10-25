@@ -1,14 +1,10 @@
 using System;
 using System.Collections;
-using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
-using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
 using FrostArk.Core.Inventory;
 using FrostArk.Core.Save;
-using FrostArk.Core.Ship;
-using FrostArk.Core.World;
 using FrostArk.Unity;
 using NUnit.Framework;
 using UnityEngine;
@@ -32,16 +28,10 @@ namespace FrostArk.Unity.Tests
             EntityId.Parse(PersistentWorldRuntime.MedicId);
         private static readonly EntityId Scout =
             EntityId.Parse(PersistentWorldRuntime.ScoutId);
-        private static readonly EntityId BridgeConsole =
-            EntityId.Parse("module:ship:bridge-console");
-        private static readonly EntityId EnginePlant =
-            EntityId.Parse("module:ship:engine-plant");
-        private static readonly EntityId WorkSlot = EntityId.Parse("slot:ship:work");
-        private static readonly EntityId RestSlot = EntityId.Parse("slot:ship:rest");
-        private static readonly EntityId DrinkSlot = EntityId.Parse("slot:ship:drink");
-        private static readonly EntityId RepairJobId = EntityId.Parse("repair:ship:hull");
-        private static readonly EntityId Water = EntityId.Parse("item:ship:water");
-        private static readonly EntityId Pickup = EntityId.Parse("pickup:ship:water");
+        private static readonly EntityId RepairJobId =
+            EntityId.Parse(PersistentWorldRuntime.RepairJobId);
+        private static readonly EntityId Water =
+            EntityId.Parse(PersistentWorldRuntime.WaterItemId);
 
         [UnityTest]
         public IEnumerator OnboardCrewWorkRestAndConsumeWhileCaptainExploresShore()
@@ -50,16 +40,13 @@ namespace FrostArk.Unity.Tests
             WorldSession session = null;
             try
             {
-                session = new WorldSession(CreateState());
+                session = new WorldSession(
+                    PersistentWorldRuntime.CreateDefaultState(captainAway: true));
                 session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
                     EntityId.Parse(PersistentWorldRuntime.ShoreSceneId),
                     EntityId.Parse(PersistentWorldRuntime.ShoreSiteId),
                     EntityId.Parse(PersistentWorldRuntime.ShoreAnchorId),
                     new[] { Captain }));
-                var assign = session.Submit(new AssignCrewCommand(
-                    EntityId.Parse("cmd:ship:assign-engineer"),
-                    Engineer, EnginePlant, session.Revision));
-                Assert.That(assign.Success, Is.True);
 
                 var runtime = root.AddComponent<PersistentWorldRuntime>();
                 runtime.BuildWorld(session);
@@ -180,61 +167,6 @@ namespace FrostArk.Unity.Tests
                 return false;
             return session.Capture().State.Inventory.GetAmount(
                 InventoryContainer.ShipHold, Water) == 1;
-        }
-
-        private static WorldState CreateState()
-        {
-            var bridge = EntityId.Parse(PersistentWorldRuntime.BridgeRoomId);
-            var engine = EntityId.Parse(PersistentWorldRuntime.EngineRoomId);
-            var blueprint = EntityId.Parse("blueprint:ship:machine");
-            var layout = ShipLayoutState.Create(
-                new[]
-                {
-                    new ShipCompartmentSlot(bridge, 6, 6),
-                    new ShipCompartmentSlot(engine, 6, 6)
-                },
-                new[]
-                {
-                    new ShipModuleBlueprint(blueprint, ShipModuleKind.Auxiliary,
-                        1, 1, EntityId.Parse("item:ship:machine-parts"), 1, 1)
-                },
-                new[]
-                {
-                    new ShipModule(BridgeConsole, blueprint, bridge, 0, 5),
-                    new ShipModule(EnginePlant, blueprint, engine, 4, 4)
-                });
-
-            var items = InventoryState.Create(
-                new ItemCatalog(new[] { new ItemDefinition(Water, 1, 100, 10) }),
-                new[] { new SalvagePickup(Pickup, Water, 2) },
-                10000, 5, 10000, 5);
-            items = items.TryCollect(Pickup).State.TryUnload(Water, 2).State;
-
-            var crew = CrewState.Create(new[]
-            {
-                new CrewMember(Captain, DutyRole.Watch, 900, 200,
-                    0, 1440, isAway: true, hunger: 80),
-                new CrewMember(Engineer, DutyRole.Repair, 950, 0, 0, 1440),
-                new CrewMember(Medic, DutyRole.Medical, 900, 200,
-                    720, 400, fatigue: 700),
-                new CrewMember(Scout, DutyRole.Watch, 900, 200,
-                    0, 1440, thirst: 800)
-            }, jobs: new[] { new RepairJob(RepairJobId, 100) },
-            consumables: new[] { new CrewConsumable(Water, 0, 600) },
-            interactions: CrewInteractionState.Create(new[]
-            {
-                new CrewInteractionSlot(WorkSlot, EnginePlant,
-                    CrewInteractionVerb.Work, -1, 0, 0),
-                new CrewInteractionSlot(RestSlot, BridgeConsole,
-                    CrewInteractionVerb.Rest, 1, 0, 0),
-                new CrewInteractionSlot(DrinkSlot, BridgeConsole,
-                    CrewInteractionVerb.Drink, 0, -1, 2)
-            }));
-
-            return WorldState.Create(WorldMinute.Zero,
-                Array.Empty<SupplyStock>(),
-                new[] { Captain, Engineer, Medic, Scout },
-                inventory: items, crewDuty: crew, layout: layout);
         }
 
         [UnityTearDown]

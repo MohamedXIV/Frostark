@@ -48,6 +48,8 @@ namespace FrostArk.Core.Application
         }
 
         private bool _disposed;
+        private PhysicalActorLocation[] _physicalLocations =
+            Array.Empty<PhysicalActorLocation>();
 
         public event Action<WorldSessionChange> Changed;
 
@@ -81,6 +83,7 @@ namespace FrostArk.Core.Application
                 _residentShipScene = snapshot.PendingCrewMoves[0].SceneId;
             foreach (var move in snapshot.PendingCrewMoves)
                 _crewMoves.Add(move.CrewId, move);
+            _physicalLocations = snapshot.ActorLocations.ToArray();
         }
 
         // Built-in reducers must read and commit through this ONE session-owned
@@ -113,6 +116,14 @@ namespace FrostArk.Core.Application
         public WorldMinute Minute { get { Guard(); return _state.Minute; } }
         public PhysicalSceneCheckpoint SceneCheckpoint { get { Guard(); return _sceneCheckpoint; } }
         public EntityId? ResidentShipSceneId { get { Guard(); return _residentShipScene; } }
+        /// <summary>
+        /// Frozen physical positions from the last restored snapshot. They are
+        /// never mutated by ordinary simulation or used as canonical truth.
+        /// </summary>
+        public IReadOnlyList<PhysicalActorLocation> PhysicalActorLocations
+        {
+            get { Guard(); return Array.AsReadOnly(_physicalLocations); }
+        }
 
         private bool IsResidentShipScene(EntityId sceneId)
         {
@@ -456,7 +467,8 @@ namespace FrostArk.Core.Application
             }
         }
 
-        public SaveGameDto Capture()
+        public SaveGameDto Capture(
+            IEnumerable<PhysicalActorLocation> physicalLocations = null)
         {
             Guard();
             // Commands, wounds or physical dispatch can invalidate an order
@@ -469,7 +481,7 @@ namespace FrostArk.Core.Application
                 _state.CrewDuty.Get(m.CrewId).Wounds < 1000 &&
                 _state.Layout.Rooms.Any(r => r.Id == m.ShipGoal.RoomId)).ToArray();
             return SaveGameDto.Capture(_state, _scheduler, _overrides,
-                _sceneCheckpoint, valid);
+                _sceneCheckpoint, valid, physicalLocations);
         }
 
         public static WorldSession Restore(SaveGameDto snapshot,
@@ -508,6 +520,7 @@ namespace FrostArk.Core.Application
                 _residentShipScene = null;
             foreach (var move in snapshot.PendingCrewMoves)
                 _crewMoves.Add(move.CrewId, move);
+            _physicalLocations = snapshot.ActorLocations.ToArray();
             Notify(new WorldSessionChange(WorldSessionChangeKind.Time,
                 new WorldSessionView(_state), Array.Empty<FrostArk.Core.Events.WorldEvent>()));
         }

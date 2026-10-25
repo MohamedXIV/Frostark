@@ -249,12 +249,33 @@ namespace FrostArk.Unity.Tests
             Assert.That(captain.IsOnShip, Is.False, runtime.LastTransitStatus);
             Assert.That(runtime.Session.PendingCrewMoves, Is.Empty);
 
-            var saved = SaveCodec.TryDecode(SaveCodec.Encode(runtime.Session.Capture()));
+            Physics.SyncTransforms();
+            var shorePoint = new Vector3(26f, 0f, -2f);
+            Assert.That(commander.ProcessContextClick(
+                runtime.GameplayCamera.WorldToScreenPoint(shorePoint)), Is.True);
+            var shoreDeadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(captain.transform.position, shorePoint) > 1.5f &&
+                   Time.realtimeSinceStartup < shoreDeadline)
+                yield return null;
+            var savedPosition = captain.transform.position;
+            Assert.That(Vector3.Distance(savedPosition, PersistentWorldRuntime.ShoreEntryPoint),
+                Is.GreaterThan(3f), "The save must capture a non-entry shore position.");
+
+            var saved = SaveCodec.TryDecode(
+                SaveCodec.Encode(runtime.CaptureSnapshot()));
             Assert.That(saved.Success, Is.True);
             Assert.That(saved.Value.SceneCheckpoint.Theater,
                 Is.EqualTo(PhysicalTheater.Shore));
             Assert.That(saved.Value.SceneCheckpoint.PartyIds,
                 Is.EqualTo(new[] { captain.ActorId }));
+            Assert.That(saved.Value.ActorLocations.Count, Is.EqualTo(4));
+            var savedCaptain = saved.Value.ActorLocations
+                .First(x => x.CrewId == captain.ActorId);
+            Assert.That(savedCaptain.Theater, Is.EqualTo(PhysicalTheater.Shore));
+            Assert.That(savedCaptain.ShoreX,
+                Is.EqualTo(savedPosition.x).Within(0.01f));
+            Assert.That(savedCaptain.ShoreZ,
+                Is.EqualTo(savedPosition.z).Within(0.01f));
 
             Object.Destroy(runtime.transform.root.gameObject);
             var unload = SceneManager.UnloadSceneAsync(
@@ -290,6 +311,12 @@ namespace FrostArk.Unity.Tests
             Assert.That(restoredCaptain.IsOnShip, Is.False);
             Assert.That(restoredCaptain.ShipMotor.enabled, Is.False);
             Assert.That(restoredCaptain.ShoreAgent.enabled, Is.True);
+            var restoredPoint = restoredCaptain.transform.position;
+            Assert.That(Vector3.Distance(
+                    new Vector3(restoredPoint.x, 0f, restoredPoint.z),
+                    new Vector3(savedPosition.x, 0f, savedPosition.z)),
+                Is.LessThan(0.75f),
+                "Restore must preserve the exact saved shore position.");
             Assert.That(restoredRuntime.Session.Capture().State.CrewDuty
                 .Get(captain.ActorId).IsAway, Is.True);
             Assert.That(restoredRuntime.CrewActors.Count(a => !a.IsOnShip), Is.EqualTo(1),
@@ -357,7 +384,17 @@ namespace FrostArk.Unity.Tests
                 yield return null;
             }
             Assert.That(captain.IsOnShip, Is.False, runtime.LastTransitStatus);
-            var saved = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+            Physics.SyncTransforms();
+            var shorePoint = new Vector3(27f, 0f, 5f);
+            Assert.That(runtime.Commander.ProcessContextClick(
+                runtime.GameplayCamera.WorldToScreenPoint(shorePoint)), Is.True);
+            var shoreDeadline = Time.realtimeSinceStartup + 5f;
+            while (Vector3.Distance(captain.transform.position, shorePoint) > 1.5f &&
+                   Time.realtimeSinceStartup < shoreDeadline)
+                yield return null;
+            var savedPosition = captain.transform.position;
+            var saved = SaveCodec.TryDecode(
+                SaveCodec.Encode(runtime.CaptureSnapshot()));
             Assert.That(saved.Success, Is.True);
 
             Assert.That(runtime.RestoreFromSnapshot(saved.Value), Is.True);
@@ -396,6 +433,12 @@ namespace FrostArk.Unity.Tests
                 a.ActorId == captain.ActorId);
             Assert.That(restoredCaptain.IsOnShip, Is.False);
             Assert.That(restoredCaptain.ShoreAgent.enabled, Is.True);
+            var restoredPoint = restoredCaptain.transform.position;
+            Assert.That(Vector3.Distance(
+                    new Vector3(restoredPoint.x, 0f, restoredPoint.z),
+                    new Vector3(savedPosition.x, 0f, savedPosition.z)),
+                Is.LessThan(0.75f),
+                "In-place restore must preserve the exact saved shore position.");
 
             Object.Destroy(runtime.transform.root.gameObject);
             yield return null;

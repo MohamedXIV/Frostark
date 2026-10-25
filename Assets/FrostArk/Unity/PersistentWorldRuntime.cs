@@ -3,7 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using FrostArk.Core.Application;
+using FrostArk.Core.Commands;
 using FrostArk.Core.Crew;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.Save;
 using FrostArk.Core.Ship;
 using FrostArk.Core.World;
@@ -32,6 +34,15 @@ namespace FrostArk.Unity
         public const string EngineerId = "crew:ship:engineer";
         public const string ScoutId = "crew:ship:scout";
         public const string MedicId = "crew:ship:medic";
+        public const string BlueprintId = "blueprint:ship:machine";
+        public const string BridgeConsoleId = "module:ship:bridge-console";
+        public const string EnginePlantId = "module:ship:engine-plant";
+        public const string WorkSlotId = "slot:ship:work";
+        public const string RestSlotId = "slot:ship:rest";
+        public const string DrinkSlotId = "slot:ship:drink";
+        public const string RepairJobId = "repair:ship:hull";
+        public const string WaterItemId = "item:ship:water";
+        public const string WaterPickupId = "pickup:ship:water";
         public const string ShoreSceneName = "E12ShoreEnvironment";
         public const string ShoreSceneId = "scene:shore:training-floe";
         public const string ShoreSiteId = "island:training-floe";
@@ -110,6 +121,31 @@ namespace FrostArk.Unity
             new ShipGridCell(EntityId.Parse(EngineRoomId), 5, 2);
 
         public WorldState ProvideInitialState() => CreateDefaultState();
+
+        /// <summary>
+        /// Capture canonical world truth plus the derived physical positions of
+        /// the one actor object per crew. Safe points only; callers must not save
+        /// midway through a gangway crossing.
+        /// </summary>
+        public SaveGameDto CaptureSnapshot()
+        {
+            if (_session == null)
+                throw new InvalidOperationException("Persistent world has no session.");
+            var locations = new List<PhysicalActorLocation>(_crewActors.Count);
+            foreach (var actor in _crewActors)
+            {
+                if (actor == null)
+                    continue;
+                if (actor.IsOnShip && actor.ShipMotor != null &&
+                    actor.ShipMotor.IsConfigured)
+                    locations.Add(PhysicalActorLocation.Aboard(actor.ActorId,
+                        actor.ShipMotor.LastReachedCell));
+                else if (!actor.IsOnShip)
+                    locations.Add(PhysicalActorLocation.Ashore(actor.ActorId,
+                        actor.transform.position.x, actor.transform.position.z));
+            }
+            return _session.Capture(locations);
+        }
 
         [Inject]
         public void Construct(WorldSession session)
@@ -208,6 +244,10 @@ namespace FrostArk.Unity
 
             var bindings = new List<ShipTacticalSceneBootstrap.CrewBinding>();
             var state = session.Capture().State;
+            var savedShipCells = new Dictionary<EntityId, ShipGridCell>();
+            foreach (var location in session.PhysicalActorLocations)
+                if (location.Theater == PhysicalTheater.Ship)
+                    savedShipCells[location.CrewId] = location.ShipCell;
             for (int i = 0; i < CrewIds.Length; i++)
             {
                 var member = state.CrewDuty.Get(CrewIds[i]);
@@ -216,14 +256,19 @@ namespace FrostArk.Unity
                         "Persistent state is missing crew " + CrewIds[i].Value);
                 var cell = new ShipGridCell(
                     EntityId.Parse(BridgeRoomId), StartCells[i].x, StartCells[i].y);
+                // Restore an exact authored ship cell when the saved layout
+                // still contains its room; fall back to the authored spawn.
+                if (savedShipCells.TryGetValue(CrewIds[i], out var saved) &&
+                    geometry.RoomOrigins.ContainsKey(saved.RoomId))
+                    cell = saved;
                 var actor = CreateCrewActor(actorParent.transform, CrewIds[i], cell,
                     CrewColors[i], _shipRoot, geometry.RoomOrigins);
                 _crewActors.Add(actor);
                 bindings.Add(new ShipTacticalSceneBootstrap.CrewBinding
                 {
                     Actor = actor.ShipSelection,
-                    StartingRoomId = BridgeRoomId,
-                    StartingCell = StartCells[i]
+                    StartingRoomId = cell.RoomId.Value,
+                    StartingCell = new Vector2Int(cell.X, cell.Y)
                 });
             }
 
@@ -233,6 +278,7 @@ namespace FrostArk.Unity
             _bootstrap.ConfigureShipSceneId(EntityId.Parse(ShipSceneId));
             _bootstrap.Configure(_shipRoot, _commander,
                 geometry.Rooms, geometry.Doors, bindings.ToArray());
+            EnsureDefaultDutyAssignment(session);
             _bootstrap.Initialize(session);
             _commander.RefreshSceneRegistrations();
             CreateGangway();
@@ -426,8 +472,36 @@ namespace FrostArk.Unity
             if (_session == null || _commander == null)
                 return;
             UpdateAwayCheckpoint();
+            var state = _session.Capture().State;
+            var savedShore = new Dictionary<EntityId, PhysicalActorLocation>();
+            foreach (var location in _session.PhysicalActorLocations)
+                if (location.Theater == PhysicalTheater.Shore)
+                    savedShore[location.CrewId] = location;
+            int awayIndex = 0;
+            foreach (var actor in _crewActors)
+            {
+                var member = state.CrewDuty.Get(actor.ActorId);
+                if (member == null || !member.IsAway)
+                    continue;
+                int index = awayIndex++;
+                var fallback = ShoreEntryPoint + ShoreEntryOffset(index);
+                if (!actor.IsOnShip && actor.ShoreAgent.enabled &&
+                    actor.ShoreAgent.isOnNavMesh)
+                    continue;
+                ReleaseShipPresence(actor.ActorId);
+                actor.ShipMotor.SuspendForShoreDeparture();
+                var point = savedShore.TryGetValue(actor.ActorId, out var saved)
+                    ? new Vector3(saved.ShoreX, 0f, saved.ShoreZ)
+                    : fallback;
+                if (!actor.SetShoreMode(point))
+                    actor.SetShoreMode(fallback);
+            }
+            Physics.SyncTransforms();
             ReconcileCrewPresence();
         }
+
+        private static Vector3 ShoreEntryOffset(int index) =>
+            new Vector3((index % 3) * 1f, 0f, (index / 3) * 1f);
 
         private EntityId[] GetAwayIds()
         {
@@ -512,7 +586,7 @@ namespace FrostArk.Unity
                         continue;
                     ReleaseShipPresence(actor.ActorId);
                     actor.ShipMotor.SuspendForShoreDeparture();
-                    var offset = new Vector3((index % 3) * 1f, 0f, (index / 3) * 1f);
+                    var offset = ShoreEntryOffset(index);
                     if (!actor.SetShoreMode(ShoreEntryPoint + offset))
                         _lastTransitStatus = "ReconcileShoreFailed:" +
                             actor.ActorId.Value;
@@ -1303,10 +1377,31 @@ namespace FrostArk.Unity
                 DestroyImmediate(collider);
         }
 
-        public static WorldState CreateDefaultState()
+        private static void EnsureDefaultDutyAssignment(WorldSession session)
+        {
+            var state = session.Capture().State;
+            var engineer = EntityId.Parse(EngineerId);
+            if (state.GetCrewStation(engineer).IsValid)
+                return;
+            var station = state.Layout.GetModule(EntityId.Parse(EnginePlantId));
+            if (station == null)
+                return;
+            var assignment = session.Submit(new AssignCrewCommand(
+                EntityId.Parse("cmd:e12:assign-engineer:" + state.Revision),
+                engineer, station.Id, state.Revision));
+            if (!assignment.Success)
+                Debug.LogWarning("Default engineer assignment rejected: " +
+                    assignment.Failure);
+        }
+
+        public static WorldState CreateDefaultState(bool captainAway = false,
+            bool withActivities = true)
         {
             var bridge = EntityId.Parse(BridgeRoomId);
             var engine = EntityId.Parse(EngineRoomId);
+            var blueprint = EntityId.Parse(BlueprintId);
+            var bridgeConsole = EntityId.Parse(BridgeConsoleId);
+            var enginePlant = EntityId.Parse(EnginePlantId);
             var layout = ShipLayoutState.Create(
                 new[]
                 {
@@ -1315,26 +1410,56 @@ namespace FrostArk.Unity
                 },
                 new[]
                 {
-                    new ShipModuleBlueprint(EntityId.Parse("blueprint:ship:machine"),
-                        ShipModuleKind.Auxiliary, 1, 1,
-                        EntityId.Parse("item:ship:machine-parts"), 1, 1)
+                    new ShipModuleBlueprint(blueprint, ShipModuleKind.Auxiliary,
+                        1, 1, EntityId.Parse("item:ship:machine-parts"), 1, 1)
                 },
-                Array.Empty<ShipModule>());
-            layout = layout.Place(EntityId.Parse("module:ship:bridge-console"),
-                EntityId.Parse("blueprint:ship:machine"), bridge, 0, 5);
-            layout = layout.Place(EntityId.Parse("module:ship:engine-plant"),
-                EntityId.Parse("blueprint:ship:machine"), engine, 4, 4);
+                new[]
+                {
+                    new ShipModule(bridgeConsole, blueprint, bridge, 0, 5),
+                    new ShipModule(enginePlant, blueprint, engine, 4, 4)
+                });
 
-            var members = CrewState.Create(new[]
+            var members = new[]
             {
-                new CrewMember(CrewIds[0], DutyRole.Watch, 900, 80, 0, 1440),
-                new CrewMember(CrewIds[1], DutyRole.Engineering, 900, 80, 0, 1440),
-                new CrewMember(CrewIds[2], DutyRole.Watch, 900, 80, 0, 1440),
-                new CrewMember(CrewIds[3], DutyRole.Repair, 900, 80, 0, 1440)
-            });
+                new CrewMember(CrewIds[0], DutyRole.Watch, 900, 200,
+                    0, 1440, isAway: captainAway, hunger: 80),
+                new CrewMember(CrewIds[1], DutyRole.Repair, 950, 0, 0, 1440),
+                new CrewMember(CrewIds[2], DutyRole.Watch, 900, 200,
+                    0, 1440, thirst: 800),
+                new CrewMember(CrewIds[3], DutyRole.Medical, 900, 200,
+                    720, 400, fatigue: 700)
+            };
+
+            if (!withActivities)
+            {
+                return WorldState.Create(WorldMinute.Zero,
+                    Array.Empty<SupplyStock>(), CrewIds,
+                    layout: layout, crewDuty: CrewState.Create(members));
+            }
+
+            var water = EntityId.Parse(WaterItemId);
+            var pickup = EntityId.Parse(WaterPickupId);
+            var items = InventoryState.Create(
+                new ItemCatalog(new[] { new ItemDefinition(water, 1, 100, 10) }),
+                new[] { new SalvagePickup(pickup, water, 2) },
+                10000, 5, 10000, 5);
+            items = items.TryCollect(pickup).State.TryUnload(water, 2).State;
+
+            var crew = CrewState.Create(members,
+                jobs: new[] { new RepairJob(EntityId.Parse(RepairJobId), 100) },
+                consumables: new[] { new CrewConsumable(water, 0, 600) },
+                interactions: CrewInteractionState.Create(new[]
+                {
+                    new CrewInteractionSlot(EntityId.Parse(WorkSlotId), enginePlant,
+                        CrewInteractionVerb.Work, -1, 0, 0),
+                    new CrewInteractionSlot(EntityId.Parse(RestSlotId), bridgeConsole,
+                        CrewInteractionVerb.Rest, 1, 0, 0),
+                    new CrewInteractionSlot(EntityId.Parse(DrinkSlotId), bridgeConsole,
+                        CrewInteractionVerb.Drink, 0, -1, 2)
+                }));
             return WorldState.Create(WorldMinute.Zero,
                 Array.Empty<SupplyStock>(), CrewIds,
-                layout: layout, crewDuty: members);
+                inventory: items, crewDuty: crew, layout: layout);
         }
     }
 }

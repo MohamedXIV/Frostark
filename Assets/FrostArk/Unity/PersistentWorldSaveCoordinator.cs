@@ -97,6 +97,11 @@ namespace FrostArk.Unity
                 SetStatus("Save rejected: load is running.");
                 return false;
             }
+            if (_runtime != null && _runtime.IsCrossing)
+            {
+                SetStatus("Save rejected: gangway transit in progress.");
+                return false;
+            }
             if (_session == null || _repository == null)
             {
                 SetStatus("Save failed: world not ready.");
@@ -104,7 +109,9 @@ namespace FrostArk.Unity
             }
             try
             {
-                var snapshot = _session.Capture();
+                var snapshot = _runtime != null
+                    ? _runtime.CaptureSnapshot()
+                    : _session.Capture();
                 _repository.Save(snapshot);
                 SetStatus("Saved " + slotName + ".sav (Rev " +
                     snapshot.State.Revision + ", Min " +
