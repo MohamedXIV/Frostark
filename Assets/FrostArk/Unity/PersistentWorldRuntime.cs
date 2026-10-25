@@ -569,9 +569,16 @@ namespace FrostArk.Unity
             }
 
             ReconcileCrewPresence();
-            var ids = selected.Distinct()
-                .Where(id => _crewActors.Any(a => a.ActorId == id))
+            var state = _session.Capture().State;
+            var valid = selected.Distinct()
+                .Where(id => _crewActors.Any(a => a.ActorId == id) &&
+                             state.CrewDuty.Get(id) != null)
                 .ToList();
+            var ids = new List<EntityId>();
+            ids.AddRange(OrderTransitIds(valid.Where(id =>
+                !state.CrewDuty.Get(id).IsAway), true));
+            ids.AddRange(OrderTransitIds(valid.Where(id =>
+                state.CrewDuty.Get(id).IsAway), false));
             if (ids.Count == 0)
             {
                 _lastTransitStatus = "UnknownCrew";
@@ -601,11 +608,11 @@ namespace FrostArk.Unity
             }
             ReconcileCrewPresence();
             var state = _session.Capture().State;
-            var ids = selected.Distinct().Where(id =>
+            var ids = OrderTransitIds(selected.Distinct().Where(id =>
             {
                 var member = state.CrewDuty.Get(id);
                 return member != null && !member.IsAway;
-            }).ToList();
+            }), true);
             if (ids.Count == 0)
             {
                 if (_commander != null &&
@@ -638,11 +645,11 @@ namespace FrostArk.Unity
             }
             ReconcileCrewPresence();
             var state = _session.Capture().State;
-            var ids = selected.Distinct().Where(id =>
+            var ids = OrderTransitIds(selected.Distinct().Where(id =>
             {
                 var member = state.CrewDuty.Get(id);
                 return member != null && member.IsAway;
-            }).ToList();
+            }), false);
             if (ids.Count == 0)
             {
                 if (_commander != null &&
@@ -724,6 +731,40 @@ namespace FrostArk.Unity
             else if (success > 0 && hasShipDestination && _commander != null)
                 _commander.IssueShipMoveOrder(shipCell, shipWorldPoint);
             _lastTransitStatus = "TransitComplete " + success + "/" + ids.Count;
+        }
+
+        private List<EntityId> OrderTransitIds(IEnumerable<EntityId> ids, bool toShore)
+        {
+            return ids
+                .OrderBy(id => toShore ? ShipGangwayPriority(id) : ShoreGangwayPriority(id))
+                .ThenBy(id => id.Value, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        private int ShipGangwayPriority(EntityId id)
+        {
+            var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
+            if (actor == null)
+                return int.MaxValue;
+            var map = _bootstrap != null ? _bootstrap.Map : null;
+            if (map != null && actor.ShipMotor != null)
+            {
+                var path = map.FindPath(actor.ShipMotor.LastReachedCell, GangwayCell);
+                if (path.Count > 0)
+                    return path.Count;
+            }
+            var gangwayWorld = _shipRoot != null
+                ? _shipRoot.TransformPoint(new Vector3(11.5f, 0f, 2.5f))
+                : transform.position;
+            return Mathf.RoundToInt(
+                Vector3.Distance(actor.transform.position, gangwayWorld) * 100f);
+        }
+
+        private int ShoreGangwayPriority(EntityId id)
+        {
+            var actor = _crewActors.FirstOrDefault(a => a.ActorId == id);
+            return actor == null ? int.MaxValue : Mathf.RoundToInt(
+                Vector3.Distance(actor.transform.position, ShoreEntryPoint) * 100f);
         }
 
         private void StageTransitActors(IReadOnlyList<EntityId> ids)

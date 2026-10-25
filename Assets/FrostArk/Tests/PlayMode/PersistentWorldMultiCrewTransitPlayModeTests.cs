@@ -2,6 +2,7 @@ using System.Collections;
 using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Save;
+using FrostArk.Core.Ship;
 using FrostArk.Unity;
 using NUnit.Framework;
 using UnityEngine;
@@ -49,6 +50,11 @@ namespace FrostArk.Unity.Tests
                     "The first selected actor must start moving immediately.");
                 Assert.That(scout.ShipMotor.IsMoving, Is.True,
                     "The next selected actor must start moving immediately to the gangway queue.");
+                var firstQueueCell = new ShipGridCell(
+                    EntityId.Parse(PersistentWorldRuntime.EngineRoomId), 4, 2);
+                Assert.That(scout.ShipMotor.OrderedCell, Is.EqualTo(firstQueueCell),
+                    "The crew member nearest the gangway must get the first queue slot, regardless of selection order.");
+                Assert.That(captain.ShipMotor.OrderedCell, Is.Not.EqualTo(firstQueueCell));
 
                 yield return WaitUntil(() => !runtime.IsCrossing &&
                     !captain.IsOnShip && !scout.IsOnShip, 35f,
