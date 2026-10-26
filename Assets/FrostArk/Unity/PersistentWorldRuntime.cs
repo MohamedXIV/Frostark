@@ -38,6 +38,7 @@ namespace FrostArk.Unity
         public const string BridgeConsoleId = "module:ship:bridge-console";
         public const string EnginePlantId = "module:ship:engine-plant";
         public const string WorkSlotId = "slot:ship:work";
+        public const string WatchWorkSlotId = "slot:ship:watch";
         public const string RestSlotId = "slot:ship:rest";
         public const string DrinkSlotId = "slot:ship:drink";
         public const string RepairJobId = "repair:ship:hull";
@@ -1324,18 +1325,26 @@ namespace FrostArk.Unity
             // deliberate unassignment; only a fresh run gets the scene default.
             if (session.WasRestored)
                 return;
+            AssignStation(session, EntityId.Parse(EngineerId),
+                EntityId.Parse(EnginePlantId), "engineer");
+            AssignStation(session, EntityId.Parse(ScoutId),
+                EntityId.Parse(BridgeConsoleId), "scout");
+        }
+
+        private static void AssignStation(WorldSession session, EntityId crew,
+            EntityId stationId, string roleKey)
+        {
             var state = session.Capture().State;
-            var engineer = EntityId.Parse(EngineerId);
-            if (state.GetCrewStation(engineer).IsValid)
+            if (state.GetCrewStation(crew).IsValid)
                 return;
-            var station = state.Layout.GetModule(EntityId.Parse(EnginePlantId));
+            var station = state.Layout.GetModule(stationId);
             if (station == null)
                 return;
             var assignment = session.Submit(new AssignCrewCommand(
-                EntityId.Parse("cmd:e12:assign-engineer:" + state.Revision),
-                engineer, station.Id, state.Revision));
+                EntityId.Parse("cmd:e12:assign-" + roleKey + ":" + state.Revision),
+                crew, station.Id, state.Revision));
             if (!assignment.Success)
-                Debug.LogWarning("Default engineer assignment rejected: " +
+                Debug.LogWarning("Default " + roleKey + " assignment rejected: " +
                     assignment.Failure);
         }
 
@@ -1397,6 +1406,8 @@ namespace FrostArk.Unity
                 {
                     new CrewInteractionSlot(EntityId.Parse(WorkSlotId), enginePlant,
                         CrewInteractionVerb.Work, -1, 0, 0),
+                    new CrewInteractionSlot(EntityId.Parse(WatchWorkSlotId), bridgeConsole,
+                        CrewInteractionVerb.Work, 2, 0, 0),
                     new CrewInteractionSlot(EntityId.Parse(RestSlotId), bridgeConsole,
                         CrewInteractionVerb.Rest, 1, 0, 0),
                     new CrewInteractionSlot(EntityId.Parse(DrinkSlotId), bridgeConsole,
