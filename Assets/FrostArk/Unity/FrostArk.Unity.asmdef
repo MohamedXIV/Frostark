@@ -5,7 +5,8 @@
     "FrostArk.Core",
     "VContainer",
     "Unity.InputSystem",
-    "UnityEngine.UI"
+    "UnityEngine.UI",
+    "Unity.AI.Navigation"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

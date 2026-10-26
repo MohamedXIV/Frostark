@@ -20,9 +20,9 @@ namespace FrostArk.Core.Application
     public sealed class WorldSession : IDisposable
     {
         private WorldState _state;
-        private readonly SimulationScheduler _scheduler;
+        private SimulationScheduler _scheduler;
         private readonly WorldCommandBus _commands = new WorldCommandBus();
-        private readonly IReadOnlyList<ProceduralOverride> _overrides;
+        private IReadOnlyList<ProceduralOverride> _overrides;
         private PhysicalSceneCheckpoint _sceneCheckpoint;
         // Accepted Move goals survive Save/Restore. Unity selection and
         // interpolated frame positions are deliberately never persisted.
@@ -30,6 +30,7 @@ namespace FrostArk.Core.Application
             new Dictionary<EntityId, PendingCrewMove>();
         // Transient, scene-scoped repair attendance. Never saved, and never
         // substitutes for the canonical crew roster, staffed role or claim.
+        private EntityId? _residentShipScene;
         private bool _shipWorkObservationActive;
         private EntityId _shipWorkScene;
         private readonly Dictionary<EntityId, WorkPresence> _workPresence =
@@ -47,6 +48,9 @@ namespace FrostArk.Core.Application
         }
 
         private bool _disposed;
+        private bool _restored;
+        private PhysicalActorLocation[] _physicalLocations =
+            Array.Empty<PhysicalActorLocation>();
 
         public event Action<WorldSessionChange> Changed;
 
@@ -69,12 +73,19 @@ namespace FrostArk.Core.Application
             IEnumerable<IWorldMinuteSystem> systems,
             Func<WorldMinute, long> ambientMilliC)
         {
+            _restored = true;
             _state = snapshot.State;
             _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
             _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
             _sceneCheckpoint = snapshot.SceneCheckpoint;
+            if (_sceneCheckpoint != null &&
+                _sceneCheckpoint.Theater == PhysicalTheater.Ship)
+                _residentShipScene = _sceneCheckpoint.SceneId;
+            else if (snapshot.PendingCrewMoves.Count > 0)
+                _residentShipScene = snapshot.PendingCrewMoves[0].SceneId;
             foreach (var move in snapshot.PendingCrewMoves)
                 _crewMoves.Add(move.CrewId, move);
+            _physicalLocations = snapshot.ActorLocations.ToArray();
         }
 
         // Built-in reducers must read and commit through this ONE session-owned
@@ -106,6 +117,27 @@ namespace FrostArk.Core.Application
         public long Revision { get { Guard(); return _state.Revision; } }
         public WorldMinute Minute { get { Guard(); return _state.Minute; } }
         public PhysicalSceneCheckpoint SceneCheckpoint { get { Guard(); return _sceneCheckpoint; } }
+        public EntityId? ResidentShipSceneId { get { Guard(); return _residentShipScene; } }
+        /// <summary>True once this session adopted any saved snapshot; scene
+        /// defaults must not overwrite persisted player choices on load.</summary>
+        public bool WasRestored { get { Guard(); return _restored; } }
+        /// <summary>
+        /// Frozen physical positions from the last restored snapshot. They are
+        /// never mutated by ordinary simulation or used as canonical truth.
+        /// </summary>
+        public IReadOnlyList<PhysicalActorLocation> PhysicalActorLocations
+        {
+            get { Guard(); return Array.AsReadOnly(_physicalLocations); }
+        }
+
+        private bool IsResidentShipScene(EntityId sceneId)
+        {
+            if (!sceneId.IsValid || _sceneCheckpoint == null)
+                return false;
+            if (_sceneCheckpoint.Theater == PhysicalTheater.Ship)
+                return _sceneCheckpoint.SceneId == sceneId;
+            return _residentShipScene.HasValue && _residentShipScene.Value == sceneId;
+        }
 
         /// <summary>
         /// Record an authored scene/anchor re-entry checkpoint without advancing
@@ -116,15 +148,50 @@ namespace FrostArk.Core.Application
         {
             Guard();
             checkpoint?.ValidateAgainst(_state);
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship ||
-                checkpoint.SceneId != _shipWorkScene)
+            if (checkpoint == null)
+            {
+                _residentShipScene = null;
                 StopShipWorkObservationInternal();
+                _sceneCheckpoint = null;
+                _crewMoves.Clear();
+                return;
+            }
+
+            if (checkpoint.Theater == PhysicalTheater.Ship)
+            {
+                if (_residentShipScene.HasValue &&
+                    _residentShipScene.Value != checkpoint.SceneId)
+                {
+                    StopShipWorkObservationInternal();
+                    _crewMoves.Clear();
+                }
+                else if (_shipWorkObservationActive &&
+                         _shipWorkScene != checkpoint.SceneId)
+                {
+                    StopShipWorkObservationInternal();
+                }
+                _residentShipScene = checkpoint.SceneId;
+            }
+            else
+            {
+                // PhysicalTheater.Shore: the persistent ship remains resident
+                // for onboard crew; only away party members lose ship presence.
+                foreach (var awayId in checkpoint.PartyIds)
+                {
+                    _workPresence.Remove(awayId);
+                    _crewMoves.Remove(awayId);
+                }
+            }
+
             _sceneCheckpoint = checkpoint;
-            // A player Move belongs to the physical scene where it was
-            // accepted. Changing scene/theater revokes its stored route goal.
+            var expectedShipScene = _residentShipScene;
             var stale = _crewMoves.Where(p =>
-                checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship ||
-                p.Value.SceneId != checkpoint.SceneId).Select(p => p.Key).ToArray();
+            {
+                var member = _state.CrewDuty.Get(p.Key);
+                return member == null || member.IsAway ||
+                       !expectedShipScene.HasValue ||
+                       p.Value.SceneId != expectedShipScene.Value;
+            }).Select(p => p.Key).ToArray();
             foreach (var id in stale) _crewMoves.Remove(id);
         }
 
@@ -136,10 +203,21 @@ namespace FrostArk.Core.Application
         public void BeginShipWorkObservation(EntityId sceneId)
         {
             Guard();
-            if (!sceneId.IsValid || _sceneCheckpoint == null ||
-                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
-                _sceneCheckpoint.SceneId != sceneId)
+            if (!sceneId.IsValid || _sceneCheckpoint == null)
                 throw new InvalidOperationException("Work observation needs the loaded canonical ship scene.");
+            if (_sceneCheckpoint.Theater == PhysicalTheater.Ship)
+            {
+                if (_sceneCheckpoint.SceneId != sceneId)
+                    throw new InvalidOperationException("Work observation needs the loaded canonical ship scene.");
+                _residentShipScene = sceneId;
+            }
+            else
+            {
+                if ((_residentShipScene.HasValue && _residentShipScene.Value != sceneId) ||
+                    sceneId == _sceneCheckpoint.SceneId)
+                    throw new InvalidOperationException("Work observation needs the loaded canonical ship scene.");
+                _residentShipScene = sceneId;
+            }
             _shipWorkObservationActive = true;
             _shipWorkScene = sceneId;
             _workPresence.Clear();
@@ -184,10 +262,7 @@ namespace FrostArk.Core.Application
         public bool ReportShipDutyPresence(EntityId crewId, EntityId slotId)
         {
             Guard();
-            if (!_shipWorkObservationActive || !_shipWorkScene.IsValid ||
-                _sceneCheckpoint == null ||
-                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
-                _sceneCheckpoint.SceneId != _shipWorkScene)
+            if (!_shipWorkObservationActive || !IsResidentShipScene(_shipWorkScene))
                 return false;
             var member = _state.CrewDuty.Get(crewId);
             var slot = _state.CrewDuty.Interactions.GetSlot(slotId);
@@ -225,12 +300,21 @@ namespace FrostArk.Core.Application
             {
                 // Existing saves/ships may not author a physical Engineering
                 // Work station yet. Do not turn off their canonical boilers
-                // simply by loading the scene. Once authored, require presence.
+                // simply by loading the scene. Once authored, require presence
+                // at a station whose module actually represents engineering
+                // power, never merely any other Work station.
                 var station = _state.GetCrewStation(crewId);
                 if (!station.IsValid || _state.Layout.GetModule(station) == null ||
                     !_state.CrewDuty.Interactions.Slots.Any(slot =>
                         slot.SourceId == station && slot.Verb == CrewInteractionVerb.Work))
                     return true;
+                var stationModule = _state.Layout.GetModule(station);
+                var stationBlueprint = stationModule == null ? null :
+                    _state.Layout.GetBlueprint(stationModule.BlueprintId);
+                if (stationBlueprint == null ||
+                    (stationBlueprint.Kind != ShipModuleKind.Engine &&
+                     stationBlueprint.Kind != ShipModuleKind.Boiler))
+                    return false;
             }
             if (!_workPresence.TryGetValue(crewId, out var proof) ||
                 proof.SampledAt.Value != minute.Value - 1)
@@ -269,16 +353,20 @@ namespace FrostArk.Core.Application
         {
             Guard();
             var member = _state.CrewDuty.Get(crewId);
+            var shipSceneId = _sceneCheckpoint != null &&
+                _sceneCheckpoint.Theater == PhysicalTheater.Ship
+                ? _sceneCheckpoint.SceneId
+                : (_residentShipScene ?? default);
             if (!_state.HasCrew(crewId) || member == null || member.IsAway ||
                 member.Wounds >= 1000 || _sceneCheckpoint == null ||
-                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
+                !shipSceneId.IsValid ||
                 !_state.Layout.Rooms.Any(r => r.Id == goal.RoomId))
                 throw new InvalidOperationException("Cannot persist a ship Move without eligible crew and a matching ship checkpoint.");
             // An accepted player Move revokes productive scene attendance
             // synchronously, even when the Unity duty adapter will receive
             // its own OrderIssued callback later in the same frame.
             _workPresence.Remove(crewId);
-            _crewMoves[crewId] = new PendingCrewMove(crewId, _sceneCheckpoint.SceneId, goal);
+            _crewMoves[crewId] = new PendingCrewMove(crewId, shipSceneId, goal);
         }
 
         public bool CompleteCrewMove(EntityId crewId)
@@ -300,6 +388,11 @@ namespace FrostArk.Core.Application
             if (result.Success)
             {
                 _state = result.State;
+                if (command is SetCrewAwayCommand awayCmd && awayCmd.Away)
+                {
+                    _workPresence.Remove(awayCmd.CrewId);
+                    _crewMoves.Remove(awayCmd.CrewId);
+                }
                 Notify(new WorldSessionChange(WorldSessionChangeKind.Command,
                     new WorldSessionView(_state), result.Events));
             }
@@ -339,9 +432,7 @@ namespace FrostArk.Core.Application
         /// </summary>
         private void RenewFreshObservedDutyLeases()
         {
-            if (!_shipWorkObservationActive || _sceneCheckpoint == null ||
-                _sceneCheckpoint.Theater != PhysicalTheater.Ship ||
-                _sceneCheckpoint.SceneId != _shipWorkScene) return;
+            if (!_shipWorkObservationActive || !IsResidentShipScene(_shipWorkScene)) return;
             var now = _scheduler.Clock.Current;
             foreach (var pair in _workPresence.OrderBy(x => x.Key.Value,
                 StringComparer.Ordinal).ToArray())
@@ -390,7 +481,8 @@ namespace FrostArk.Core.Application
             }
         }
 
-        public SaveGameDto Capture()
+        public SaveGameDto Capture(
+            IEnumerable<PhysicalActorLocation> physicalLocations = null)
         {
             Guard();
             // Commands, wounds or physical dispatch can invalidate an order
@@ -403,7 +495,7 @@ namespace FrostArk.Core.Application
                 _state.CrewDuty.Get(m.CrewId).Wounds < 1000 &&
                 _state.Layout.Rooms.Any(r => r.Id == m.ShipGoal.RoomId)).ToArray();
             return SaveGameDto.Capture(_state, _scheduler, _overrides,
-                _sceneCheckpoint, valid);
+                _sceneCheckpoint, valid, physicalLocations);
         }
 
         public static WorldSession Restore(SaveGameDto snapshot,
@@ -413,6 +505,39 @@ namespace FrostArk.Core.Application
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
             return new WorldSession(snapshot, systems, ambientMilliC);
+        }
+
+        /// <summary>
+        /// Replace the active run state in place so DI, the presenter and the
+        /// persistent Unity root keep addressing the one authoritative session.
+        /// </summary>
+        public void RestoreSnapshot(SaveGameDto snapshot,
+            IEnumerable<IWorldMinuteSystem> systems = null,
+            Func<WorldMinute, long> ambientMilliC = null)
+        {
+            if (snapshot == null)
+                throw new ArgumentNullException(nameof(snapshot));
+            Guard();
+            StopShipWorkObservationInternal();
+            _workPresence.Clear();
+            _crewMoves.Clear();
+            _restored = true;
+            _state = snapshot.State;
+            _scheduler = snapshot.CreateScheduler(BindCanonicalSystems(systems, ambientMilliC));
+            _overrides = new List<ProceduralOverride>(snapshot.ProceduralOverrides).AsReadOnly();
+            _sceneCheckpoint = snapshot.SceneCheckpoint;
+            if (_sceneCheckpoint != null &&
+                _sceneCheckpoint.Theater == PhysicalTheater.Ship)
+                _residentShipScene = _sceneCheckpoint.SceneId;
+            else if (snapshot.PendingCrewMoves.Count > 0)
+                _residentShipScene = snapshot.PendingCrewMoves[0].SceneId;
+            else
+                _residentShipScene = null;
+            foreach (var move in snapshot.PendingCrewMoves)
+                _crewMoves.Add(move.CrewId, move);
+            _physicalLocations = snapshot.ActorLocations.ToArray();
+            Notify(new WorldSessionChange(WorldSessionChangeKind.Time,
+                new WorldSessionView(_state), Array.Empty<FrostArk.Core.Events.WorldEvent>()));
         }
 
         private WorldAdvanceResult CommitAdvance(WorldAdvanceResult result)
