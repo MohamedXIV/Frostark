@@ -23,6 +23,7 @@ namespace FrostArk.Unity.Editor
         [MenuItem("FrostArk/Fixtures/Rebuild All E12 Scenes")]
         public static void RebuildAllScenes()
         {
+            E12ShipPrefabBuilder.Rebuild();
             RebuildPersistentWorldScene();
             RebuildShoreEnvironmentScene();
         }

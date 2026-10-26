@@ -43,6 +43,7 @@ namespace FrostArk.Unity
         public const string RepairJobId = "repair:ship:hull";
         public const string WaterItemId = "item:ship:water";
         public const string WaterPickupId = "pickup:ship:water";
+        private const string ShipPrefabResourcePath = "E12PersistentShip";
         public const string ShoreSceneName = "E12ShoreEnvironment";
         public const string ShoreSceneId = "scene:shore:training-floe";
         public const string ShoreSiteId = "island:training-floe";
@@ -205,11 +206,16 @@ namespace FrostArk.Unity
                     "Persistent world requires a ship or shore physical checkpoint.");
             ValidateCheckpoint(session.SceneCheckpoint);
 
-            var shipObject = new GameObject("ShipWorld | persistent");
-            shipObject.transform.SetParent(transform, false);
+            var shipPrefab = Resources.Load<GameObject>(ShipPrefabResourcePath);
+            if (shipPrefab == null)
+                throw new InvalidOperationException(
+                    "Missing persistent ship prefab at Resources/" +
+                    ShipPrefabResourcePath + ".");
+            var shipObject = Instantiate(shipPrefab, transform);
+            shipObject.name = "ShipWorld | persistent";
             _shipRoot = shipObject.transform;
 
-            var geometry = BuildShipGeometry(_shipRoot);
+            var geometry = ResolveShipGeometry(_shipRoot);
 
             var commanderObject = new GameObject("TacticalCommandController");
             commanderObject.transform.SetParent(transform, false);
@@ -1249,64 +1255,30 @@ namespace FrostArk.Unity
             return persistent;
         }
 
-        private static ShipGeometry BuildShipGeometry(Transform shipRoot)
+        private static ShipGeometry ResolveShipGeometry(Transform shipRoot)
         {
-            var bridge = EntityId.Parse(BridgeRoomId);
-            var engine = EntityId.Parse(EngineRoomId);
-
-            var bridgeOrigin = Marker(shipRoot, "BridgeOrigin", Vector3.zero);
-            var engineOrigin = Marker(shipRoot, "EngineOrigin", new Vector3(6f, 0f, 0f));
-            var bridgeFloor = Floor(shipRoot, "BridgeFloor", Vector3.zero, bridge);
-            var engineFloor = Floor(shipRoot, "EngineFloor", new Vector3(6f, 0f, 0f), engine);
-
-            Hull(shipRoot);
-            DecorationCube(shipRoot, "BridgeConsole",
-                new Vector3(0.5f, 0.45f, 5.5f), new Vector3(0.8f, 0.9f, 0.8f),
-                new Color(0.20f, 0.59f, 0.68f), false);
-            DecorationCube(shipRoot, "EnginePlant",
-                new Vector3(10.5f, 0.45f, 4.5f), new Vector3(0.8f, 0.9f, 0.8f),
-                new Color(0.86f, 0.46f, 0.25f), false);
-            var doorVisual = DecorationCube(shipRoot, "BulkheadHatch",
-                new Vector3(6f, 0.75f, 2.5f), new Vector3(0.2f, 1.5f, 1f),
-                new Color(0.83f, 0.34f, 0.20f), false);
-            doorVisual.SetActive(false);
-
-            var origins = new Dictionary<EntityId, Vector3>
+            var authoring = shipRoot.GetComponent<PersistentShipGeometry>();
+            if (authoring == null || authoring.Rooms == null ||
+                authoring.Rooms.Length == 0)
+                throw new InvalidOperationException(
+                    "Persistent ship prefab lacks authored geometry bindings.");
+            var origins = new Dictionary<EntityId, Vector3>();
+            foreach (var binding in authoring.Rooms)
             {
-                [bridge] = shipRoot.InverseTransformPoint(bridgeOrigin.position),
-                [engine] = shipRoot.InverseTransformPoint(engineOrigin.position)
-            };
-
+                if (binding == null || binding.Origin == null || binding.Floor == null)
+                    throw new InvalidOperationException(
+                        "Every authored ship room requires an origin and floor.");
+                var id = EntityId.Parse(binding.RoomId);
+                if (!origins.TryAdd(id,
+                        shipRoot.InverseTransformPoint(binding.Origin.position)))
+                    throw new InvalidOperationException(
+                        "Duplicate room origin in persistent ship prefab.");
+            }
             return new ShipGeometry
             {
                 RoomOrigins = origins,
-                Rooms = new[]
-                {
-                    new ShipTacticalSceneBootstrap.RoomBinding
-                    {
-                        RoomId = BridgeRoomId,
-                        Origin = bridgeOrigin,
-                        Floor = bridgeFloor
-                    },
-                    new ShipTacticalSceneBootstrap.RoomBinding
-                    {
-                        RoomId = EngineRoomId,
-                        Origin = engineOrigin,
-                        Floor = engineFloor
-                    }
-                },
-                Doors = new[]
-                {
-                    new ShipTacticalSceneBootstrap.DoorBinding
-                    {
-                        DoorId = DoorId,
-                        FromRoomId = BridgeRoomId,
-                        FromCell = new Vector2Int(5, 2),
-                        ToRoomId = EngineRoomId,
-                        ToCell = new Vector2Int(0, 2),
-                        Open = true
-                    }
-                }
+                Rooms = authoring.Rooms,
+                Doors = authoring.Doors
             };
         }
 
@@ -1315,63 +1287,6 @@ namespace FrostArk.Unity
             public Dictionary<EntityId, Vector3> RoomOrigins;
             public ShipTacticalSceneBootstrap.RoomBinding[] Rooms;
             public ShipTacticalSceneBootstrap.DoorBinding[] Doors;
-        }
-
-        private static Transform Marker(Transform parent, string name, Vector3 localPosition)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = localPosition;
-            return go.transform;
-        }
-
-        private static ShipRoomClickSurface Floor(Transform parent, string name,
-            Vector3 roomOrigin, EntityId roomId)
-        {
-            var floor = DecorationCube(parent, name,
-                roomOrigin + new Vector3(3f, -0.12f, 3f),
-                new Vector3(6f, 0.24f, 6f),
-                new Color(0.25f, 0.35f, 0.40f), true);
-            var surface = floor.AddComponent<ShipRoomClickSurface>();
-            surface.Configure(roomId, parent, roomOrigin);
-            return surface;
-        }
-
-        private static void Hull(Transform shipRoot)
-        {
-            var iron = new Color(0.12f, 0.18f, 0.22f);
-            DecorationCube(shipRoot, "OuterHullNorth",
-                new Vector3(6f, 0.55f, 6.08f), new Vector3(12.4f, 1.1f, 0.2f), iron, false);
-            DecorationCube(shipRoot, "OuterHullSouth",
-                new Vector3(6f, 0.55f, -0.08f), new Vector3(12.4f, 1.1f, 0.2f), iron, false);
-            DecorationCube(shipRoot, "OuterHullWest",
-                new Vector3(-0.08f, 0.55f, 3f), new Vector3(0.2f, 1.1f, 6.2f), iron, false);
-            DecorationCube(shipRoot, "OuterHullEastSouth",
-                new Vector3(12.08f, 0.55f, 0.95f), new Vector3(0.2f, 1.1f, 2.1f), iron, false);
-            DecorationCube(shipRoot, "OuterHullEastNorth",
-                new Vector3(12.08f, 0.55f, 5.05f), new Vector3(0.2f, 1.1f, 2.1f), iron, false);
-            DecorationCube(shipRoot, "BulkheadSouthOfDoor",
-                new Vector3(6f, 0.55f, 1f), new Vector3(0.16f, 1.1f, 2f), iron, false);
-            DecorationCube(shipRoot, "BulkheadNorthOfDoor",
-                new Vector3(6f, 0.55f, 4.5f), new Vector3(0.16f, 1.1f, 3f), iron, false);
-        }
-
-        private static GameObject DecorationCube(Transform parent, string name,
-            Vector3 localPosition, Vector3 scale, Color color, bool keepCollider)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = name;
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = localPosition;
-            go.transform.localScale = scale;
-            Tint(go, color);
-            if (!keepCollider)
-            {
-                var collision = go.GetComponent<Collider>();
-                if (collision != null)
-                    RemoveCollider(collision);
-            }
-            return go;
         }
 
         private static void Tint(GameObject go, Color color)
