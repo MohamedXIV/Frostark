@@ -97,9 +97,9 @@ namespace FrostArk.Unity
                 SetStatus("Save rejected: load is running.");
                 return false;
             }
-            if (_runtime != null && _runtime.IsCrossing)
+            if (_runtime != null && _runtime.IsTransitBusy)
             {
-                SetStatus("Save rejected: gangway transit in progress.");
+                SetStatus("Save rejected: transit in progress.");
                 return false;
             }
             if (_session == null || _repository == null)
@@ -132,6 +132,11 @@ namespace FrostArk.Unity
                 SetStatus("Load rejected: load is running.");
                 return false;
             }
+            if (_runtime != null && _runtime.IsTransitBusy)
+            {
+                SetStatus("Load rejected: transit in progress.");
+                return false;
+            }
             if (_session == null || _repository == null || _runtime == null)
             {
                 SetStatus("Load failed: world not ready.");
@@ -147,7 +152,8 @@ namespace FrostArk.Unity
                 }
                 if (!_runtime.RestoreFromSnapshot(result.Value))
                 {
-                    SetStatus("Load failed: world rebuild rejected.");
+                    SetStatus("Load failed: " +
+                        (_runtime.LastRestoreError ?? "world rebuild rejected."));
                     return false;
                 }
                 _loadPending = true;

@@ -45,7 +45,7 @@ namespace FrostArk.Unity.Tests
                     new ShipCompartmentSlot(Room, 7, 7)
                 }, new[]
                 {
-                    new ShipModuleBlueprint(Blueprint, ShipModuleKind.Auxiliary,
+                    new ShipModuleBlueprint(Blueprint, ShipModuleKind.Engine,
                         1, 1, EntityId.Parse("item:duty:g2:part"), 1, 1)
                 }, new[]
                 {

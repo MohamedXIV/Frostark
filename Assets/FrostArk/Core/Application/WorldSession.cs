@@ -300,12 +300,21 @@ namespace FrostArk.Core.Application
             {
                 // Existing saves/ships may not author a physical Engineering
                 // Work station yet. Do not turn off their canonical boilers
-                // simply by loading the scene. Once authored, require presence.
+                // simply by loading the scene. Once authored, require presence
+                // at a station whose module actually represents engineering
+                // power, never merely any other Work station.
                 var station = _state.GetCrewStation(crewId);
                 if (!station.IsValid || _state.Layout.GetModule(station) == null ||
                     !_state.CrewDuty.Interactions.Slots.Any(slot =>
                         slot.SourceId == station && slot.Verb == CrewInteractionVerb.Work))
                     return true;
+                var stationModule = _state.Layout.GetModule(station);
+                var stationBlueprint = stationModule == null ? null :
+                    _state.Layout.GetBlueprint(stationModule.BlueprintId);
+                if (stationBlueprint == null ||
+                    (stationBlueprint.Kind != ShipModuleKind.Engine &&
+                     stationBlueprint.Kind != ShipModuleKind.Boiler))
+                    return false;
             }
             if (!_workPresence.TryGetValue(crewId, out var proof) ||
                 proof.SampledAt.Value != minute.Value - 1)

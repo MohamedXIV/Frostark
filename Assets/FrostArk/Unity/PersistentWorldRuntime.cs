@@ -35,6 +35,7 @@ namespace FrostArk.Unity
         public const string ScoutId = "crew:ship:scout";
         public const string MedicId = "crew:ship:medic";
         public const string BlueprintId = "blueprint:ship:machine";
+        public const string EngineBlueprintId = "blueprint:ship:engine";
         public const string BridgeConsoleId = "module:ship:bridge-console";
         public const string EnginePlantId = "module:ship:engine-plant";
         public const string WorkSlotId = "slot:ship:work";
@@ -107,6 +108,7 @@ namespace FrostArk.Unity
         public bool IsReady => _ready;
         public bool IsShoreReady => _shoreReady;
         public bool IsCrossing => _crossing;
+        public bool IsTransitBusy => _queueRunning || _crossing;
         public bool IsRestoring => _restoring;
         public string LastRestoreError => _lastRestoreError;
         public WorldSession Session => _session;
@@ -133,6 +135,9 @@ namespace FrostArk.Unity
         {
             if (_session == null)
                 throw new InvalidOperationException("Persistent world has no session.");
+            if (IsTransitBusy)
+                throw new InvalidOperationException(
+                    "Cannot capture the world while transit is in progress.");
             var locations = new List<PhysicalActorLocation>(_crewActors.Count);
             foreach (var actor in _crewActors)
             {
@@ -331,34 +336,176 @@ namespace FrostArk.Unity
         {
             if (snapshot == null || _restoring || _session == null)
                 return false;
+            if (IsTransitBusy)
+            {
+                _lastRestoreError = "RestoreRejected: transit in progress.";
+                return false;
+            }
+            var preflight = PreflightRestore(snapshot);
+            if (preflight != null)
+            {
+                _lastRestoreError = "RestorePreflightFailed: " + preflight;
+                return false;
+            }
+            SaveGameDto rollback;
+            try
+            {
+                rollback = CaptureSnapshot();
+            }
+            catch (Exception ex)
+            {
+                _lastRestoreError =
+                    "RestorePreflightFailed: rollback capture: " + ex.Message;
+                return false;
+            }
             _restoring = true;
             _lastRestoreError = null;
-            StartCoroutine(RestoreRoutine(snapshot));
+            StartCoroutine(RestoreRoutine(snapshot, rollback));
             return true;
         }
 
-        private IEnumerator RestoreRoutine(SaveGameDto snapshot)
+        private string PreflightRestore(SaveGameDto snapshot)
+        {
+            if (!_ready || !_shoreReady)
+                return "WorldNotReady";
+            var checkpoint = snapshot.SceneCheckpoint;
+            if (checkpoint == null)
+                return "CheckpointMissing";
+            try
+            {
+                ValidateCheckpoint(checkpoint);
+            }
+            catch (Exception ex)
+            {
+                return ex.Message;
+            }
+            if (!Application.CanStreamedLevelBeLoaded(ShoreSceneName))
+                return "ShoreSceneNotInBuildSettings";
+            var shoreScene = SceneManager.GetSceneByName(ShoreSceneName);
+            if (!shoreScene.IsValid() || !shoreScene.isLoaded)
+                return "ShoreSceneNotLoaded";
+            ShoreEnvironmentRuntime environment = null;
+            foreach (var root in shoreScene.GetRootGameObjects())
+            {
+                if (root == null) continue;
+                environment = root.GetComponentInChildren<ShoreEnvironmentRuntime>(true);
+                if (environment != null) break;
+            }
+            if (environment == null)
+                return "ShoreEnvironmentMissing";
+            if (!environment.IsReady)
+                return "ShoreEnvironmentNotReady:" +
+                    (environment.Error ?? "unknown");
+
+            var prefab = Resources.Load<GameObject>(ShipPrefabResourcePath);
+            if (prefab == null)
+                return "ShipPrefabMissing";
+            var authoring = prefab.GetComponent<PersistentShipGeometry>();
+            if (authoring == null || authoring.Rooms == null ||
+                authoring.Rooms.Length == 0 || authoring.Doors == null)
+                return "ShipPrefabGeometryInvalid";
+            var prefabRoomIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var binding in authoring.Rooms)
+            {
+                if (binding == null || binding.Origin == null ||
+                    binding.Floor == null || string.IsNullOrEmpty(binding.RoomId))
+                    return "ShipPrefabRoomInvalid";
+                if (!prefabRoomIds.Add(binding.RoomId))
+                    return "ShipPrefabRoomDuplicate:" + binding.RoomId;
+            }
+
+            var state = snapshot.State;
+            foreach (var id in CrewIds)
+                if (!state.HasCrew(id) || state.CrewDuty.Get(id) == null)
+                    return "MissingCanonicalCrew:" + id.Value;
+            if (state.CrewDuty.Members.Any(m => !CrewIds.Contains(m.Id)))
+                return "ForeignCrewRoster";
+            var layout = state.Layout;
+            if (layout.Rooms.Count != prefabRoomIds.Count)
+                return "PrefabLayoutRoomCountMismatch";
+            foreach (var room in layout.Rooms)
+                if (!prefabRoomIds.Contains(room.Id.Value))
+                    return "LayoutRoomNotInPrefab:" + room.Id.Value;
+
+            var portals = new List<ShipRoomPortal>();
+            foreach (var door in authoring.Doors)
+            {
+                if (door == null)
+                    return "ShipPrefabDoorInvalid";
+                try
+                {
+                    portals.Add(new ShipRoomPortal(EntityId.Parse(door.DoorId),
+                        new ShipGridCell(EntityId.Parse(door.FromRoomId),
+                            door.FromCell.x, door.FromCell.y),
+                        new ShipGridCell(EntityId.Parse(door.ToRoomId),
+                            door.ToCell.x, door.ToCell.y),
+                        door.Open));
+                }
+                catch (Exception ex)
+                {
+                    return "ShipPrefabDoorInvalid:" + ex.Message;
+                }
+            }
+
+            ShipSpatialMap map;
+            try
+            {
+                map = ShipSpatialMap.Derive(layout,
+                    Array.Empty<ShipModuleSpatialProfile>(), portals);
+            }
+            catch (Exception ex)
+            {
+                return "ShipLayoutInvalid:" + ex.Message;
+            }
+
+            var savedShip = new HashSet<EntityId>();
+            foreach (var location in snapshot.ActorLocations)
+            {
+                if (location.Theater != PhysicalTheater.Ship)
+                    continue;
+                savedShip.Add(location.CrewId);
+                if (!map.Contains(location.ShipCell) ||
+                    !map.Walkable(location.ShipCell))
+                    return "SavedShipPlacementInvalid:" + location.CrewId.Value;
+            }
+            for (int i = 0; i < CrewIds.Length; i++)
+            {
+                if (savedShip.Contains(CrewIds[i]))
+                    continue;
+                var member = state.CrewDuty.Get(CrewIds[i]);
+                if (member == null || member.IsAway)
+                    continue;
+                var start = new ShipGridCell(EntityId.Parse(BridgeRoomId),
+                    StartCells[i].x, StartCells[i].y);
+                if (!map.Walkable(start) || map.IsPortalEndpoint(start))
+                    return "DefaultShipSpawnInvalid:" + CrewIds[i].Value;
+            }
+            foreach (var move in snapshot.PendingCrewMoves)
+                if (!map.Contains(move.ShipGoal) ||
+                    !map.Walkable(move.ShipGoal) ||
+                    map.IsPortalEndpoint(move.ShipGoal))
+                    return "PendingMoveInvalid:" + move.CrewId.Value;
+
+            foreach (var location in snapshot.ActorLocations)
+            {
+                if (location.Theater != PhysicalTheater.Shore)
+                    continue;
+                var point = new Vector3(location.ShoreX, 0f, location.ShoreZ);
+                if (!NavMesh.SamplePosition(point, out var hit, 0.5f,
+                        NavMesh.AllAreas) ||
+                    (hit.position - point).sqrMagnitude > 0.25f * 0.25f)
+                    return "SavedShorePlacementInvalid:" + location.CrewId.Value;
+            }
+            return null;
+        }
+
+        private IEnumerator RestoreRoutine(SaveGameDto snapshot, SaveGameDto rollback)
         {
             string error = null;
             try
             {
                 _session.RestoreSnapshot(snapshot);
-                _ready = false;
-                _shoreReady = false;
-                _crossing = false;
-                _queueRunning = false;
-                _stepSucceeded = false;
-                _lastReconcileTime = 0f;
-                _initializationError = null;
-                _lastTransitStatus = null;
-                _crewActors.Clear();
-                _shipRoot = null;
-                _bootstrap = null;
-                _commander = null;
-                _camera = null;
-                foreach (Transform child in transform)
-                    if (child != null)
-                        Destroy(child.gameObject);
+                ResetWorldForRebuild();
             }
             catch (Exception ex)
             {
@@ -368,7 +515,87 @@ namespace FrostArk.Unity
 
             if (error != null)
             {
-                _lastRestoreError = error;
+                yield return RollbackRestore(rollback,
+                    "RestoreFailed:" + error);
+                yield break;
+            }
+
+            yield return null;
+            try
+            {
+                BuildWorld(_session);
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Debug.LogException(ex, this);
+            }
+            if (error != null)
+            {
+                yield return RollbackRestore(rollback,
+                    "RestoreBuildFailed:" + error);
+                yield break;
+            }
+
+            float wait = 8f;
+            while ((!_ready || !_shoreReady) && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            if (!_ready || !_shoreReady)
+            {
+                yield return RollbackRestore(rollback,
+                    "RestoreIncomplete:" + (_shoreError ?? "not ready"));
+                yield break;
+            }
+            _restoring = false;
+        }
+
+        private void ResetWorldForRebuild()
+        {
+            _ready = false;
+            _shoreReady = false;
+            _crossing = false;
+            _queueRunning = false;
+            _stepSucceeded = false;
+            _lastReconcileTime = 0f;
+            _initializationError = null;
+            _lastTransitStatus = null;
+            _crewActors.Clear();
+            _shipRoot = null;
+            _bootstrap = null;
+            _commander = null;
+            _camera = null;
+            foreach (Transform child in transform)
+                if (child != null)
+                    Destroy(child.gameObject);
+        }
+
+        private IEnumerator RollbackRestore(SaveGameDto rollback, string failure)
+        {
+            _lastRestoreError = failure + " | restoring previous world";
+            if (rollback == null)
+            {
+                _restoring = false;
+                yield break;
+            }
+
+            string error = null;
+            try
+            {
+                _session.RestoreSnapshot(rollback);
+                ResetWorldForRebuild();
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                Debug.LogException(ex, this);
+            }
+            if (error != null)
+            {
+                _lastRestoreError =
+                    failure + " | RollbackSessionFailed:" + error;
                 _restoring = false;
                 yield break;
             }
@@ -385,7 +612,8 @@ namespace FrostArk.Unity
             }
             if (error != null)
             {
-                _lastRestoreError = error;
+                _lastRestoreError =
+                    failure + " | RollbackBuildFailed:" + error;
                 _restoring = false;
                 yield break;
             }
@@ -396,9 +624,10 @@ namespace FrostArk.Unity
                 wait -= Time.deltaTime;
                 yield return null;
             }
-            if (!_ready || !_shoreReady)
-                _lastRestoreError = "WorldRebuildIncomplete: " +
-                    (_shoreError ?? "not ready");
+            _lastRestoreError = !_ready || !_shoreReady
+                ? failure + " | RollbackIncomplete:" +
+                    (_shoreError ?? "not ready")
+                : failure + " | PreviousWorldRestored";
             _restoring = false;
         }
 
@@ -519,11 +748,26 @@ namespace FrostArk.Unity
                     continue;
                 ReleaseShipPresence(actor.ActorId);
                 actor.ShipMotor.SuspendForShoreDeparture();
-                var point = savedShore.TryGetValue(actor.ActorId, out var saved)
-                    ? new Vector3(saved.ShoreX, 0f, saved.ShoreZ)
-                    : fallback;
-                if (!actor.SetShoreMode(point))
-                    actor.SetShoreMode(fallback);
+                if (savedShore.TryGetValue(actor.ActorId, out var saved))
+                {
+                    if (!actor.SetShoreMode(
+                            new Vector3(saved.ShoreX, 0f, saved.ShoreZ)))
+                    {
+                        // An exact saved position must never degrade to the
+                        // authored entry point; fail the restore instead.
+                        _lastRestoreError = "SavedShorePlacementFailed:" +
+                            actor.ActorId.Value;
+                        _shoreError = _lastRestoreError;
+                        _shoreReady = false;
+                        Physics.SyncTransforms();
+                        return;
+                    }
+                }
+                else if (!actor.SetShoreMode(fallback))
+                {
+                    _lastTransitStatus = "ReconcileShoreFailed:" +
+                        actor.ActorId.Value;
+                }
             }
             Physics.SyncTransforms();
             ReconcileCrewPresence();
@@ -1354,6 +1598,7 @@ namespace FrostArk.Unity
             var bridge = EntityId.Parse(BridgeRoomId);
             var engine = EntityId.Parse(EngineRoomId);
             var blueprint = EntityId.Parse(BlueprintId);
+            var engineBlueprint = EntityId.Parse(EngineBlueprintId);
             var bridgeConsole = EntityId.Parse(BridgeConsoleId);
             var enginePlant = EntityId.Parse(EnginePlantId);
             var layout = ShipLayoutState.Create(
@@ -1365,12 +1610,14 @@ namespace FrostArk.Unity
                 new[]
                 {
                     new ShipModuleBlueprint(blueprint, ShipModuleKind.Auxiliary,
+                        1, 1, EntityId.Parse("item:ship:machine-parts"), 1, 1),
+                    new ShipModuleBlueprint(engineBlueprint, ShipModuleKind.Engine,
                         1, 1, EntityId.Parse("item:ship:machine-parts"), 1, 1)
                 },
                 new[]
                 {
                     new ShipModule(bridgeConsole, blueprint, bridge, 0, 5),
-                    new ShipModule(enginePlant, blueprint, engine, 4, 4)
+                    new ShipModule(enginePlant, engineBlueprint, engine, 4, 4)
                 });
 
             var members = new[]
