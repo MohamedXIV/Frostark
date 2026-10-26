@@ -832,7 +832,11 @@ namespace FrostArk.Unity
                 _commander.IssueMoveOrder(shorePoint);
             else if (success > 0 && hasShipDestination && _commander != null)
                 _commander.IssueShipMoveOrder(shipCell, shipWorldPoint);
-            _lastTransitStatus = "TransitComplete " + success + "/" + ids.Count;
+            var completed = "TransitComplete " + success + "/" + ids.Count;
+            _lastTransitStatus = success < ids.Count &&
+                !string.IsNullOrEmpty(_lastTransitStatus)
+                ? completed + " | " + _lastTransitStatus
+                : completed;
         }
 
         private List<EntityId> OrderTransitIds(IEnumerable<EntityId> ids, bool toShore)

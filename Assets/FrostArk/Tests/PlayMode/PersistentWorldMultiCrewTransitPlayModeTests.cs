@@ -192,6 +192,50 @@ namespace FrostArk.Unity.Tests
             yield return null;
         }
 
+        [UnityTest]
+        public IEnumerator ReusedTransitionId_RollsBackToShoreAndAllowsFreshReturn()
+        {
+            PersistentWorldRuntime runtime = null;
+            try
+            {
+                yield return LoadWorld(r => runtime = r);
+                var captain = runtime.CrewActors.First(a => a.ActorId == Captain);
+                var transition = EntityId.Parse("transition:reused:crossing");
+
+                Assert.That(runtime.TryCrossActor(Captain, transition), Is.True);
+                yield return WaitUntil(() => !runtime.IsCrossing && !captain.IsOnShip,
+                    20f, "Captain must reach shore before the reused transfer.");
+
+                Assert.That(runtime.TryCrossActor(Captain, transition), Is.True);
+                yield return WaitUntil(() => !runtime.IsCrossing, 20f,
+                    "The reused transition must finish with a rollback.");
+
+                Assert.That(captain.IsOnShip, Is.False,
+                    "A rejected return transfer must keep the actor on shore.");
+                Assert.That(runtime.LastTransitStatus, Does.Contain(
+                    "ShipTransferRejected"), runtime.LastTransitStatus);
+                Assert.That(captain.ShoreAgent.enabled, Is.True);
+                Assert.That(captain.ShipMotor.enabled, Is.False);
+                Assert.That(runtime.Session.SceneCheckpoint.Theater,
+                    Is.EqualTo(PhysicalTheater.Shore),
+                    "Rollback must restore the shore checkpoint.");
+                Assert.That(runtime.Session.SceneCheckpoint.PartyIds,
+                    Is.EquivalentTo(new[] { Captain }));
+
+                Assert.That(runtime.TryCrossActor(Captain,
+                    EntityId.Parse("transition:reused:return")), Is.True);
+                yield return WaitUntil(() => !runtime.IsCrossing && captain.IsOnShip,
+                    20f, "A fresh transition ID must return the actor cleanly.");
+                Assert.That(runtime.Session.SceneCheckpoint.Theater,
+                    Is.EqualTo(PhysicalTheater.Ship));
+            }
+            finally
+            {
+                Cleanup(runtime);
+            }
+            yield return null;
+        }
+
         private static void SelectBoth(TacticalCommandController commander)
         {
             commander.ClearSelection();
