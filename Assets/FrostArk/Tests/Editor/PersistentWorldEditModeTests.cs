@@ -41,6 +41,11 @@ namespace FrostArk.Unity.Tests
                     Is.EqualTo(4), "No second shore proxy object may exist.");
                 Assert.That(root.GetComponentsInChildren<ShipTacticalSceneBootstrap>(true).Length,
                     Is.EqualTo(1), "Exactly one resident ship may exist.");
+                var geometry = runtime.ShipRoot.GetComponent<PersistentShipGeometry>();
+                Assert.That(geometry, Is.Not.Null,
+                    "The ship must be an authored prefab, not rebuilt geometry.");
+                Assert.That(geometry.Rooms.Length, Is.EqualTo(2));
+                Assert.That(geometry.Doors.Length, Is.EqualTo(1));
                 Assert.That(root.GetComponentsInChildren<ShipRoomClickSurface>(true).Length,
                     Is.EqualTo(2));
                 Assert.That(root.GetComponentsInChildren<Camera>(true).Length, Is.EqualTo(1));
