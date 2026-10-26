@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using FrostArk.Core.Application;
 using FrostArk.Core.Save;
@@ -66,7 +67,7 @@ namespace FrostArk.Unity.Tests
             finally
             {
                 if (root != null)
-                    Object.DestroyImmediate(root);
+                    UnityEngine.Object.DestroyImmediate(root);
                 session?.Dispose();
             }
         }
@@ -93,7 +94,41 @@ namespace FrostArk.Unity.Tests
             finally
             {
                 if (root != null)
-                    Object.DestroyImmediate(root);
+                    UnityEngine.Object.DestroyImmediate(root);
+                session?.Dispose();
+            }
+        }
+
+        [Test]
+        public void BuildWorld_RejectsForeignKeyPhysicalCheckpoint()
+        {
+            var root = new GameObject("E12PersistentWorld_ForeignCheckpoint");
+            WorldSession session = null;
+            try
+            {
+                var captain = FrostArk.Core.World.EntityId.Parse(
+                    PersistentWorldRuntime.CaptainId);
+                session = new WorldSession(
+                    PersistentWorldRuntime.CreateDefaultState(captainAway: true));
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    FrostArk.Core.World.EntityId.Parse("scene:shore:foreign"),
+                    FrostArk.Core.World.EntityId.Parse(PersistentWorldRuntime.ShoreSiteId),
+                    FrostArk.Core.World.EntityId.Parse(PersistentWorldRuntime.ShoreAnchorId),
+                    new[] { captain }));
+                var runtime = root.AddComponent<PersistentWorldRuntime>();
+
+                Assert.Throws<InvalidOperationException>(() => runtime.BuildWorld(session));
+
+                Assert.That(runtime.IsReady, Is.False);
+                Assert.That(root.GetComponentsInChildren<ShipTacticalSceneBootstrap>(true),
+                    Is.Empty);
+                Assert.That(root.GetComponentsInChildren<PersistentCrewActor>(true),
+                    Is.Empty);
+            }
+            finally
+            {
+                if (root != null)
+                    UnityEngine.Object.DestroyImmediate(root);
                 session?.Dispose();
             }
         }

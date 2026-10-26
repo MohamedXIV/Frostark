@@ -203,6 +203,7 @@ namespace FrostArk.Unity
                 session.SceneCheckpoint.Theater != PhysicalTheater.Shore)
                 throw new InvalidOperationException(
                     "Persistent world requires a ship or shore physical checkpoint.");
+            ValidateCheckpoint(session.SceneCheckpoint);
 
             var shipObject = new GameObject("ShipWorld | persistent");
             shipObject.transform.SetParent(transform, false);
@@ -292,6 +293,27 @@ namespace FrostArk.Unity
                 save.Bind(this);
                 StartCoroutine(LoadShoreEnvironment());
             }
+        }
+
+        /// <summary>
+        /// This slice owns exactly one ship and one shore. A save from another
+        /// physical scene must fail loudly instead of silently loading this one.
+        /// </summary>
+        private static void ValidateCheckpoint(PhysicalSceneCheckpoint checkpoint)
+        {
+            if (checkpoint.Theater == PhysicalTheater.Ship)
+            {
+                if (checkpoint.SceneId != EntityId.Parse(ShipSceneId) ||
+                    checkpoint.SpawnAnchorId != EntityId.Parse(ShipAnchorId))
+                    throw new InvalidOperationException(
+                        "UnsupportedShipCheckpoint:" + checkpoint.SceneId.Value);
+                return;
+            }
+            if (checkpoint.SceneId != EntityId.Parse(ShoreSceneId) ||
+                checkpoint.SiteId != EntityId.Parse(ShoreSiteId) ||
+                checkpoint.SpawnAnchorId != EntityId.Parse(ShoreAnchorId))
+                throw new InvalidOperationException(
+                    "UnsupportedShoreCheckpoint:" + checkpoint.SceneId.Value);
         }
 
         /// <summary>

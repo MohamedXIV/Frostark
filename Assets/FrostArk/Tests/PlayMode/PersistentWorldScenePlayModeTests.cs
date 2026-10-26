@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Linq;
 using FrostArk.Core.Application;
+using FrostArk.Core.Inventory;
 using FrostArk.Core.Save;
 using FrostArk.Unity;
 using NUnit.Framework;
@@ -441,6 +442,129 @@ namespace FrostArk.Unity.Tests
                 "In-place restore must preserve the exact saved shore position.");
 
             Object.Destroy(runtime.transform.root.gameObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator SaveAboard_ColdRestoreKeepsOneShipCrewCargoAndPendingMove()
+        {
+            var load = SceneManager.LoadSceneAsync("E12PersistentWorld",
+                LoadSceneMode.Single);
+            Assert.That(load, Is.Not.Null);
+            yield return load;
+            yield return null;
+            yield return null;
+
+            var runtime = Object.FindAnyObjectByType<PersistentWorldRuntime>();
+            Assert.That(runtime, Is.Not.Null);
+            Assert.That(runtime.IsReady, Is.True, runtime.InitializationError);
+            float wait = 5f;
+            while (!runtime.IsShoreReady && wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            Assert.That(runtime.IsShoreReady, Is.True, runtime.ShoreError);
+
+            var captain = runtime.CrewActors.First(a => a.ActorId ==
+                EntityId.Parse(PersistentWorldRuntime.CaptainId));
+            var commander = runtime.Commander;
+            var water = EntityId.Parse(PersistentWorldRuntime.WaterItemId);
+            commander.ClearSelection();
+            commander.SelectActor(captain.ActorId);
+            Physics.SyncTransforms();
+            Assert.That(commander.ProcessContextClick(
+                runtime.GameplayCamera.WorldToScreenPoint(
+                    new Vector3(8.5f, 0f, 2.5f))), Is.True);
+            yield return null;
+            Assert.That(captain.ShipMotor.IsMoving, Is.True,
+                "The save fixture needs an active ship-grid route.");
+            Assert.That(runtime.Session.PendingCrewMoves, Is.Not.Empty);
+
+            var startCell = captain.ShipMotor.LastReachedCell;
+            var saved = SaveCodec.TryDecode(
+                SaveCodec.Encode(runtime.CaptureSnapshot()));
+            Assert.That(saved.Success, Is.True, saved.Error.ToString());
+            var savedCaptain = saved.Value.ActorLocations
+                .First(x => x.CrewId == captain.ActorId);
+            Assert.That(savedCaptain.Theater, Is.EqualTo(PhysicalTheater.Ship));
+            Assert.That(savedCaptain.ShipCell, Is.EqualTo(startCell));
+            var savedMove = saved.Value.PendingCrewMoves
+                .FirstOrDefault(m => m.CrewId == captain.ActorId);
+            Assert.That(savedMove, Is.Not.Null,
+                "A mid-route save must retain the accepted ship Move.");
+            var goal = savedMove.ShipGoal;
+            long waterBefore = saved.Value.State.Inventory.GetAmount(
+                InventoryContainer.ShipHold, water);
+            int modulesBefore = saved.Value.State.Layout.Modules.Count;
+
+            Object.Destroy(runtime.transform.root.gameObject);
+            var unload = SceneManager.UnloadSceneAsync(
+                PersistentWorldRuntime.ShoreSceneName);
+            if (unload != null)
+                yield return unload;
+            yield return null;
+
+            var restoredRoot = new GameObject("E12ColdAboardRestore");
+            restoredRoot.SetActive(false);
+            var scope = restoredRoot.AddComponent<WorldSessionScope>();
+            scope.SetRestoreSnapshot(saved.Value);
+            var restoredRuntime = restoredRoot.AddComponent<PersistentWorldRuntime>();
+            restoredRoot.SetActive(true);
+            if (scope.Container == null)
+                scope.Build();
+            yield return null;
+            yield return null;
+
+            wait = 8f;
+            while ((!restoredRuntime.IsReady || !restoredRuntime.IsShoreReady) &&
+                   wait > 0f)
+            {
+                wait -= Time.deltaTime;
+                yield return null;
+            }
+            Assert.That(restoredRuntime.IsReady, Is.True,
+                restoredRuntime.InitializationError);
+            Assert.That(restoredRuntime.IsShoreReady, Is.True,
+                restoredRuntime.ShoreError);
+            Assert.That(restoredRuntime.transform
+                .GetComponentsInChildren<ShipTacticalSceneBootstrap>(true).Length,
+                Is.EqualTo(1), "Cold restore must create exactly one ship.");
+            Assert.That(restoredRuntime.transform
+                .GetComponentsInChildren<PersistentCrewActor>(true).Length,
+                Is.EqualTo(4));
+            Assert.That(restoredRuntime.transform
+                .GetComponentsInChildren<ShipRoomClickSurface>(true).Length,
+                Is.EqualTo(2));
+            var restoredState = restoredRuntime.Session.Capture().State;
+            Assert.That(restoredState.Layout.Modules.Count,
+                Is.EqualTo(modulesBefore), "Restore must not duplicate modules.");
+            Assert.That(restoredState.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, water),
+                Is.EqualTo(waterBefore), "Restore must not duplicate cargo.");
+            Assert.That(restoredState.CrewDuty.GetRepair(
+                EntityId.Parse(PersistentWorldRuntime.RepairJobId)), Is.Not.Null);
+
+            var restoredCaptain = restoredRuntime.CrewActors.First(a =>
+                a.ActorId == captain.ActorId);
+            Assert.That(restoredCaptain.IsOnShip, Is.True);
+            var moveDeadline = Time.realtimeSinceStartup + 10f;
+            while ((restoredCaptain.ShipMotor.LastReachedCell != goal ||
+                    restoredCaptain.ShipMotor.IsMoving) &&
+                   Time.realtimeSinceStartup < moveDeadline)
+                yield return null;
+            Assert.That(restoredCaptain.ShipMotor.LastReachedCell,
+                Is.EqualTo(goal), "The saved pending Move must resume after restore.");
+            Assert.That(restoredRuntime.Session.PendingCrewMoves, Is.Empty);
+            Assert.That(restoredRuntime.Session.Capture().State.Inventory.GetAmount(
+                    InventoryContainer.ShipHold, water),
+                Is.EqualTo(waterBefore), "Resumed movement must not consume cargo.");
+
+            Object.Destroy(restoredRoot);
+            var unloadRestored = SceneManager.UnloadSceneAsync(
+                PersistentWorldRuntime.ShoreSceneName);
+            if (unloadRestored != null)
+                yield return unloadRestored;
             yield return null;
         }
 
