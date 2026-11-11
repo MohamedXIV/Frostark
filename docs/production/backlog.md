@@ -1,5 +1,7 @@
 # Canonical GitHub issue map — FrostArk
 
+> **Current integration checkpoint (2026-11-12):** E11 [#126](https://github.com/MohamedXIV/Frostark/pull/126) and E12 [#133](https://github.com/MohamedXIV/Frostark/pull/133) are merged into `main`; older individual stacked PRs are integrated or archived, not independent future merge requirements. E12 #127–#130 closed; E11 #109, #111, #112 closed. Open E11 follow-ups: [#110](https://github.com/MohamedXIV/Frostark/issues/110) dynamic ship layout, [#113](https://github.com/MohamedXIV/Frostark/issues/113) stuck crew/yielding/off-camera recovery, [#114](https://github.com/MohamedXIV/Frostark/issues/114) extended playable acceptance. Next player-prioritized art task: [#134](https://github.com/MohamedXIV/Frostark/issues/134) Mixamo characters (E09). Legacy Galley issue #106 and optional GOAP #96 are closed as superseded/deferred. **All “live” counts/gates dated 2026-10-11 below are historical, not current.** GitHub Issues/PRs remain authoritative.
+
 All items are in [MohamedXIV/Frostark Issues](https://github.com/MohamedXIV/Frostark/issues), created on 2026-10-10. The issues' **acceptance criteria** and dependencies are authoritative for execution; roadmap describes product direction. Do not mark any Epic done merely because documentation exists.
 
 | Parent Epic | Implementation issues |
