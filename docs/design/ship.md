@@ -4,6 +4,10 @@
 
 Begin in a fragile fishing trawler, tug or research craft (starting hull undecided), partially damaged and badly insulated. Grow through **constrained modular expansion**: reopen sealed compartments, reinforce hull/icebreaking bow, rework boiler/engine, add workshops, medical facilities, bunks, storage, insulation, cranes, lights, defensive systems and weapons. Ship physical appearance must reflect improvements, wear and repairs.
 
+## Accepted shipboard population constraint (2026-11-12)
+
+This ship is home for a **small, named group**, **at most 12 people aboard in total including the protagonist**; 10–12 is the maximum-end ambition and the normal roster may be considerably smaller. There is no requirement to fill all berths or scale into a colony/large-crew management simulator. Recruiting a rare survivor is consequential and constrained by accommodation, food, care, roles and survival. Design management interfaces and concurrent on-ship actor simulation for that bounded roster so eventual mobile support does not depend on aggressive optimization. The approved design ceiling is distinct from a currently implemented occupancy rule; do not claim Core enforces it until code/tests prove it.
+
 ## Top-down ship management and commands
 
 The ship is a visible multi-room moving home: inspect compartments, click-select crew or rooms, issue assignments/repairs/production and view fuel/heat/injury consequences in the same persistent WorldState. Selected protagonist and crew receive contextual move/interact orders inside reachable areas; there is no assumption of WASD avatar walking. This combines Frostpunk pressure and Fallout Shelter-like compartment management with Last Train Home crew stakes. [Accepted interaction contract](control-and-interaction.md).

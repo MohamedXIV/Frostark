@@ -5,7 +5,7 @@
 1. **Open water / pack ice:** top-down ship command, map/waypoint route scouting, storms, visibility, ship motion, ice collision and vessel weapon stations. Actual manual helm precision is an open design choice; no assumed WASD piloting. World/route map supports informed planning but does not replace navigation.
 2. **Ship interior / deck:** inspect and click compartments/workstations/crew, assign jobs, schedule repairs, rest, crafting, supply rationing and heat zones with a Fallout Shelter-like room-management view; ordered characters can move between areas without erasing persistent state.
 3. **Landing zone:** select the protagonist alone or a party, click ground to order movement and click entities/targets for context actions; human/creature AI executes real-time fights, cover and retreat while resources and wounds persist.
-4. **Strategic layer:** map, weather, known settlements/factions, rumor leads, mission selection, economic decisions, expedition roster and gear.
+4. **Strategic layer:** map, weather, sparse known contacts/rumor leads, excursion decisions, rare survivor rescue, ship supplies, expedition roster and gear; no standalone settlement-management layer.
 
 ## Player control across contexts
 
@@ -14,7 +14,7 @@ The **protagonist is a selected persistent unit**, not a directly steered WASD p
 ## Moment-to-moment loops
 
 - **Sea:** chart/scout → select a route → navigate through water/ice → manage power and heat → detect/evade/engage threats → dock.
-- **Land:** equip party → disembark → explore in real time → use cover/stealth/combat → extract resources/intelligence/survivors → return with consequences.
+- **Land:** equip party → disembark → explore in real time → use cover/stealth/combat → extract resources/intelligence and occasionally find a **rare recruitable survivor** → return with consequences for the **ship and named crew**.
 - **Ship:** monitor temperature and stores → move scarce staff among duties → heal/fix/produce → upgrade modules/equipment → prepare next voyage.
 
 ## Early-to-late trajectory
@@ -24,6 +24,8 @@ The **protagonist is a selected persistent unit**, not a directly steered WASD p
 - **Late:** deliberate trade-offs for harsh polar/deep-freeze zones, modular ship loadouts, higher-risk expeditions into restricted labs/military sites, autonomous world consequences and optional leads/endings.
 
 No arbitrary gear treadmill. Some regions are gated by **infrastructure/environment tolerance** (warmth, breathing gear, hull strength), not only combat level.
+
+**Ship-first scale:** no population treadmill. The roster aboard never exceeds the accepted design ceiling of **12 people total, protagonist included**; these are named, individually consequential characters rather than dozens of workers. Ship management, mission flow and eventual touch UI should remain comprehensible at this small scale.
 
 ## Stakes and economy
 
