@@ -1,3 +1,25 @@
+FrostArk scene status — integrated main, 2026-11-12
+
+PRIMARY GAMEPLAY SLICE:
+  Assets/FrostArk/Scenes/E12PersistentWorld.unity
+  + additive Assets/FrostArk/Scenes/E12ShoreEnvironment.unity
+  Resources/E12PersistentShip.prefab: one persistent physical ship
+  + 4 unique crew actor roots, Ship Grid A* / Shore NavMesh, transit,
+    Work/Rest/Needs and debug F5/F9 Save/Load.
+  Verified tested branch HEAD: 5143742 (agent G0/G1/G2/G3; player Game-view).
+  Remaining: Mixamo humanoid visuals #134, traffic fail-safe #113,
+    production save UI and platform/device validation.
+
+LEGACY OPT-IN TEST FIXTURES (NOT THE GAME ENTRY POINT):
+  ShipRtsDemo.unity: E11 ship-only regression/demo.
+  ShipShoreTransitLauncher.unity, ShipDeckEnvironment.unity,
+    ShoreLandingEnvironment.unity: older transit regression scenes.
+  TacticalVerticalSlice.unity: separate tactical test scene.
+  SessionBootstrap.unity: generated session integration fixture.
+  Do not remove/disable test scenes while Unity tests reference them.
+
+--- Historical instructions from initial development ---
+
 FrostArk Session Bootstrap fixture
 
 This folder is intentionally tracked. The actual SessionBootstrap.unity scene is
@@ -14,7 +36,7 @@ Generate and import only in a real authorized Unity 6000.6.0f1 session,
 inspect the generated YAML/meta diff and run EditMode tests before G2 PASS.
 
 
-Ship RTS E11 demo (Draft PR #116, based on #117 -> #118)
+Ship RTS E11 demo (now merged as historical fixture via #126)
 
 Open Assets/FrostArk/Scenes/ShipRtsDemo.unity in Unity 6000.6.0f1.
 Press Play. The scene has a serialized ShipRtsDemoRuntime entry: it builds two
@@ -25,5 +47,5 @@ Left click / Shift-click / drag box select 1-4 crew; right-click floor to move.
 C closes the door, O opens it, M toggles local ship motion; H toggles help.
 
 It is an opt-in ship-only behavior fixture, not a final production level.
-Unity Editor compilation and G2/G3 PlayMode are NOT VERIFIED by a green Core CI.
+Core CI alone does not prove Unity G2/G3; integrated E11/E12 G2/G3 was subsequently tested and accepted on the final gameplay slice.
 See docs/engineering/ship-rts-demo-playtest.md for full test and limitations.
