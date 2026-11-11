@@ -69,7 +69,8 @@ namespace FrostArk.Core.Application
                 else if ((member.IsAway ? PhysicalTheater.Shore : PhysicalTheater.Ship)
                          != requestedTheater)
                     status = CrewTheaterRouteStatus.WrongTheater;
-                else if (checkpoint.Theater != requestedTheater)
+                else if (requestedTheater == PhysicalTheater.Shore &&
+                         checkpoint.Theater != PhysicalTheater.Shore)
                     status = CrewTheaterRouteStatus.InactiveTheater;
                 else if (requestedTheater == PhysicalTheater.Shore &&
                          !checkpoint.PartyIds.Contains(id))

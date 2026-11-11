@@ -89,6 +89,14 @@ namespace FrostArk.Unity
                 builder.RegisterComponent(presenter);
             }
 
+            // The persistent world composition owns one ship, one actor root
+            // per crew and the single gameplay camera/input rig. Register it
+            // so VContainer injects the one scoped WorldSession.
+            var persistentWorld = GetComponent<PersistentWorldRuntime>() ??
+                GetComponentInChildren<PersistentWorldRuntime>();
+            if (persistentWorld != null)
+                builder.RegisterComponent(persistentWorld);
+
             // Entire run root may optionally opt into the ship/shore scene
             // adapter. Destination environment scenes must remain scope-free.
             var transit = GetComponent<ShoreSceneTransitCoordinator>();

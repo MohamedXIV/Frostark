@@ -51,11 +51,12 @@ namespace FrostArk.Unity
         [SerializeField] private RoomBinding[] rooms = Array.Empty<RoomBinding>();
         [SerializeField] private DoorBinding[] doors = Array.Empty<DoorBinding>();
         [SerializeField] private CrewBinding[] crew = Array.Empty<CrewBinding>();
-        [SerializeField, Min(0.1f)] private float crewMoveSpeed = 2.5f;
+        [SerializeField, Min(0.1f)] private float crewMoveSpeed = 4.5f;
         [Header("Explicit new-run ship spawn (never applied to restored saves)")]
         [SerializeField] private bool establishShipCheckpointForFreshRun;
         [SerializeField] private string startingSceneId = "scene:ship-interior";
         [SerializeField] private string startingAnchorId = "anchor:ship-start";
+        private EntityId _configuredShipSceneId;
         private WorldSession _session;
         private ShipSpatialMap _map;
         private uint _layoutFingerprint;
@@ -94,6 +95,18 @@ namespace FrostArk.Unity
             crew = crewBindings ?? throw new ArgumentNullException(nameof(crewBindings));
         }
 
+        /// <summary>
+        /// Identifies the one resident ship when the saved checkpoint is shore.
+        /// The ship object is persistent and is not rediscovered from a scene.
+        /// </summary>
+        public void ConfigureShipSceneId(EntityId shipSceneId)
+        {
+            if (!shipSceneId.IsValid)
+                throw new ArgumentException("Valid resident ship scene ID required.",
+                    nameof(shipSceneId));
+            _configuredShipSceneId = shipSceneId;
+        }
+
         [Inject]
         public void Construct(WorldSession session) => Initialize(session);
 
@@ -103,8 +116,17 @@ namespace FrostArk.Unity
             if (shipRoot == null || commander == null)
                 throw new InvalidOperationException("Ship root and tactical commander are required.");
             var checkpoint = session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship)
-                throw new InvalidOperationException("Ship bootstrap requires authoritative ship checkpoint.");
+            if (checkpoint == null)
+                throw new InvalidOperationException("Ship bootstrap requires an authoritative physical checkpoint.");
+
+            var shipSceneId = checkpoint.Theater == PhysicalTheater.Ship
+                ? checkpoint.SceneId
+                : (_configuredShipSceneId.IsValid
+                    ? _configuredShipSceneId
+                    : (session.ResidentShipSceneId ?? default));
+            if (!shipSceneId.IsValid)
+                throw new InvalidOperationException(
+                    "Ship bootstrap requires the resident ship identity while ashore.");
 
             var state = session.Capture().State;
             var origins = new Dictionary<EntityId, Vector3>();
@@ -138,8 +160,8 @@ namespace FrostArk.Unity
                 var id = binding.Actor.ActorId;
                 var member = state.CrewDuty.Get(id);
                 if (!id.IsValid || !state.HasCrew(id) || member == null ||
-                    member.IsAway || member.Wounds >= 1000)
-                    throw new InvalidOperationException("Spawned crew must be canonical and shipboard.");
+                    member.Wounds >= 1000)
+                    throw new InvalidOperationException("Spawned crew must be canonical and available.");
                 var roomId = EntityId.Parse(binding.StartingRoomId);
                 if (!origins.ContainsKey(roomId))
                     throw new InvalidOperationException("Crew starts in an unregistered room.");
@@ -149,8 +171,17 @@ namespace FrostArk.Unity
                 walker.Configure(shipRoot, _map, origins,
                     new ShipGridCell(roomId, binding.StartingCell.x, binding.StartingCell.y),
                     crewMoveSpeed);
-                binding.Actor.BindScene(checkpoint.SceneId);
-                commander.RegisterShipActor(binding.Actor);
+                binding.Actor.BindScene(shipSceneId);
+                // Away crew own the same physical object, currently on shore.
+                // They must not acquire ship duty or a ship move executor.
+                if (!member.IsAway)
+                    commander.RegisterShipActor(binding.Actor);
+            }
+            if (checkpoint.Theater == PhysicalTheater.Shore)
+            {
+                // Establishes the persistent ship's work-observation identity
+                // for onboard crew while the landing party is ashore.
+                session.BeginShipWorkObservation(shipSceneId);
             }
             // One scene-local arbitration adapter reuses canonical crew state
             // and the existing RTS commander; no autonomous duplicate clock.

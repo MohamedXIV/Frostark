@@ -21,8 +21,12 @@ FOLDERS = [
 class UnityBridgeStructureTests(unittest.TestCase):
     def test_runtime_assembly_references_only_approved_bridges(self):
         asm = json.loads((ROOT / UNITY / "FrostArk.Unity.asmdef").read_text())
+        # Unity.AI.Navigation is the approved runtime bridge for the one
+        # additive shore environment's NavMesh bake. It is not a new gameplay
+        # authority or simulation dependency.
         self.assertEqual(asm["references"], [
-            "FrostArk.Core", "VContainer", "Unity.InputSystem", "UnityEngine.UI"
+            "FrostArk.Core", "VContainer", "Unity.InputSystem", "UnityEngine.UI",
+            "Unity.AI.Navigation"
         ])
         self.assertEqual(asm["includePlatforms"], [])
         self.assertFalse(asm["noEngineReferences"])

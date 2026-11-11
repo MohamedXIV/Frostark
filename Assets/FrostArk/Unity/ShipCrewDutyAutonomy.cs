@@ -60,9 +60,14 @@ namespace FrostArk.Unity
             _map = map ?? throw new ArgumentNullException(nameof(map));
             _activities.Clear();
             var checkpoint = _session.SceneCheckpoint;
-            if (checkpoint == null || checkpoint.Theater != PhysicalTheater.Ship)
+            var shipSceneId = checkpoint != null && checkpoint.Theater == PhysicalTheater.Ship
+                ? checkpoint.SceneId
+                : (_session.ResidentShipSceneId.HasValue
+                    ? _session.ResidentShipSceneId.Value
+                    : (_commander.ShipActors.FirstOrDefault(a => a != null && a.SceneId.IsValid)?.SceneId ?? default));
+            if (checkpoint == null || !shipSceneId.IsValid)
                 throw new InvalidOperationException("Physical duties require a canonical ship scene.");
-            _observedSceneId = checkpoint.SceneId;
+            _observedSceneId = shipSceneId;
             _session.BeginShipWorkObservation(_observedSceneId);
             _commander.OrderIssued += OnOrderIssued;
         }
@@ -158,17 +163,32 @@ namespace FrostArk.Unity
 
         private void Update() => Tick();
 
+        public void ReleaseActorForDeparture(EntityId id)
+        {
+            if (!id.IsValid || _session == null) return;
+            _session.ClearShipWorkPresence(id);
+            if (_activities.TryGetValue(id, out var activity))
+                End(id, activity);
+        }
+
         /// <summary>Explicit Tick is usable by Unity EditMode fixtures;
         /// no world-clock or offscreen work is advanced here.</summary>
         public void Tick()
         {
             if (_session == null || _commander == null || _map == null ||
-                _session.SceneCheckpoint == null ||
-                _session.SceneCheckpoint.Theater != PhysicalTheater.Ship)
+                _session.SceneCheckpoint == null || !_observedSceneId.IsValid)
                 return;
 
+            var initialWorld = _session.Capture().State;
+            foreach (var awayMember in initialWorld.CrewDuty.Members)
+            {
+                if (awayMember != null && awayMember.IsAway)
+                    ReleaseActorForDeparture(awayMember.Id);
+            }
+
             foreach (var actor in _commander.ShipActors.Where(a =>
-                a != null && a.Walker != null && a.Walker.IsConfigured)
+                a != null && a.gameObject.activeInHierarchy &&
+                a.Walker != null && a.Walker.IsConfigured)
                 .OrderBy(a => a.ActorId.Value, StringComparer.Ordinal))
             {
                 var id = actor.ActorId;
@@ -178,9 +198,11 @@ namespace FrostArk.Unity
                 var selected = _commander.Selection.IsSelected(id);
                 var hasPlayerOrder = _agency.HasActivePlayerMove(id);
                 var world = _session.Capture().State;
+                var member = world.CrewDuty.Get(id);
+                if (member == null || member.IsAway)
+                    continue;
                 var policy = CrewAgencyPolicy.Evaluate(world, id,
                     selected, hasPlayerOrder);
-                var member = world.CrewDuty.Get(id);
                 // An owned Work/Rest claim can hide provision offers from the
                 // existing offer discovery. Yield that physical slot once a
                 // Need crosses the seek threshold, then let the ordinary

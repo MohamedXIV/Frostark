@@ -138,7 +138,8 @@ namespace FrostArk.Unity
                     var sameTheater = executors.Where(e =>
                         e.ActorId == route.ActorId && e.Theater == goal.Theater).ToArray();
                     var matches = sameTheater.Where(e =>
-                        e.SceneId == snapshot.SceneCheckpoint.SceneId).ToArray();
+                        MatchesExpectedScene(session, snapshot.SceneCheckpoint,
+                            goal.Theater, e.SceneId)).ToArray();
                     if (matches.Length == 0)
                         status = sameTheater.Length > 0 ?
                             CrewMoveDispatchStatus.StaleSceneExecutor :
@@ -155,6 +156,20 @@ namespace FrostArk.Unity
             }
 
             return Array.AsReadOnly(decisions);
+        }
+
+        private static bool MatchesExpectedScene(WorldSession session,
+            PhysicalSceneCheckpoint checkpoint, PhysicalTheater requestedTheater,
+            EntityId executorSceneId)
+        {
+            if (checkpoint == null || !executorSceneId.IsValid)
+                return false;
+            if (requestedTheater == PhysicalTheater.Shore ||
+                checkpoint.Theater == PhysicalTheater.Ship)
+                return executorSceneId == checkpoint.SceneId;
+            if (session.ResidentShipSceneId.HasValue)
+                return executorSceneId == session.ResidentShipSceneId.Value;
+            return executorSceneId != checkpoint.SceneId;
         }
     }
 }

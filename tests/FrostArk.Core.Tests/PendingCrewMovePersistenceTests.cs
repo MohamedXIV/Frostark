@@ -117,5 +117,47 @@ namespace FrostArk.Core.Tests
                     snapshot.ProceduralOverrides, null, new[] { move }));
             }
         }
+
+        [Test]
+        public void OnboardCrewMoveSurvivesShoreExpeditionAndSaveWhileDepartingCrewMoveIsCleared()
+        {
+            using (var session = Session())
+            {
+                session.AcceptShipCrewMove(A, C(4, 2));
+                session.AcceptShipCrewMove(B, C(2, 4));
+                Assert.That(session.PendingCrewMoves.Count, Is.EqualTo(2));
+
+                var shoreScene = EntityId.Parse("scene:order:shore");
+                var site = EntityId.Parse("island:order:floe");
+                var shoreAnchor = EntityId.Parse("anchor:order:shore");
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { B }, true,
+                    EntityId.Parse("transition:order:depart")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    shoreScene, site, shoreAnchor, new[] { B }));
+
+                Assert.That(session.ResidentShipSceneId, Is.EqualTo(Scene));
+                Assert.That(session.GetPendingCrewMove(B), Is.Null,
+                    "Departing crew member must not retain a shipboard move goal.");
+                Assert.That(session.GetPendingCrewMove(A), Is.Not.Null,
+                    "Onboard crew member retains their accepted shipboard move goal.");
+                Assert.That(session.GetPendingCrewMove(A).ShipGoal, Is.EqualTo(C(4, 2)));
+
+                // Onboard crew can also accept a new ship move while the shore party is away.
+                session.AcceptShipCrewMove(A, C(5, 1));
+                Assert.That(session.GetPendingCrewMove(A).ShipGoal, Is.EqualTo(C(5, 1)));
+                Assert.Throws<InvalidOperationException>(() =>
+                    session.AcceptShipCrewMove(B, C(3, 3)));
+
+                var decoded = SaveCodec.TryDecode(SaveCodec.Encode(session.Capture()));
+                Assert.That(decoded.Success, Is.True);
+                using (var restored = WorldSession.Restore(decoded.Value))
+                {
+                    Assert.That(restored.SceneCheckpoint.Theater, Is.EqualTo(PhysicalTheater.Shore));
+                    Assert.That(restored.ResidentShipSceneId, Is.EqualTo(Scene));
+                    Assert.That(restored.PendingCrewMoves.Count, Is.EqualTo(1));
+                    Assert.That(restored.GetPendingCrewMove(A).ShipGoal, Is.EqualTo(C(5, 1)));
+                }
+            }
+        }
     }
 }

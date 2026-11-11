@@ -172,5 +172,33 @@ namespace FrostArk.Core.Tests
                 Assert.That(session.Revision, Is.Zero);
             }
         }
+
+        [Test]
+        public void ConcurrentShipAndShorePresenceRoutesOnboardAndAwayActorsIndependently()
+        {
+            using (var session = NewSession())
+            {
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Ship(ShipScene, Bridge));
+                Assert.That(ShoreCrewTransfer.Transfer(session, new[] { Scout }, true,
+                    EntityId.Parse("transition:concurrent-shore")).Success, Is.True);
+                session.SetSceneCheckpoint(PhysicalSceneCheckpoint.Shore(
+                    ShoreScene, Site, Landing, new[] { Scout }));
+
+                var snapshot = session.Capture();
+                var shipRoute = CrewTheaterMoveRouter.Plan(snapshot.State,
+                    snapshot.SceneCheckpoint, Move(Engineer, Scout), PhysicalTheater.Ship);
+                Assert.That(shipRoute[0].ActorId, Is.EqualTo(Engineer));
+                Assert.That(shipRoute[0].Status, Is.EqualTo(CrewTheaterRouteStatus.Ready));
+                Assert.That(shipRoute[1].ActorId, Is.EqualTo(Scout));
+                Assert.That(shipRoute[1].Status, Is.EqualTo(CrewTheaterRouteStatus.WrongTheater));
+
+                var shoreRoute = CrewTheaterMoveRouter.Plan(snapshot.State,
+                    snapshot.SceneCheckpoint, Move(Engineer, Scout), PhysicalTheater.Shore);
+                Assert.That(shoreRoute[0].ActorId, Is.EqualTo(Engineer));
+                Assert.That(shoreRoute[0].Status, Is.EqualTo(CrewTheaterRouteStatus.WrongTheater));
+                Assert.That(shoreRoute[1].ActorId, Is.EqualTo(Scout));
+                Assert.That(shoreRoute[1].Status, Is.EqualTo(CrewTheaterRouteStatus.Ready));
+            }
+        }
     }
 }
