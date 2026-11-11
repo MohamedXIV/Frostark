@@ -19,9 +19,11 @@ FOLDERS = [
 
 
 class UnityBridgeStructureTests(unittest.TestCase):
-    def test_runtime_assembly_references_only_core_and_vcontainer(self):
+    def test_runtime_assembly_references_only_approved_bridges(self):
         asm = json.loads((ROOT / UNITY / "FrostArk.Unity.asmdef").read_text())
-        self.assertEqual(asm["references"], ["FrostArk.Core", "VContainer", "Unity.InputSystem"])
+        self.assertEqual(asm["references"], [
+            "FrostArk.Core", "VContainer", "Unity.InputSystem", "UnityEngine.UI"
+        ])
         self.assertEqual(asm["includePlatforms"], [])
         self.assertFalse(asm["noEngineReferences"])
 

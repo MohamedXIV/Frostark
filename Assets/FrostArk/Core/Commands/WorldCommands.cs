@@ -333,6 +333,27 @@ namespace FrostArk.Core.Commands
         }
     }
 
+    /// <summary>
+    /// Extend ONLY an already-owned authored Work/Rest slot lease close to
+    /// expiry. This never advances duty progress, grants resources or changes
+    /// the original owner. A fresh claim or renewal is not a physical arrival.
+    /// </summary>
+    public sealed class RenewCrewDutySlotCommand : IGameCommand
+    {
+        public EntityId Id { get; }
+        public EntityId CrewId { get; }
+        public EntityId SlotId { get; }
+        public int LifetimeMinutes { get; }
+        public long ExpectedRevision { get; }
+
+        public RenewCrewDutySlotCommand(EntityId id, EntityId crewId,
+            EntityId slotId, int lifetimeMinutes, long expectedRevision)
+        {
+            Id = id; CrewId = crewId; SlotId = slotId;
+            LifetimeMinutes = lifetimeMinutes; ExpectedRevision = expectedRevision;
+        }
+    }
+
     /// <summary>Cancel/complete occupancy; only the current claim owner can release.</summary>
     public sealed class ReleaseCrewInteractionCommand : IGameCommand
     {

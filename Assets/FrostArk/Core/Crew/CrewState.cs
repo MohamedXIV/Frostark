@@ -205,6 +205,11 @@ namespace FrostArk.Core.Crew
                 _interactions.Claim(slotId, crewId, now, lifetimeMinutes));
         }
 
+        internal CrewState RenewDutyInteraction(EntityId crewId, EntityId slotId,
+            WorldMinute now, int lifetimeMinutes) =>
+            new CrewState(_members, _jobs, _treatments, _consumables,
+                _interactions.RenewDuty(slotId, crewId, now, lifetimeMinutes));
+
         internal CrewState ReleaseInteraction(EntityId crewId, EntityId slotId) =>
             new CrewState(_members, _jobs, _treatments, _consumables,
                 _interactions.Release(slotId, crewId));
@@ -263,6 +268,33 @@ namespace FrostArk.Core.Crew
             return assigned;
         }
 
+        /// <summary>
+        /// Read-only projection of the EXACT same deterministic staffed role
+        /// used by Tick and EffectiveSkill. Never infer a physical work task
+        /// from a character's nominal role when off-shift, replacing another
+        /// specialist or recovering. Does not tick a second duty scheduler.
+        /// </summary>
+        public DutyRole? StaffedRoleFor(EntityId crewId, WorldMinute minute)
+        {
+            if (!crewId.IsValid) return null;
+            foreach (var pair in Staff(minute))
+                if (pair.Value.Id == crewId) return pair.Key;
+            return null;
+        }
+
+        /// <summary>
+        /// Read the SAME one-person-one-role staffed roster used by Tick.
+        /// The thermal reducer must gate the actual staffed Engineer, not
+        /// a nominal specialist or a second independently chosen worker.
+        /// </summary>
+        public EntityId StaffedCrewFor(DutyRole role, WorldMinute minute)
+        {
+            if (!Enum.IsDefined(typeof(DutyRole), role))
+                throw new ArgumentOutOfRangeException(nameof(role));
+            return Staff(minute).TryGetValue(role, out var member)
+                ? member.Id : default;
+        }
+
         public int EffectiveSkill(DutyRole role, WorldMinute minute)
         {
             if (!Enum.IsDefined(typeof(DutyRole), role))
@@ -276,7 +308,8 @@ namespace FrostArk.Core.Crew
         /// head-of-queue repair work. Caller owns minute sequencing and commit.
         /// Wounds do not magically heal during ordinary sleep.
         /// </summary>
-        public CrewState Tick(WorldMinute minute)
+        public CrewState Tick(WorldMinute minute,
+            Func<EntityId, DutyRole, bool> mayProduce = null)
         {
             var staffed = Staff(minute);
             var occupied = new HashSet<string>(staffed.Values.Select(x => x.Id.Value),
@@ -296,7 +329,8 @@ namespace FrostArk.Core.Crew
             }).ToArray();
 
             var jobs = (RepairJob[])_jobs.Clone();
-            if (jobs.Length > 0 && staffed.TryGetValue(DutyRole.Repair, out var repairer))
+            if (jobs.Length > 0 && staffed.TryGetValue(DutyRole.Repair, out var repairer) &&
+                (mayProduce == null || mayProduce(repairer.Id, DutyRole.Repair)))
             {
                 long progress = Math.Max(1, repairer.SkillFor(DutyRole.Repair) / 100);
                 long remaining = jobs[0].RemainingWork - progress;

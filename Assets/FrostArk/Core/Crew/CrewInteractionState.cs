@@ -122,6 +122,26 @@ namespace FrostArk.Core.Crew
             }));
         }
 
+        internal CrewInteractionState RenewDuty(EntityId slotId, EntityId crewId,
+            WorldMinute now, int lifetimeMinutes)
+        {
+            var slot = GetSlot(slotId);
+            var held = GetClaim(slotId);
+            if (slot == null || (slot.Verb != CrewInteractionVerb.Work &&
+                                  slot.Verb != CrewInteractionVerb.Rest) ||
+                held == null || held.CrewId != crewId ||
+                held.ExpiresAt <= now)
+                throw new InvalidOperationException("Cannot renew an unowned or expired duty lease.");
+            if (lifetimeMinutes <= 0 || lifetimeMinutes > 1440 ||
+                held.ExpiresAt.Value - now.Value > 5)
+                throw new ArgumentException("Duty lease renewal is not due or lifetime is invalid.");
+            var nextExpiry = new WorldMinute(checked(now.Value + lifetimeMinutes));
+            if (nextExpiry <= held.ExpiresAt)
+                throw new InvalidOperationException("Duty lease must extend the current expiry.");
+            return Create(_slots, _claims.Select(c => c.SlotId == slotId
+                ? new CrewInteractionClaim(slotId, crewId, nextExpiry) : c));
+        }
+
         internal CrewInteractionState Release(EntityId slotId, EntityId crewId)
         {
             var claim = GetClaim(slotId);

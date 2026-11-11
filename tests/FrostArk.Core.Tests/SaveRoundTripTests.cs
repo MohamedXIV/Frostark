@@ -264,6 +264,23 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void LegacyV17WithoutMoveSuffixRestoresEmptyAndReencodesV18()
+        {
+            var current = SaveCodec.Encode(MakeSnapshot());
+            var v17 = (byte[])current.Clone();
+            v17[8] = 17;
+            v17[9] = 0;
+            RecalculateChecksum(v17);
+
+            var decoded = SaveCodec.TryDecode(v17);
+
+            Assert.That(decoded.Success, Is.True, decoded.Error.ToString());
+            Assert.That(decoded.Value.PendingCrewMoves, Is.Empty);
+            Assert.That(SaveCodec.Encode(decoded.Value), Is.EqualTo(current),
+                "An empty v18 move extension must preserve the v17 payload suffix.");
+        }
+
+        [Test]
         public void LegacyV11WithoutIslandSiteProgressMigratesEmpty()
         {
             var now = MakeSnapshot();

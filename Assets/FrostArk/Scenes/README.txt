@@ -12,3 +12,18 @@ Editor startup and does not modify the starter SampleScene.
 
 Generate and import only in a real authorized Unity 6000.6.0f1 session,
 inspect the generated YAML/meta diff and run EditMode tests before G2 PASS.
+
+
+Ship RTS E11 demo (Draft PR #116, based on #117 -> #118)
+
+Open Assets/FrostArk/Scenes/ShipRtsDemo.unity in Unity 6000.6.0f1.
+Press Play. The scene has a serialized ShipRtsDemoRuntime entry: it builds two
+physical 6x6 rooms, an open/closeable door, a camera and four selectable crew
+GameObjects at Play. The Editor Scene view is mostly empty BEFORE Play by design.
+
+Left click / Shift-click / drag box select 1-4 crew; right-click floor to move.
+C closes the door, O opens it, M toggles local ship motion; H toggles help.
+
+It is an opt-in ship-only behavior fixture, not a final production level.
+Unity Editor compilation and G2/G3 PlayMode are NOT VERIFIED by a green Core CI.
+See docs/engineering/ship-rts-demo-playtest.md for full test and limitations.
