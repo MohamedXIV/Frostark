@@ -11,9 +11,9 @@ Decisions are explicit and may be changed through an ADR with impact on roadmap/
 | D005 | Architecture intent | **Accepted** | Modular code-first pure-C# simulation and Unity adapters; avoid universal singleton-manager graph |
 | D006 | World clock | **Accepted** | Authoritative game-time scheduler separate from Unity rendering/physics ticks, supporting interruptible sleep |
 | D007 | Global state / save | **Accepted** | Versioned persistent world state; scene objects not source of truth |
-| D008 | Ship and player | **Accepted** | Embodied **selectable click-commanded** protagonist, evolving multi-room staffable ship, persistent small meaningful crew |
+| D008 | Ship and player | **Accepted** | Embodied **selectable click-commanded** protagonist, evolving multi-room staffable ship, a small **named roster capped by design at 12 total aboard including the protagonist** (10–12 absolute upper end) |
 | D009 | Combat theaters | **Accepted** | Real-time on-foot and naval combat, with survival/economy consequences |
-| D010 | Sandbox | **Accepted** | Systemic world + optional faction/mystery content, no forced linear quest rail |
+| D010 | Sandbox | **Accepted** | Ship-first systemic world with rare survivors, occasional hostile groups/optional mysteries; **no mandatory autonomous settlement/faction economy**, no forced linear quest rail |
 | D011 | AI/pathing | **Proposed** | Unity AI Navigation + own tactical cover/utility AI + state machine |
 | D012 | DI | **Proposed** | VContainer scopes and small command/query facades; confirm compatibility |
 | D013 | Squad size | **Proposed** | Player + 3 optional companions; benchmark UI/AI readability |
@@ -32,6 +32,8 @@ Decisions are explicit and may be changed through an ADR with impact on roadmap/
 | D026 | Engines for cloud | **Accepted** | Prefer online agents, pure .NET G1 tests, authorized headless Unity only where needed |
 | D027 | Point-and-click tactical interaction | **Accepted** | Select protagonist/units, click-to-move/act and issue real-time contextual squad orders; ship room inspection/assignments share command model. **Replaces** PR #74 transient WASD-style axis intent. [Contract](../design/control-and-interaction.md) |
 | D028 | Pointer/controller mappings and manual ship helm | **Open** | Mouse button/modifier defaults, controller/touch focus, order queues, time controls and optional fine helm piloting require UX/Unity proof, not premature locking |
+
+| D029 | Population, recruitment and mobile-friendly scale | **Accepted 2026-11-12** | **12 maximum aboard including protagonist**; usually fewer, everyone known by name and personally consequential. Survivors outside are genuinely rare; rescue/recruitment is exceptional and constrained by the ship. Islands are for excursion/resources/danger/clues, not colony management. Bounded UI/simulation must support eventual mobile without aggressive last-minute optimization. **Supersedes 8–30 and unapproved off-screen settlement economy.** This is a design ceiling, not a claim of implemented Core roster validation. [Miro D05](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764778864), [D07](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764778865), [D04](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687764778866), [D09](https://miro.com/app/board/uXjVEYctyzg=/?moveToWidget=3458764687781875097) |
 
 ## ADR format
 
