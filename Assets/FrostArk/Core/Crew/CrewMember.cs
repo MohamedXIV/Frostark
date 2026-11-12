@@ -15,7 +15,10 @@ namespace FrostArk.Core.Crew
     /// <summary>Immutable authored skills and persisted condition/shift snapshot.</summary>
     public sealed class CrewMember
     {
+        public CrewIdentity Identity { get; }
         public EntityId Id { get; }
+        public string DisplayName => Identity.DisplayName;
+        public string LocalizationKey => Identity.LocalizationKey;
         public DutyRole Role { get; }
         public int PrimarySkill { get; }
         public int BackupSkill { get; }
@@ -40,8 +43,18 @@ namespace FrostArk.Core.Crew
             int shiftStart, int shiftMinutes, int fatigue = 0, int wounds = 0,
             bool isAway = false, bool isRecovering = false,
             int hunger = 0, int thirst = 0)
+            : this(CrewIdentity.CreateDefault(id), role, primarySkill, backupSkill,
+                shiftStart, shiftMinutes, fatigue, wounds, isAway, isRecovering,
+                hunger, thirst)
         {
-            if (!id.IsValid) throw new ArgumentException("Persistent crew ID required.", nameof(id));
+        }
+
+        public CrewMember(CrewIdentity identity, DutyRole role, int primarySkill, int backupSkill,
+            int shiftStart, int shiftMinutes, int fatigue = 0, int wounds = 0,
+            bool isAway = false, bool isRecovering = false,
+            int hunger = 0, int thirst = 0)
+        {
+            Identity = identity ?? throw new ArgumentNullException(nameof(identity));
             if (!Enum.IsDefined(typeof(DutyRole), role))
                 throw new ArgumentOutOfRangeException(nameof(role));
             if (primarySkill < 0 || primarySkill > 1000)
@@ -58,7 +71,7 @@ namespace FrostArk.Core.Crew
                 throw new ArgumentOutOfRangeException(nameof(wounds));
             if (hunger < 0 || hunger > 1000) throw new ArgumentOutOfRangeException(nameof(hunger));
             if (thirst < 0 || thirst > 1000) throw new ArgumentOutOfRangeException(nameof(thirst));
-            Id = id; Role = role; PrimarySkill = primarySkill; BackupSkill = backupSkill;
+            Id = identity.Id; Role = role; PrimarySkill = primarySkill; BackupSkill = backupSkill;
             ShiftStart = shiftStart; ShiftMinutes = shiftMinutes; Fatigue = fatigue;
             Wounds = wounds; IsAway = isAway; Hunger = hunger; Thirst = thirst;
             // New/legacy profiles that arrive already exhausted must recover.
@@ -80,28 +93,40 @@ namespace FrostArk.Core.Crew
                 (1000 - Wounds) / 1_000_000);
         }
 
+        public CrewMember WithIdentity(CrewIdentity identity)
+        {
+            if (identity == null)
+                throw new ArgumentNullException(nameof(identity));
+            if (identity.Id != Id)
+                throw new ArgumentException("Cannot change a crew member's persistent EntityId.",
+                    nameof(identity));
+            return identity.Equals(Identity) ? this :
+                new CrewMember(identity, Role, PrimarySkill, BackupSkill, ShiftStart,
+                    ShiftMinutes, Fatigue, Wounds, IsAway, IsRecovering, Hunger, Thirst);
+        }
+
         public CrewMember WithAway(bool away) => away == IsAway ? this :
-            new CrewMember(Id, Role, PrimarySkill, BackupSkill, ShiftStart,
+            new CrewMember(Identity, Role, PrimarySkill, BackupSkill, ShiftStart,
                 ShiftMinutes, Fatigue, Wounds, away, IsRecovering, Hunger, Thirst);
 
         public CrewMember WithFatigue(int fatigue) => fatigue == Fatigue ? this :
-            new CrewMember(Id, Role, PrimarySkill, BackupSkill, ShiftStart,
+            new CrewMember(Identity, Role, PrimarySkill, BackupSkill, ShiftStart,
                 ShiftMinutes, fatigue, Wounds, IsAway, IsRecovering, Hunger, Thirst);
 
         public CrewMember WithWounds(int wounds) => wounds == Wounds ? this :
-            new CrewMember(Id, Role, PrimarySkill, BackupSkill, ShiftStart,
+            new CrewMember(Identity, Role, PrimarySkill, BackupSkill, ShiftStart,
                 ShiftMinutes, Fatigue, wounds, IsAway, IsRecovering, Hunger, Thirst);
 
         internal CrewMember WithNeeds(int hunger, int thirst) =>
             hunger == Hunger && thirst == Thirst ? this :
-            new CrewMember(Id, Role, PrimarySkill, BackupSkill,
+            new CrewMember(Identity, Role, PrimarySkill, BackupSkill,
                 ShiftStart, ShiftMinutes, Fatigue, Wounds, IsAway, IsRecovering,
                 hunger, thirst);
 
         internal CrewMember WithRecovering(bool recovering)
         {
             if (recovering == IsRecovering) return this;
-            var next = new CrewMember(Id, Role, PrimarySkill, BackupSkill,
+            var next = new CrewMember(Identity, Role, PrimarySkill, BackupSkill,
                 ShiftStart, ShiftMinutes, Fatigue, Wounds, IsAway, recovering, Hunger, Thirst);
             if (next.IsRecovering != recovering)
                 throw new ArgumentException("Impossible recovery state for current fatigue.",
