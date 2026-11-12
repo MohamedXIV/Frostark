@@ -31,7 +31,7 @@ Applies to AI agents and contributors across the repository. Read `docs/INDEX.md
 - Central authoritative world clock; deterministic ordered world ticks and scheduled events. `Update` handles presentation/input and `FixedUpdate` physics, not independent authoritative hunger/fuel clocks.
 - Sleep/travel acceleration advances simulation and handles interrupts; never simulate thousands of accelerated physics frames.
 - Keep simulation decisions seeded/replayable when feasible; **do not claim cross-platform bit-exact Unity physics**.
-- Respect entity lifecycle, scene changes, cancellation and save/load boundaries. Author regression tests for cross-system effects and save migrations.
+- Respect entity lifecycle, scene changes, cancellation and current-run data correctness. Add regression tests for cross-system effects; **do not require legacy save migrations during early unreleased development** unless a scoped task explicitly calls for them.
 - All systems must declare active/nearby/distant simulation LOD where relevant.
 
 ## Work units and verification
@@ -47,6 +47,10 @@ Never conflate levels 1–2 with Unity compile or gameplay proof.
 
 After each PR, provide: exact head SHA, files changed, commands and test counts actually run, blockers/unverified gates, platform impacts and next dependency-ready issue. Do not mark manual device or engine tests PASS from inference.
 
+## Versioning, changelog and releases
+
+Follow [FrostArk's release/versioning policy](docs/production/versioning-and-changelog.md) and maintain [CHANGELOG.md](CHANGELOG.md) for notable merged gameplay changes. Use Conventional Commit-style PR titles; each PR states whether a human-readable **[Unreleased]** entry is needed. A commit, merged PR, E-epic or SaveCodec schema version **is not** a game release. Do not increment Unity `bundleVersion`, create tags or publish GitHub Releases without a deliberately verified release task. Early internal save backward compatibility is not a standing blocker. See the release policy for build/verification gates.
+
 ## Repository hygiene and collaboration
 
 Use feature branches and PRs for engine/code changes. Keep Unity text serialization and corresponding `.meta` GUID pairs. Commit `Assets/`, `Packages/manifest.json`, `Packages/packages-lock.json`, `ProjectSettings/`, and docs; never commit `Library/`, `Temp/`, `Logs/`, `Build/` outputs or secrets. Git LFS is configured for binary art—verify pointers resolve before relying on files.
@@ -55,7 +59,7 @@ Prefer C# coding styles: focused types, meaningful names, no speculative interfa
 
 ## Definition of done
 
-Code reviewed; requirements and regression tests met; serialization/migrations addressed; accessibility and platform constraints considered; representative scene/build tested when engine evidence is available. If a gate cannot run, mark it **pending/unverified**, and do not call the feature production-accepted.
+Code reviewed; requirements and regression tests met; changed data contracts assessed for current correctness (legacy migrations only if explicitly in scope); accessibility and platform constraints considered; representative scene/build tested when engine evidence is available. If a gate cannot run, mark it **pending/unverified**, and do not call the feature production-accepted.
 
 ## Decision governance
 
