@@ -70,8 +70,12 @@ namespace FrostArk.Core.Save
 
         private static CrewState ReadCrew(BinaryReader reader)
         {
-            var members = new List<CrewMember>();
-            for (int i = 0, count = ReadCount(reader); i < count; i++)
+            int memberCount = ReadCount(reader);
+            if (memberCount > CrewState.MaxCrewCapacity)
+                throw new InvalidDataException(
+                    $"Crew duty roster count {memberCount} exceeds maximum supported capacity of {CrewState.MaxCrewCapacity}.");
+            var members = new List<CrewMember>(memberCount);
+            for (int i = 0; i < memberCount; i++)
             {
                 var id = ReadId(reader);
                 var role = (DutyRole)reader.ReadByte();
@@ -138,6 +142,9 @@ namespace FrostArk.Core.Save
             CrewState duty, out IReadOnlyList<CrewIdentity> identities)
         {
             int identityCount = ReadCount(reader);
+            if (identityCount > WorldState.MaxCrewCapacity)
+                throw new InvalidDataException(
+                    $"Custom crew identity count {identityCount} exceeds maximum supported capacity of {WorldState.MaxCrewCapacity}.");
             var customIdentities = new List<CrewIdentity>(identityCount);
             var worldSet = new HashSet<string>(worldCrew.Select(x => x.Value),
                 StringComparer.Ordinal);

@@ -56,10 +56,54 @@ namespace FrostArk.Core.Tests
             Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Line\nBreak"));
             Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist,
                 new string('A', CrewIdentity.MaxDisplayNameLength + 1)));
-            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "   "));
-            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "bad key"));
+
+            // LocalizationKey boundary regressions: max length is 96 chars, empty/null allowed.
+            var key96 = new string('k', CrewIdentity.MaxLocalizationKeyLength);
+            var id96 = new CrewIdentity(Protagonist, "Mara", key96);
+            Assert.That(id96.LocalizationKey.Length, Is.EqualTo(96));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "k").LocalizationKey, Is.EqualTo("k"));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "1").LocalizationKey, Is.EqualTo("1"));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "_").LocalizationKey, Is.EqualTo("_"));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "-").LocalizationKey, Is.EqualTo("-"));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", ".").LocalizationKey, Is.EqualTo("."));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "crew.char_01-alpha.NAME").LocalizationKey,
+                Is.EqualTo("crew.char_01-alpha.NAME"));
+            Assert.That(new CrewIdentity(Protagonist, "Mara", null).LocalizationKey, Is.Empty);
+            Assert.That(new CrewIdentity(Protagonist, "Mara", "").LocalizationKey, Is.Empty);
+
+            // Boundary: 97 chars exceeds MaxLocalizationKeyLength (96)
             Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara",
                 new string('k', CrewIdentity.MaxLocalizationKeyLength + 1)));
+
+            // Invalid characters: whitespace and control characters rejected
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "   "));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "bad key"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", " key"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "key "));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "key\ttoken"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "key\ntoken"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "key\rtoken"));
+
+            // Invalid characters: punctuation and symbols outside [A-Za-z0-9._-] rejected
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew/mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew@mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew!mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew:mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew#mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew$mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew%mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew?mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew+mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew=mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew(mara)"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew[mara]"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew{mara}"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew,mara"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew;mara"));
+
+            // Non-ASCII/Unicode letters rejected (only ASCII [A-Za-z0-9._-] permitted)
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew.märä"));
+            Assert.Throws<ArgumentException>(() => new CrewIdentity(Protagonist, "Mara", "crew.émile"));
         }
 
         [Test]
@@ -216,23 +260,55 @@ namespace FrostArk.Core.Tests
                 Array.Empty<SupplyStock>(), new[] { Protagonist }, crewDuty: crew);
             var bus = new WorldCommandBus();
 
+            // 1. Spontaneous/unknown candidate with valid source
             var spontaneous = bus.Execute(world, new RecruitCrewCommand(
-                EntityId.Parse("cmd:spontaneous"), EntityId.Parse("crew:invented"), 0));
+                EntityId.Parse("cmd:spontaneous"), EntityId.Parse("crew:invented"), DistressSite, 0));
             Assert.That(spontaneous.Success, Is.False);
             Assert.That(spontaneous.Failure, Is.EqualTo(CommandFailure.UnknownRecruitmentCandidate));
             Assert.That(spontaneous.State, Is.SameAs(world));
 
+            // 2. Unknown candidate with invalid/missing source rejects before mutating state
+            var spontaneousInvalidSource = bus.Execute(world, new RecruitCrewCommand(
+                EntityId.Parse("cmd:spontaneous-nosource"), EntityId.Parse("crew:invented"), default, 0));
+            Assert.That(spontaneousInvalidSource.Success, Is.False);
+            Assert.That(spontaneousInvalidSource.Failure, Is.EqualTo(CommandFailure.InvalidRecruitmentSource));
+            Assert.That(spontaneousInvalidSource.State, Is.SameAs(world));
+
+            // 3. Known candidate with mismatched source rejects atomically
             var wrongSource = bus.Execute(world, new RecruitCrewCommand(
                 EntityId.Parse("cmd:wrong-source"), SurvivorMedic, WreckSite, 0));
             Assert.That(wrongSource.Success, Is.False);
             Assert.That(wrongSource.Failure, Is.EqualTo(CommandFailure.InvalidRecruitmentSource));
             Assert.That(wrongSource.State, Is.SameAs(world));
 
+            // 4. Known candidate with invalid/default source rejects atomically
             var invalidSource = bus.Execute(world, new RecruitCrewCommand(
                 EntityId.Parse("cmd:empty-source"), SurvivorMedic, default, 0));
             Assert.That(invalidSource.Success, Is.False);
             Assert.That(invalidSource.Failure, Is.EqualTo(CommandFailure.InvalidRecruitmentSource));
             Assert.That(invalidSource.State, Is.SameAs(world));
+
+            // 5. Valid recruitment succeeds with exact event provenance
+            var success = bus.Execute(world, new RecruitCrewCommand(
+                EntityId.Parse("cmd:recruit-ok"), SurvivorMedic, DistressSite, 0));
+            Assert.That(success.Success, Is.True);
+            Assert.That(success.Events, Has.Count.EqualTo(1));
+            Assert.That(success.Events[0].Kind, Is.EqualTo(WorldEventKind.CrewRecruited));
+            Assert.That(success.Events[0].SubjectId, Is.EqualTo(SurvivorMedic));
+            Assert.That(success.Events[0].RelatedId, Is.EqualTo(DistressSite));
+
+            // 6. Duplicate command ID rejects atomically
+            var duplicateCmd = bus.Execute(success.State, new RecruitCrewCommand(
+                EntityId.Parse("cmd:recruit-ok"), SurvivorMedic, DistressSite, 1));
+            Assert.That(duplicateCmd.Success, Is.False);
+            Assert.That(duplicateCmd.Failure, Is.EqualTo(CommandFailure.DuplicateCommand));
+
+            // 7. Already recruited candidate with new command ID rejects atomically
+            var alreadyRecruited = bus.Execute(success.State, new RecruitCrewCommand(
+                EntityId.Parse("cmd:recruit-again"), SurvivorMedic, DistressSite, 1));
+            Assert.That(alreadyRecruited.Success, Is.False);
+            Assert.That(alreadyRecruited.Failure, Is.EqualTo(CommandFailure.CrewAlreadyRecruited));
+            Assert.That(alreadyRecruited.State, Is.SameAs(success.State));
         }
 
         [Test]
@@ -398,6 +474,69 @@ namespace FrostArk.Core.Tests
         }
 
         [Test]
+        public void LegacySaveAtCapacityBoundaryOfTwelveCrewMembersMigratesDeterministically()
+        {
+            var twelveCrewIds = Enumerable.Range(1, 12)
+                .Select(i => EntityId.Parse($"crew:{i:D2}"))
+                .ToArray();
+            var twelveMembers = twelveCrewIds
+                .Select(id => new CrewMember(id, DutyRole.Watch, 800, 200, 0, 1440))
+                .ToArray();
+            var state = WorldState.Create(WorldMinute.Zero,
+                Array.Empty<SupplyStock>(), twelveCrewIds,
+                crewDuty: CrewState.Create(twelveMembers));
+            var scheduler = new SimulationScheduler(new WorldClock(WorldMinute.Zero),
+                Array.Empty<IWorldMinuteSystem>(), seed: 12);
+            var encoded = SaveCodec.Encode(SaveGameDto.Capture(state, scheduler));
+
+            // Test legacy v19 save at the exact 12-person capacity boundary
+            var v19 = (byte[])encoded.Clone();
+            v19[8] = 19;
+            v19[9] = 0;
+            RecalculateChecksum(v19);
+
+            var decodedV19 = SaveCodec.TryDecode(v19);
+            Assert.That(decodedV19.Success, Is.True, decodedV19.Error.ToString());
+            Assert.That(decodedV19.Value.State.CrewCount, Is.EqualTo(12));
+            Assert.That(decodedV19.Value.State.GetCrewIdentity(EntityId.Parse("crew:01")).DisplayName,
+                Is.EqualTo("Crew 01"));
+            Assert.That(decodedV19.Value.State.GetCrewIdentity(EntityId.Parse("crew:12")).DisplayName,
+                Is.EqualTo("Crew 12"));
+
+            // Full roster cannot recruit any more candidates
+            using (var session = new WorldSession(decodedV19.Value.State))
+            {
+                Assert.That(session.Read().CrewCount, Is.EqualTo(12));
+                Assert.That(session.Capture().State.CrewDuty.CanRecruit(SurvivorMedic), Is.False);
+            }
+        }
+
+        [Test]
+        public void LegacySaveOverCapacityIsExplicitlyRejectedWithoutSilentDataLoss()
+        {
+            // Historical saves with > 12 crew members must NOT silently truncate or drop crew members.
+            // They are explicitly rejected as invalid data per the hard 12-person capacity constraint.
+
+            // Legacy v19 save with 13 crew members
+            byte[] v19OverCap = BuildOverCapacitySave(19, 13);
+            var decodedV19 = SaveCodec.TryDecode(v19OverCap);
+            Assert.That(decodedV19.Success, Is.False);
+            Assert.That(decodedV19.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+
+            // Legacy v5 save (initial duty roster version) with 13 crew members
+            byte[] v5OverCap = BuildOverCapacitySave(5, 13);
+            var decodedV5 = SaveCodec.TryDecode(v5OverCap);
+            Assert.That(decodedV5.Success, Is.False);
+            Assert.That(decodedV5.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+
+            // Legacy v1 save (R0 crew only, pre-v5) with 13 crew members
+            byte[] v1OverCap = BuildOverCapacitySave(1, 13);
+            var decodedV1 = SaveCodec.TryDecode(v1OverCap);
+            Assert.That(decodedV1.Success, Is.False);
+            Assert.That(decodedV1.Error, Is.EqualTo(SaveDecodeError.InvalidData));
+        }
+
+        [Test]
         public void TamperedSaveWithOverCapacityRosterOrPhantomRecruitmentRejectsOnDecode()
         {
             // Craft a save blob claiming 13 crew members in the R0 registry and recalculate SHA-256.
@@ -464,7 +603,10 @@ namespace FrostArk.Core.Tests
                 Throws.TypeOf<ArgumentException>());
         }
 
-        private static byte[] BuildForgedOverCapacitySave()
+        private static byte[] BuildForgedOverCapacitySave() =>
+            BuildOverCapacitySave(SaveCodec.CurrentVersion, 13);
+
+        private static byte[] BuildOverCapacitySave(ushort version, int crewCount)
         {
             var utf8 = new UTF8Encoding(false, true);
             byte[] payload;
@@ -475,8 +617,8 @@ namespace FrostArk.Core.Tests
                 writer.Write(0L); // revision
                 writer.Write(1u); // seed
                 writer.Write(0);  // supplies count
-                writer.Write(13); // 13 crew IDs (exceeds MaxCrewCapacity = 12)
-                for (int i = 1; i <= 13; i++)
+                writer.Write(crewCount); // crew IDs exceeding cap
+                for (int i = 1; i <= crewCount; i++)
                 {
                     byte[] idBytes = utf8.GetBytes($"crew:{i:D2}");
                     writer.Write(idBytes.Length);
@@ -486,67 +628,89 @@ namespace FrostArk.Core.Tests
                 writer.Write(0); // processed commands
                 writer.Write(0); // pending events
                 writer.Write(0); // reserved events
-                writer.Write(0); // overrides
-                // v3 empty inventory (44 bytes: catalog=0, pickups=0, 4 long/int caps, hold=0, pack=0)
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0L);
-                writer.Write(0);
-                writer.Write(0L);
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0);
-                // v4 empty thermal (28 bytes)
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(byte.MinValue);
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0L);
-                writer.Write(0L);
-                // v5 empty crew duty (8 bytes)
-                writer.Write(0);
-                writer.Write(0);
-                // v6 empty layout (12 bytes)
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0);
-                // v7 empty navigation (17 bytes)
-                writer.Write(0);
-                writer.Write((byte)0);
-                writer.Write(0);
-                writer.Write(0L);
-                // v8 credited inventory (4 bytes)
-                writer.Write(0);
-                // v9 empty economy (16 bytes)
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0);
-                writer.Write(0);
-                // v10 empty combat (12 bytes)
-                writer.Write(0L);
-                writer.Write(0);
-                // v11 empty medical (4 bytes)
-                writer.Write(0);
-                // v12 empty site progress (4 bytes)
-                writer.Write(0);
-                // v13 absent scene checkpoint (1 byte)
-                writer.Write((byte)0);
-                // v14 empty magazine extension (4 bytes)
-                writer.Write(0);
-                // v15 empty recovery extension (4 bytes)
-                writer.Write(0);
-                // v16 empty needs extension (8 bytes)
-                writer.Write(0);
-                writer.Write(0);
-                // v17 empty interactions extension (8 bytes)
-                writer.Write(0);
-                writer.Write(0);
+                if (version >= 2)
+                    writer.Write(0); // overrides
+                if (version >= 3)
+                {
+                    // v3 empty inventory (44 bytes)
+                    writer.Write(0); writer.Write(0); writer.Write(0L); writer.Write(0);
+                    writer.Write(0L); writer.Write(0); writer.Write(0); writer.Write(0);
+                }
+                if (version >= 4)
+                {
+                    // v4 empty thermal (28 bytes)
+                    writer.Write(0); writer.Write(0); writer.Write(0); writer.Write(byte.MinValue);
+                    writer.Write(0); writer.Write(0); writer.Write(0L); writer.Write(0L);
+                }
+                if (version >= 5)
+                {
+                    // v5 empty crew duty (8 bytes)
+                    writer.Write(0); writer.Write(0);
+                }
+                if (version >= 6)
+                {
+                    // v6 empty layout (12 bytes)
+                    writer.Write(0); writer.Write(0); writer.Write(0);
+                }
+                if (version >= 7)
+                {
+                    // v7 empty navigation (17 bytes)
+                    writer.Write(0); writer.Write((byte)0); writer.Write(0); writer.Write(0L);
+                }
+                if (version >= 8)
+                {
+                    // v8 credited inventory (4 bytes)
+                    writer.Write(0);
+                }
+                if (version >= 9)
+                {
+                    // v9 empty economy (16 bytes)
+                    writer.Write(0); writer.Write(0); writer.Write(0); writer.Write(0);
+                }
+                if (version >= 10)
+                {
+                    // v10 empty combat (12 bytes)
+                    writer.Write(0L); writer.Write(0);
+                }
+                if (version >= 11)
+                {
+                    // v11 empty medical (4 bytes)
+                    writer.Write(0);
+                }
+                if (version >= 12)
+                {
+                    // v12 empty site progress (4 bytes)
+                    writer.Write(0);
+                }
+                if (version >= 13)
+                {
+                    // v13 absent scene checkpoint (1 byte)
+                    writer.Write((byte)0);
+                }
+                if (version >= 14)
+                {
+                    // v14 empty magazine extension (4 bytes)
+                    writer.Write(0);
+                }
+                if (version >= 15)
+                {
+                    // v15 empty recovery extension (4 bytes)
+                    writer.Write(0);
+                }
+                if (version >= 16)
+                {
+                    // v16 empty needs extension (8 bytes)
+                    writer.Write(0); writer.Write(0);
+                }
+                if (version >= 17)
+                {
+                    // v17 empty interactions extension (8 bytes)
+                    writer.Write(0); writer.Write(0);
+                }
                 payload = ms.ToArray();
             }
 
-            return WrapEnvelope(payload, SaveCodec.CurrentVersion);
+            return WrapEnvelope(payload, version);
         }
 
         private static byte[] AppendEmptyV20Trailer(byte[] validBaseline)

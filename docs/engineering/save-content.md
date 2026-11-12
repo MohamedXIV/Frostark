@@ -26,6 +26,8 @@ Load/unload zones without resetting crew/ship/time; no double-spawn or duplicate
 
 Atomic save-write pattern where supported, backup/recovery and corruption reporting; WebGL uses platform-appropriate storage adapters, not arbitrary filesystem writes. Explicit migration testing and fixture saves accompany schema changes. Cloud save and modding are *future candidates*, not launch requirements.
 
+Legacy save migration never silently truncates, drops, or alters stored characters. Saves at or below the 12-person shipboard capacity limit (D029) migrate deterministically with derived identity metadata; historical saves exceeding 12 crew members are intentionally unsupported and reject load with `SaveDecodeError.InvalidData` to preserve data integrity.
+
 ## Acceptance fixtures
 
 Round-trip inventory/crew/ship after 48 world hours; resume at interrupting pirate encounter; migrated older save; same seeded scene revisited after salvage; forced unload mid-expedition; two zones generated with equal seeds produce reproducible base layouts but honor persistent modifications.

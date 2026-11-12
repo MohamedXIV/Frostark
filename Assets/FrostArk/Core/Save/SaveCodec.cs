@@ -209,6 +209,9 @@ namespace FrostArk.Core.Save
             var crew = new List<EntityId>();
             for (int i = 0, count = ReadCount(reader); i < count; i++)
                 crew.Add(ReadId(reader));
+            if (crew.Count > WorldState.MaxCrewCapacity)
+                throw new InvalidDataException(
+                    $"Shipboard crew roster count {crew.Count} exceeds maximum supported capacity of {WorldState.MaxCrewCapacity}.");
 
             var assignments = new List<KeyValuePair<EntityId, EntityId>>();
             for (int i = 0, count = ReadCount(reader); i < count; i++)

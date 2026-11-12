@@ -15,7 +15,7 @@ namespace FrostArk.Core.Crew
     public sealed class CrewIdentity : IEquatable<CrewIdentity>
     {
         public const int MaxDisplayNameLength = 64;
-        public const int MaxLocalizationKeyLength = 128;
+        public const int MaxLocalizationKeyLength = 96;
 
         public EntityId Id { get; }
         public string DisplayName { get; }
@@ -37,12 +37,10 @@ namespace FrostArk.Core.Crew
 
             string normalizedKey = localizationKey ?? string.Empty;
             if (normalizedKey.Length > 0 &&
-                (string.IsNullOrWhiteSpace(normalizedKey) ||
-                 normalizedKey.Trim() != normalizedKey ||
-                 normalizedKey.Length > MaxLocalizationKeyLength ||
-                 ContainsWhitespaceOrControlChar(normalizedKey)))
+                (normalizedKey.Length > MaxLocalizationKeyLength ||
+                 !IsValidLocalizationKey(normalizedKey)))
                 throw new ArgumentException(
-                    "Localization key must be empty or a trimmed token without whitespace or control characters.",
+                    "Localization key must be empty or a valid token matching [A-Za-z0-9._-] up to 96 characters.",
                     nameof(localizationKey));
 
             Id = id;
@@ -153,12 +151,19 @@ namespace FrostArk.Core.Crew
             return false;
         }
 
-        private static bool ContainsWhitespaceOrControlChar(string text)
+        private static bool IsValidLocalizationKey(string key)
         {
-            for (int i = 0; i < text.Length; i++)
-                if (char.IsWhiteSpace(text[i]) || char.IsControl(text[i]))
-                    return true;
-            return false;
+            for (int i = 0; i < key.Length; i++)
+            {
+                char c = key[i];
+                bool isTokenChar = (c >= 'a' && c <= 'z') ||
+                                   (c >= 'A' && c <= 'Z') ||
+                                   (c >= '0' && c <= '9') ||
+                                   c == '.' || c == '_' || c == '-';
+                if (!isTokenChar)
+                    return false;
+            }
+            return true;
         }
 
         public bool Equals(CrewIdentity other) =>

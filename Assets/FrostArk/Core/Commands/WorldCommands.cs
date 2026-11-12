@@ -372,23 +372,14 @@ namespace FrostArk.Core.Commands
     /// <summary>
     /// Admits an authored, unrecruited survivor candidate into the ship's
     /// canonical crew roster within the 12-person shipboard population cap.
+    /// Explicit source provenance is required.
     /// </summary>
     public sealed class RecruitCrewCommand : IGameCommand
     {
         public EntityId Id { get; }
         public EntityId CrewId { get; }
         public EntityId SourceId { get; }
-        public bool HasExplicitSource { get; }
         public long ExpectedRevision { get; }
-
-        public RecruitCrewCommand(EntityId id, EntityId crewId, long expectedRevision)
-        {
-            Id = id;
-            CrewId = crewId;
-            SourceId = default;
-            HasExplicitSource = false;
-            ExpectedRevision = expectedRevision;
-        }
 
         public RecruitCrewCommand(EntityId id, EntityId crewId, EntityId sourceId,
             long expectedRevision)
@@ -396,7 +387,6 @@ namespace FrostArk.Core.Commands
             Id = id;
             CrewId = crewId;
             SourceId = sourceId;
-            HasExplicitSource = true;
             ExpectedRevision = expectedRevision;
         }
     }

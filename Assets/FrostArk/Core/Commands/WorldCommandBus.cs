@@ -558,11 +558,12 @@ namespace FrostArk.Core.Commands
             {
                 if (!recruit.CrewId.IsValid)
                     return CommandResult.Rejected(state, CommandFailure.UnknownRecruitmentCandidate);
+                if (!recruit.SourceId.IsValid)
+                    return CommandResult.Rejected(state, CommandFailure.InvalidRecruitmentSource);
                 var candidate = state.CrewDuty.GetCandidate(recruit.CrewId);
                 if (candidate == null)
                     return CommandResult.Rejected(state, CommandFailure.UnknownRecruitmentCandidate);
-                if (recruit.HasExplicitSource &&
-                    (!recruit.SourceId.IsValid || recruit.SourceId != candidate.SourceId))
+                if (recruit.SourceId != candidate.SourceId)
                     return CommandResult.Rejected(state, CommandFailure.InvalidRecruitmentSource);
                 if (candidate.IsRecruited || state.HasCrew(recruit.CrewId) ||
                     state.CrewDuty.Get(recruit.CrewId) != null)
@@ -574,7 +575,7 @@ namespace FrostArk.Core.Commands
                 var next = state.WithCrewRecruited(recruit.CrewId, command.Id);
                 return CommandResult.Committed(next, new WorldEvent(command.Id,
                     state.Minute, next.Revision, WorldEventKind.CrewRecruited,
-                    candidate.Id, candidate.SourceId));
+                    candidate.Id, recruit.SourceId));
             }
 
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
