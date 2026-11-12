@@ -26,6 +26,8 @@
 - [Verified local bootstrap and remaining runner gates](engineering/local-bootstrap-handoff.md)
 
 ## Production
+- [Versioning, changelog and release policy](production/versioning-and-changelog.md)
+- [Curated project changelog](../CHANGELOG.md)
 - [Dependency-ordered roadmap](production/roadmap.md)
 - [Live issue/epic backlog map](production/backlog.md)
 - [Superpowers R0 foundation execution plan](superpowers/plans/2026-10-10-frostark-r0-foundation.md)
