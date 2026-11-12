@@ -22,7 +22,7 @@ namespace FrostArk.Core.Save
     /// </summary>
     public static partial class SaveCodec
     {
-        public const ushort CurrentVersion = 19;
+        public const ushort CurrentVersion = 20;
         private const int HeaderSize = 14;
         private const int ChecksumSize = 32;
         private const int MaxBlobBytes = 8 * 1024 * 1024;
@@ -107,13 +107,18 @@ namespace FrostArk.Core.Save
                     WriteCrewRecoveryExtension(writer, state.CrewDuty);
                     WriteCrewNeedsExtension(writer, state.CrewDuty);
                     WriteCrewInteractionExtension(writer, state.CrewDuty.Interactions);
-                    // V18/V19 optional trailer: pending ship Moves followed by
-                    // exact physical actor locations. Absent when both empty.
+                    // V18/V19/V20 optional trailer: pending ship Moves, exact
+                    // physical actor locations, and explicit crew identities /
+                    // survivor candidates. Absent when all are empty/default.
+                    bool hasIdentityOrCandidates = HasExplicitCrewIdentitiesOrCandidates(state);
                     if (snapshot.PendingCrewMoves.Count > 0 ||
-                        snapshot.ActorLocations.Count > 0)
+                        snapshot.ActorLocations.Count > 0 ||
+                        hasIdentityOrCandidates)
                     {
                         WritePendingCrewMoves(writer, snapshot.PendingCrewMoves);
                         WritePhysicalActorLocations(writer, snapshot.ActorLocations);
+                        if (hasIdentityOrCandidates)
+                            WriteCrewIdentityAndCandidatesExtension(writer, state);
                     }
                 }
                 payload = stream.ToArray();
@@ -171,7 +176,7 @@ namespace FrostArk.Core.Save
                     if (different != 0)
                         return SaveDecodeResult.Failed(SaveDecodeError.Corrupt);
 
-                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != 17 && version != 18 && version != CurrentVersion)
+                    if (version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != 17 && version != 18 && version != 19 && version != CurrentVersion)
                         return SaveDecodeResult.Failed(SaveDecodeError.UnsupportedVersion);
 
                     using (var payloadStream = new MemoryStream(blob, HeaderSize, length, false))
@@ -255,8 +260,12 @@ namespace FrostArk.Core.Save
                 ? ReadPendingCrewMoves(reader) : Array.Empty<PendingCrewMove>();
             var actorLocations = version >= 19 && reader.BaseStream.Position < reader.BaseStream.Length
                 ? ReadPhysicalActorLocations(reader) : Array.Empty<PhysicalActorLocation>();
+            IReadOnlyList<CrewIdentity>? crewIdentities = null;
+            if (version >= 20 && reader.BaseStream.Position < reader.BaseStream.Length)
+                crewDuty = ReadCrewIdentityAndCandidatesExtension(
+                    reader, crew, crewDuty, out crewIdentities);
             var world = WorldState.RestoreSnapshot(minute, revision,
-                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy, combat, siteProgress);
+                supplies, crew, assignments, processed, inventory, thermal, crewDuty, layout, navigation, economy, combat, siteProgress, crewIdentities);
             return SaveGameDto.Rehydrate(world, seed, pending, reserved, overrides,
                 sceneCheckpoint, crewMoves, actorLocations);
         }

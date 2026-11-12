@@ -29,7 +29,8 @@ namespace FrostArk.Core.Events
         CrewProvisionConsumed = 21,
         CrewSlotClaimed = 22,
         CrewSlotReleased = 23,
-        CrewDutySlotRenewed = 24
+        CrewDutySlotRenewed = 24,
+        CrewRecruited = 25
     }
 
     /// <summary>

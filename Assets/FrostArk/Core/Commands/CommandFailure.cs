@@ -61,6 +61,10 @@ namespace FrostArk.Core.Commands
         InteractionVerbMismatch = 56,
         InteractionClaimExpired = 57,
         DutySlotLeaseNotDue = 58,
-        DutySlotLeaseUnsupported = 59
+        DutySlotLeaseUnsupported = 59,
+        UnknownRecruitmentCandidate = 60,
+        InvalidRecruitmentSource = 61,
+        CrewAlreadyRecruited = 62,
+        CrewCapacityReached = 63
     }
 }

@@ -554,6 +554,29 @@ namespace FrostArk.Core.Commands
                     damageCrew.CrewId, default, damageCrew.WoundPermille));
             }
 
+            if (command is RecruitCrewCommand recruit)
+            {
+                if (!recruit.CrewId.IsValid)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownRecruitmentCandidate);
+                var candidate = state.CrewDuty.GetCandidate(recruit.CrewId);
+                if (candidate == null)
+                    return CommandResult.Rejected(state, CommandFailure.UnknownRecruitmentCandidate);
+                if (recruit.HasExplicitSource &&
+                    (!recruit.SourceId.IsValid || recruit.SourceId != candidate.SourceId))
+                    return CommandResult.Rejected(state, CommandFailure.InvalidRecruitmentSource);
+                if (candidate.IsRecruited || state.HasCrew(recruit.CrewId) ||
+                    state.CrewDuty.Get(recruit.CrewId) != null)
+                    return CommandResult.Rejected(state, CommandFailure.CrewAlreadyRecruited);
+                if (state.CrewCount >= WorldState.MaxCrewCapacity ||
+                    state.CrewDuty.Members.Count >= CrewState.MaxCrewCapacity)
+                    return CommandResult.Rejected(state, CommandFailure.CrewCapacityReached);
+
+                var next = state.WithCrewRecruited(recruit.CrewId, command.Id);
+                return CommandResult.Committed(next, new WorldEvent(command.Id,
+                    state.Minute, next.Revision, WorldEventKind.CrewRecruited,
+                    candidate.Id, candidate.SourceId));
+            }
+
             return CommandResult.Rejected(state, CommandFailure.UnsupportedCommand);
         }
 

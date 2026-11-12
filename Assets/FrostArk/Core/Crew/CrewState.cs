@@ -15,6 +15,11 @@ namespace FrostArk.Core.Crew
     /// </summary>
     public sealed class CrewState
     {
+        /// <summary>
+        /// Hard shipboard population ceiling including the protagonist (D029).
+        /// </summary>
+        public const int MaxCrewCapacity = 12;
+
         private static readonly DutyRole[] Roles =
         {
             DutyRole.Engineering, DutyRole.Watch, DutyRole.Cooking,
@@ -25,20 +30,23 @@ namespace FrostArk.Core.Crew
         private readonly MedicalTreatmentProtocol[] _treatments;
         private readonly CrewConsumable[] _consumables;
         private readonly CrewInteractionState _interactions;
+        private readonly SurvivorCandidate[] _candidates;
         public IReadOnlyList<CrewMember> Members => Array.AsReadOnly(_members);
         public IReadOnlyList<RepairJob> RepairJobs => Array.AsReadOnly(_jobs);
         public IReadOnlyList<MedicalTreatmentProtocol> Treatments => Array.AsReadOnly(_treatments);
         public IReadOnlyList<CrewConsumable> Consumables => Array.AsReadOnly(_consumables);
         public CrewInteractionState Interactions => _interactions;
+        public IReadOnlyList<SurvivorCandidate> Candidates => Array.AsReadOnly(_candidates);
         private CrewState(CrewMember[] members, RepairJob[] jobs,
             MedicalTreatmentProtocol[] treatments, CrewConsumable[] consumables,
-            CrewInteractionState interactions)
+            CrewInteractionState interactions, SurvivorCandidate[] candidates)
         {
             _members = members;
             _jobs = jobs;
             _treatments = treatments;
             _consumables = consumables;
             _interactions = interactions;
+            _candidates = candidates;
         }
 
         public static CrewState Empty => Create(Array.Empty<CrewMember>());
@@ -47,12 +55,17 @@ namespace FrostArk.Core.Crew
             IEnumerable<RepairJob>? jobs = null,
             IEnumerable<MedicalTreatmentProtocol>? treatments = null,
             IEnumerable<CrewConsumable>? consumables = null,
-            CrewInteractionState? interactions = null)
+            CrewInteractionState? interactions = null,
+            IEnumerable<SurvivorCandidate>? candidates = null)
         {
             if (members == null) throw new ArgumentNullException(nameof(members));
             var crew = members.ToArray();
             if (crew.Any(x => x == null))
                 throw new ArgumentException("Null crew member.", nameof(members));
+            if (crew.Length > MaxCrewCapacity)
+                throw new ArgumentException(
+                    "Shipboard crew roster cannot exceed 12 people including the protagonist.",
+                    nameof(members));
             crew = crew.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray();
             for (int i = 1; i < crew.Length; i++)
                 if (crew[i - 1].Id == crew[i].Id)
@@ -83,24 +96,102 @@ namespace FrostArk.Core.Crew
                     !m.IsAway && m.Wounds < 1000))
                     throw new ArgumentException("Claim owner unavailable or absent.",
                         nameof(interactions));
-            return new CrewState(crew, queue, protocols, food, registry);
+            var pool = (candidates ?? Array.Empty<SurvivorCandidate>()).ToArray();
+            if (pool.Any(x => x == null))
+                throw new ArgumentException("Null survivor candidate.", nameof(candidates));
+            pool = pool.OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray();
+            for (int i = 1; i < pool.Length; i++)
+                if (pool[i - 1].Id == pool[i].Id)
+                    throw new ArgumentException("Duplicate survivor candidate ID.", nameof(candidates));
+            foreach (var candidate in pool)
+            {
+                var rosterMember = Array.Find(crew, m => m.Id == candidate.Id);
+                if (candidate.IsRecruited)
+                {
+                    if (rosterMember == null)
+                        throw new ArgumentException(
+                            "Recruited survivor candidate is absent from the crew roster.",
+                            nameof(candidates));
+                    if (!rosterMember.Identity.Equals(candidate.Identity))
+                        throw new ArgumentException(
+                            "Recruited survivor candidate identity does not match the crew roster.",
+                            nameof(candidates));
+                }
+                else if (rosterMember != null)
+                {
+                    throw new ArgumentException(
+                        "Unrecruited survivor candidate is already in the crew roster.",
+                        nameof(candidates));
+                }
+            }
+            return new CrewState(crew, queue, protocols, food, registry, pool);
         }
 
         public CrewState EnqueueRepair(EntityId id, long work)
         {
             if (!id.IsValid || GetRepair(id) != null || work <= 0)
                 throw new ArgumentException("Duplicate or invalid repair job.", nameof(id));
-            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }), _treatments, _consumables, _interactions);
+            return Create(_members, _jobs.Concat(new[] { new RepairJob(id, work) }), _treatments, _consumables, _interactions, _candidates);
         }
 
         public CrewMember? Get(EntityId id) =>
             id.IsValid ? Array.Find(_members, x => x.Id == id) : null;
 
+        public SurvivorCandidate? GetCandidate(EntityId candidateId) =>
+            candidateId.IsValid ? Array.Find(_candidates, x => x.Id == candidateId) : null;
+
+        public CrewState WithCandidates(IEnumerable<SurvivorCandidate> candidates) =>
+            Create(_members, _jobs, _treatments, _consumables, _interactions, candidates);
+
+        public bool CanRecruit(EntityId candidateId)
+        {
+            var candidate = GetCandidate(candidateId);
+            return candidate != null && !candidate.IsRecruited &&
+                _members.Length < MaxCrewCapacity && Get(candidateId) == null;
+        }
+
+        internal CrewState Recruit(EntityId candidateId)
+        {
+            var candidate = GetCandidate(candidateId);
+            if (candidate == null)
+                throw new ArgumentException("Unknown survivor candidate.", nameof(candidateId));
+            if (candidate.IsRecruited || Get(candidateId) != null)
+                throw new InvalidOperationException("Survivor candidate is already recruited.");
+            if (_members.Length >= MaxCrewCapacity)
+                throw new InvalidOperationException("Crew roster is at the 12-person shipboard capacity.");
+
+            var admitted = candidate.ToCrewMember();
+            var nextMembers = _members.Concat(new[] { admitted })
+                .OrderBy(x => x.Id.Value, StringComparer.Ordinal).ToArray();
+            var nextCandidates = _candidates
+                .Select(c => c.Id == candidateId ? c.MarkRecruited() : c).ToArray();
+            return new CrewState(nextMembers, _jobs, _treatments, _consumables, _interactions, nextCandidates);
+        }
+
+        internal CrewState WithMemberIdentity(EntityId crewId, CrewIdentity identity)
+        {
+            if (identity == null)
+                throw new ArgumentNullException(nameof(identity));
+            var current = Get(crewId);
+            if (current == null)
+                throw new ArgumentException("Crew member is not in the authored roster.", nameof(crewId));
+            var next = current.WithIdentity(identity);
+            if (ReferenceEquals(next, current))
+                return this;
+            var candidate = GetCandidate(crewId);
+            if (candidate != null && !candidate.Identity.Equals(identity))
+                throw new ArgumentException(
+                    "Crew member identity conflicts with its recruited candidate record.",
+                    nameof(identity));
+            return new CrewState(_members.Select(m => m.Id == crewId ? next : m).ToArray(),
+                _jobs, _treatments, _consumables, _interactions, _candidates);
+        }
+
         public MedicalTreatmentProtocol? GetTreatment(EntityId itemId) =>
             itemId.IsValid ? Array.Find(_treatments, x => x.ItemId == itemId) : null;
 
         public CrewState WithTreatments(IEnumerable<MedicalTreatmentProtocol> treatments) =>
-            Create(_members, _jobs, treatments, _consumables, _interactions);
+            Create(_members, _jobs, treatments, _consumables, _interactions, _candidates);
 
         /// <summary>Only authored treatment IDs can resolve healing potency;
         /// a caller cannot supply a substituted high-healing protocol.</summary>
@@ -114,7 +205,7 @@ namespace FrostArk.Core.Crew
                 throw new ArgumentException("Crew patient is unavailable or healthy.", nameof(crewId));
             return new CrewState(_members.Select(m => m.Id == crewId
                 ? m.WithWounds(Math.Max(0, m.Wounds - protocol.HealPermille))
-                : m).ToArray(), _jobs, _treatments, _consumables, _interactions);
+                : m).ToArray(), _jobs, _treatments, _consumables, _interactions, _candidates);
         }
 
         internal CrewState Wound(EntityId crewId, int woundPermille)
@@ -129,7 +220,7 @@ namespace FrostArk.Core.Crew
                 ? _interactions.ClearCrew(crewId) : _interactions;
             return new CrewState(_members.Select(m => m.Id == crewId
                 ? m.WithWounds(nextWounds) : m).ToArray(),
-                _jobs, _treatments, _consumables, nextRegistry);
+                _jobs, _treatments, _consumables, nextRegistry, _candidates);
         }
 
         public RepairJob? GetRepair(EntityId id) =>
@@ -149,14 +240,14 @@ namespace FrostArk.Core.Crew
             var next = current.WithRecovering(recovering);
             if (ReferenceEquals(next, current)) return this;
             return new CrewState(_members.Select(m => m.Id == id ? next : m).ToArray(),
-                _jobs, _treatments, _consumables, _interactions);
+                _jobs, _treatments, _consumables, _interactions, _candidates);
         }
 
         public CrewConsumable? GetConsumable(EntityId itemId) =>
             itemId.IsValid ? Array.Find(_consumables, x => x.ItemId == itemId) : null;
 
         public CrewState WithConsumables(IEnumerable<CrewConsumable> consumables) =>
-            Create(_members, _jobs, _treatments, consumables, _interactions);
+            Create(_members, _jobs, _treatments, consumables, _interactions, _candidates);
 
         public CrewNeedsAssessment AssessNeeds(EntityId crewId)
         {
@@ -172,7 +263,7 @@ namespace FrostArk.Core.Crew
             var next = member.WithNeeds(hunger, thirst);
             return ReferenceEquals(next, member) ? this :
                 new CrewState(_members.Select(m => m.Id == id ? next : m).ToArray(),
-                    _jobs, _treatments, _consumables, _interactions);
+                    _jobs, _treatments, _consumables, _interactions, _candidates);
         }
 
         internal CrewState Consume(EntityId crewId, EntityId itemId)
@@ -190,10 +281,10 @@ namespace FrostArk.Core.Crew
         /// <summary>Set authored slot definitions; does not invent claims.</summary>
         public CrewState WithInteractionSlots(IEnumerable<CrewInteractionSlot> slots) =>
             Create(_members, _jobs, _treatments, _consumables,
-                CrewInteractionState.Create(slots));
+                CrewInteractionState.Create(slots), _candidates);
 
         internal CrewState RestoreInteractions(CrewInteractionState state) =>
-            Create(_members, _jobs, _treatments, _consumables, state);
+            Create(_members, _jobs, _treatments, _consumables, state, _candidates);
 
         internal CrewState ClaimInteraction(EntityId crewId, EntityId slotId,
             WorldMinute now, int lifetimeMinutes)
@@ -202,17 +293,17 @@ namespace FrostArk.Core.Crew
             if (actor == null || actor.IsAway || actor.Wounds == 1000)
                 throw new ArgumentException("Crew member unavailable.", nameof(crewId));
             return new CrewState(_members, _jobs, _treatments, _consumables,
-                _interactions.Claim(slotId, crewId, now, lifetimeMinutes));
+                _interactions.Claim(slotId, crewId, now, lifetimeMinutes), _candidates);
         }
 
         internal CrewState RenewDutyInteraction(EntityId crewId, EntityId slotId,
             WorldMinute now, int lifetimeMinutes) =>
             new CrewState(_members, _jobs, _treatments, _consumables,
-                _interactions.RenewDuty(slotId, crewId, now, lifetimeMinutes));
+                _interactions.RenewDuty(slotId, crewId, now, lifetimeMinutes), _candidates);
 
         internal CrewState ReleaseInteraction(EntityId crewId, EntityId slotId) =>
             new CrewState(_members, _jobs, _treatments, _consumables,
-                _interactions.Release(slotId, crewId));
+                _interactions.Release(slotId, crewId), _candidates);
 
         public CrewState SetAway(EntityId id, bool away)
         {
@@ -221,7 +312,7 @@ namespace FrostArk.Core.Crew
             var changed = _members.Select(m => m.Id == id ? m.WithAway(away) : m).ToArray();
             return changed.Zip(_members, (a, b) => ReferenceEquals(a, b)).All(x => x)
                 ? this : new CrewState(changed, _jobs, _treatments, _consumables,
-                    away ? _interactions.ClearCrew(id) : _interactions);
+                    away ? _interactions.ClearCrew(id) : _interactions, _candidates);
         }
 
         /// <summary>
@@ -344,7 +435,7 @@ namespace FrostArk.Core.Crew
                 var member = Array.Find(nextMembers, m => m.Id == id);
                 return member != null && !member.IsAway && member.Wounds < 1000;
             });
-            return new CrewState(nextMembers, jobs, _treatments, _consumables, interactions);
+            return new CrewState(nextMembers, jobs, _treatments, _consumables, interactions, _candidates);
         }
 
         public uint Fingerprint()
@@ -374,6 +465,12 @@ namespace FrostArk.Core.Crew
                     Add("needs"); Add(m.Hunger.ToString(CultureInfo.InvariantCulture));
                     Add(m.Thirst.ToString(CultureInfo.InvariantCulture));
                 }
+                if (!m.Identity.IsDefaultDerived)
+                {
+                    Add("identity");
+                    Add(m.Identity.DisplayName);
+                    Add(m.Identity.LocalizationKey);
+                }
             }
             foreach (var job in _jobs)
             {
@@ -398,6 +495,24 @@ namespace FrostArk.Core.Crew
             {
                 Add("interactions");
                 Add(_interactions.Fingerprint().ToString(CultureInfo.InvariantCulture));
+            }
+            foreach (var candidate in _candidates)
+            {
+                Add("candidate");
+                Add(candidate.Id.Value);
+                Add(candidate.Identity.DisplayName);
+                Add(candidate.Identity.LocalizationKey);
+                Add(candidate.SourceId.Value);
+                Add(((int)candidate.Role).ToString(CultureInfo.InvariantCulture));
+                Add(candidate.PrimarySkill.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.BackupSkill.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.ShiftStart.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.ShiftMinutes.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.Fatigue.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.Wounds.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.Hunger.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.Thirst.ToString(CultureInfo.InvariantCulture));
+                Add(candidate.IsRecruited ? "1" : "0");
             }
             return StableHash32.Of(canonical.ToString());
         }
